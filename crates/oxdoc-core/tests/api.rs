@@ -77,6 +77,86 @@ fn extracts_xlsx_csv_without_shared_strings() {
 }
 
 #[test]
+fn extracts_xlsx_csv_with_boolean_error_blank_and_empty_row_cells() {
+    let file = create_ooxml(
+        "mixed-cells.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Mixed" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/sharedStrings.xml",
+                r#"<sst><si><t>shared</t></si></sst>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="b"><v>1</v></c><c r="C1" t="e"><v>#DIV/0!</v></c><c r="D1" t="inlineStr"><is><t>inline</t></is></c><c r="E1"/></row><row r="2"/></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let mut csv = Vec::new();
+
+    oxdoc_core::extract_xlsx_csv(
+        &file,
+        XlsxCsvOptions {
+            sheet_name: Some("Mixed"),
+            delimiter: b',',
+        },
+        &mut csv,
+    )
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(csv).unwrap(),
+        "shared,TRUE,#DIV/0!,inline,\n\n"
+    );
+}
+
+#[test]
+fn reports_missing_requested_xlsx_sheet() {
+    let file = create_ooxml(
+        "missing-sheet.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Present" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            ("xl/worksheets/sheet1.xml", r#"<worksheet/>"#),
+        ],
+    );
+    let mut csv = Vec::new();
+
+    let err = oxdoc_core::extract_xlsx_csv(
+        &file,
+        XlsxCsvOptions {
+            sheet_name: Some("Missing"),
+            delimiter: b',',
+        },
+        &mut csv,
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, OxdocError::MissingPart(part) if part == "sheet named Missing"));
+}
+
+#[test]
 fn reads_metadata_through_public_api() {
     let file = fixtures::build_package("pptx/basic", "fixture.pptx");
 

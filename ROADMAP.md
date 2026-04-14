@@ -19,7 +19,7 @@ This roadmap is intentionally practical: `oxdoc` should become a reliable, fast,
 
 ## Phase 1: MVP Hardening
 
-- Improve DOCX text extraction for tables, headers, footers, footnotes, comments, and hyperlinks.
+- Improve DOCX extraction beyond the main document body: headers, footers, footnotes, comments, text boxes, and defined ordering for extra parts.
 - Improve XLSX CSV extraction for sheet selection by index and name, sparse dimensions, booleans, dates, errors, and cached formula values.
 - Add PPTX text extraction for slide text boxes and speaker notes.
 - Expand metadata coverage across DOCX, XLSX, and PPTX.
@@ -60,4 +60,3 @@ This roadmap is intentionally practical: `oxdoc` should become a reliable, fast,
 - Preserving fonts, margins, colors, layout, or pagination.
 - Implementing the full OOXML specification.
 - Mutating or repairing input documents.
-

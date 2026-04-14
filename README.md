@@ -11,6 +11,7 @@ Fast OOXML extraction without rendering.
 `oxdoc` is pre-1.0 and under active development. The current codebase implements the first MVP slice:
 
 - DOCX text extraction from the main document part.
+- DOCX logical text semantics for paragraph breaks, table cell and row separation, tabs, line breaks, and deleted revision text handling.
 - XLSX worksheet-to-CSV extraction.
 - Metadata extraction from `docProps/core.xml` and `docProps/app.xml`.
 - A reusable `oxdoc-core` crate and a CLI-facing `oxdoc-cli` crate.

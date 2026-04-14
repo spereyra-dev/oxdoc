@@ -11,6 +11,9 @@ The MVP parser:
 - Converts `<w:tab/>` into a tab character.
 - Converts `<w:br/>` and `<w:cr/>` into line breaks.
 - Adds a line break at the end of each paragraph.
+- Separates table cells with tabs and table rows with line breaks.
+- Flattens nested tables into the containing cell while preserving the outer row separators.
+- Omits text inside deleted revision ranges (`<w:del>`) and keeps inserted revision text (`<w:ins>`).
 - Emits recoverable malformed XML issues as warnings with partial text when possible.
 
 ## Example
@@ -45,8 +48,8 @@ oxdoc extract text contrato.docx --format json
 - Footnotes and endnotes.
 - Comments.
 - Hyperlink text.
-- Tables with clearer logical separators.
-- Better handling of deleted/inserted revision text.
+- Text boxes and drawing text.
+- More detailed revision semantics outside deleted and inserted text.
 
 ## Non-Goals
 

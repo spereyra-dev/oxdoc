@@ -15,37 +15,107 @@ pub(crate) fn extract_text<R: BufRead>(source: R, path: &str) -> Result<Extracti
     let mut text = String::new();
     let mut warnings = Vec::new();
     let mut in_text_node = false;
+    let mut deleted_revision_depth = 0usize;
+    let mut table_contexts = Vec::new();
+    let mut pending_cell_paragraph_separator = false;
 
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) => {
-                if name_eq(element.name().as_ref(), b"t") {
+                if name_eq(element.name().as_ref(), b"del") {
+                    deleted_revision_depth += 1;
+                } else if name_eq(element.name().as_ref(), b"tbl") {
+                    if in_table_cell(&table_contexts) {
+                        flush_cell_paragraph_separator(
+                            &mut text,
+                            &mut pending_cell_paragraph_separator,
+                        );
+                    }
+                    table_contexts.push(TableContext::default());
+                } else if let Some(table) = table_contexts.last_mut()
+                    && name_eq(element.name().as_ref(), b"tr")
+                {
+                    table.start_row();
+                    pending_cell_paragraph_separator = false;
+                } else if let Some(table) = table_contexts.last_mut()
+                    && name_eq(element.name().as_ref(), b"tc")
+                {
+                    table.start_cell(&mut text);
+                    pending_cell_paragraph_separator = false;
+                } else if deleted_revision_depth == 0 && name_eq(element.name().as_ref(), b"t") {
                     in_text_node = true;
                 }
             }
             Ok(Event::Empty(element)) => {
-                if name_eq(element.name().as_ref(), b"tab") {
-                    text.push('\t');
-                } else if name_eq(element.name().as_ref(), b"br")
-                    || name_eq(element.name().as_ref(), b"cr")
-                {
-                    push_newline(&mut text);
+                if deleted_revision_depth == 0 {
+                    if name_eq(element.name().as_ref(), b"tab") {
+                        flush_cell_paragraph_separator(
+                            &mut text,
+                            &mut pending_cell_paragraph_separator,
+                        );
+                        text.push('\t');
+                    } else if name_eq(element.name().as_ref(), b"br")
+                        || name_eq(element.name().as_ref(), b"cr")
+                    {
+                        pending_cell_paragraph_separator = false;
+                        push_newline(&mut text);
+                    }
                 }
             }
             Ok(Event::Text(value)) if in_text_node => {
-                text.push_str(&decode_xml_text(value.as_ref()));
+                push_text(
+                    &mut text,
+                    &decode_xml_text(value.as_ref()),
+                    &mut pending_cell_paragraph_separator,
+                );
             }
             Ok(Event::CData(value)) if in_text_node => {
-                text.push_str(&decode_xml_text(value.as_ref()));
+                push_text(
+                    &mut text,
+                    &decode_xml_text(value.as_ref()),
+                    &mut pending_cell_paragraph_separator,
+                );
             }
             Ok(Event::GeneralRef(value)) if in_text_node => {
-                text.push_str(&decode_xml_reference(value.as_ref()));
+                push_text(
+                    &mut text,
+                    &decode_xml_reference(value.as_ref()),
+                    &mut pending_cell_paragraph_separator,
+                );
             }
             Ok(Event::End(element)) => {
                 if name_eq(element.name().as_ref(), b"t") {
                     in_text_node = false;
+                } else if name_eq(element.name().as_ref(), b"del") {
+                    deleted_revision_depth = deleted_revision_depth.saturating_sub(1);
+                    in_text_node = false;
                 } else if name_eq(element.name().as_ref(), b"p") {
-                    push_newline(&mut text);
+                    if deleted_revision_depth == 0 {
+                        if in_table_cell(&table_contexts) {
+                            pending_cell_paragraph_separator = !text.is_empty();
+                        } else {
+                            push_newline(&mut text);
+                        }
+                    }
+                } else if name_eq(element.name().as_ref(), b"tc") {
+                    if let Some(table) = table_contexts.last_mut() {
+                        table.end_cell();
+                    }
+                    pending_cell_paragraph_separator = false;
+                } else if name_eq(element.name().as_ref(), b"tr") {
+                    let nested_table = table_contexts.len() > 1;
+                    if let Some(table) = table_contexts.last_mut()
+                        && table.finish_row()
+                    {
+                        pending_cell_paragraph_separator = false;
+                        if nested_table {
+                            pending_cell_paragraph_separator = true;
+                        } else {
+                            push_newline(&mut text);
+                        }
+                    }
+                } else if name_eq(element.name().as_ref(), b"tbl") {
+                    table_contexts.pop();
                 }
             }
             Ok(Event::Eof) => break,
@@ -65,6 +135,67 @@ pub(crate) fn extract_text<R: BufRead>(source: R, path: &str) -> Result<Extracti
 pub fn fuzz_extract_text(xml: &[u8]) -> Result<()> {
     let _ = extract_text(Cursor::new(xml), "word/document.xml")?;
     Ok(())
+}
+
+#[derive(Debug, Default)]
+struct TableContext {
+    row_depth: usize,
+    cell_depth: usize,
+    row_has_cells: bool,
+}
+
+impl TableContext {
+    fn start_row(&mut self) {
+        self.row_depth += 1;
+        self.row_has_cells = false;
+    }
+
+    fn start_cell(&mut self, text: &mut String) {
+        if self.row_depth == 0 {
+            return;
+        }
+
+        if self.row_has_cells {
+            text.push('\t');
+        } else {
+            self.row_has_cells = true;
+        }
+        self.cell_depth += 1;
+    }
+
+    fn end_cell(&mut self) {
+        self.cell_depth = self.cell_depth.saturating_sub(1);
+    }
+
+    fn finish_row(&mut self) -> bool {
+        let had_cells = self.row_has_cells;
+        self.row_depth = self.row_depth.saturating_sub(1);
+        self.row_has_cells = false;
+        had_cells
+    }
+}
+
+fn in_table_cell(table_contexts: &[TableContext]) -> bool {
+    table_contexts
+        .last()
+        .is_some_and(|table| table.cell_depth > 0)
+}
+
+fn push_text(text: &mut String, value: &str, pending_cell_paragraph_separator: &mut bool) {
+    if value.is_empty() {
+        return;
+    }
+    if *pending_cell_paragraph_separator {
+        flush_cell_paragraph_separator(text, pending_cell_paragraph_separator);
+    }
+    text.push_str(value);
+}
+
+fn flush_cell_paragraph_separator(text: &mut String, pending_cell_paragraph_separator: &mut bool) {
+    if *pending_cell_paragraph_separator && !text.chars().last().is_some_and(char::is_whitespace) {
+        text.push(' ');
+    }
+    *pending_cell_paragraph_separator = false;
 }
 
 fn push_newline(text: &mut String) {
@@ -122,5 +253,78 @@ mod tests {
 
         assert_eq!(result.value, "A < B\nC\n");
         assert!(empty.value.is_empty());
+    }
+
+    #[test]
+    fn extracts_table_cells_with_logical_separators() {
+        let xml = r#"
+            <w:document xmlns:w="w">
+              <w:body>
+                <w:tbl>
+                  <w:tr>
+                    <w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
+                  </w:tr>
+                  <w:tr>
+                    <w:tc>
+                      <w:p><w:r><w:t>C one</w:t></w:r></w:p>
+                      <w:p><w:r><w:t>C two</w:t></w:r></w:p>
+                    </w:tc>
+                    <w:tc><w:p><w:r><w:t>D</w:t></w:r></w:p></w:tc>
+                  </w:tr>
+                </w:tbl>
+              </w:body>
+            </w:document>
+        "#;
+
+        let result = extract_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+
+        assert_eq!(result.value, "A\tB\nC one C two\tD\n");
+    }
+
+    #[test]
+    fn flattens_nested_tables_without_resetting_outer_rows() {
+        let xml = r#"
+            <w:document xmlns:w="w">
+              <w:body>
+                <w:tbl>
+                  <w:tr>
+                    <w:tc>
+                      <w:p><w:r><w:t>Outer</w:t></w:r></w:p>
+                      <w:tbl>
+                        <w:tr>
+                          <w:tc><w:p><w:r><w:t>Inner</w:t></w:r></w:p></w:tc>
+                        </w:tr>
+                      </w:tbl>
+                    </w:tc>
+                    <w:tc><w:p><w:r><w:t>Sibling</w:t></w:r></w:p></w:tc>
+                  </w:tr>
+                </w:tbl>
+              </w:body>
+            </w:document>
+        "#;
+
+        let result = extract_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+
+        assert_eq!(result.value, "Outer Inner\tSibling\n");
+    }
+
+    #[test]
+    fn omits_deleted_revision_text_and_keeps_inserted_text() {
+        let xml = r#"
+            <w:document xmlns:w="w">
+              <w:body>
+                <w:p>
+                  <w:r><w:t>Keep </w:t></w:r>
+                  <w:del><w:r><w:t>deleted</w:t></w:r></w:del>
+                  <w:ins><w:r><w:t>inserted</w:t></w:r></w:ins>
+                </w:p>
+              </w:body>
+            </w:document>
+        "#;
+
+        let result = extract_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+
+        assert_eq!(result.value, "Keep inserted\n");
     }
 }

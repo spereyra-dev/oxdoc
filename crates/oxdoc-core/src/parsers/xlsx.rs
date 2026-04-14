@@ -211,18 +211,23 @@ fn write_sheet_csv<R: BufRead, W: Write>(
                     in_row = true;
                     row.clear();
                 } else if name_eq(element.name().as_ref(), b"c") {
-                    current_cell = Some(CellState {
-                        value_type: attr_value(&element, b"t"),
-                        column_index: attr_value(&element, b"r")
-                            .and_then(|cell_ref| parse_cell_column(&cell_ref).or(Some(row.len()))),
-                        ..CellState::default()
-                    });
+                    current_cell = Some(cell_state_from_element(&element, row.len()));
                 } else if let Some(cell) = &mut current_cell {
                     if name_eq(element.name().as_ref(), b"v") {
                         cell.in_value = true;
                     } else if name_eq(element.name().as_ref(), b"t") {
                         cell.in_inline_text = true;
                     }
+                }
+            }
+            Ok(Event::Empty(element)) => {
+                if name_eq(element.name().as_ref(), b"row") {
+                    row.clear();
+                    writer.write_all(b"\n")?;
+                    in_row = false;
+                } else if name_eq(element.name().as_ref(), b"c") && in_row {
+                    let cell = cell_state_from_element(&element, row.len());
+                    push_cell_value(&mut row, cell, shared_strings, path, &mut warnings);
                 }
             }
             Ok(Event::Text(value)) => {
@@ -324,6 +329,12 @@ fn push_cell_value(
                 cell.value
             }
         }
+    } else if cell.value_type.as_deref() == Some("b") {
+        match cell.value.trim() {
+            "1" | "true" | "TRUE" => "TRUE".to_owned(),
+            "0" | "false" | "FALSE" => "FALSE".to_owned(),
+            _ => cell.value,
+        }
     } else {
         cell.value
     };
@@ -332,6 +343,18 @@ fn push_cell_value(
         row.push(value);
     } else if let Some(slot) = row.get_mut(target_column) {
         *slot = value;
+    }
+}
+
+fn cell_state_from_element(
+    element: &quick_xml::events::BytesStart<'_>,
+    fallback_column: usize,
+) -> CellState {
+    CellState {
+        value_type: attr_value(element, b"t"),
+        column_index: attr_value(element, b"r")
+            .and_then(|cell_ref| parse_cell_column(&cell_ref).or(Some(fallback_column))),
+        ..CellState::default()
     }
 }
 
@@ -466,6 +489,40 @@ mod tests {
         .unwrap();
 
         assert_eq!(String::from_utf8(output).unwrap(), "id,,\"10,5\"\n,42\n");
+    }
+
+    #[test]
+    fn writes_empty_rows_cells_and_boolean_values() {
+        let xml = r#"
+            <worksheet>
+              <sheetData>
+                <row r="1">
+                  <c r="A1" t="s"><v>0</v></c>
+                  <c r="B1" t="b"><v>1</v></c>
+                  <c r="C1" t="e"><v>#DIV/0!</v></c>
+                  <c r="D1" t="inlineStr"><is><t>inline</t></is></c>
+                  <c r="E1"/>
+                </row>
+                <row r="2"/>
+              </sheetData>
+            </worksheet>
+        "#;
+        let shared_strings = vec!["shared".to_owned()];
+        let mut output = Vec::new();
+
+        write_sheet_csv(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &shared_strings,
+            b',',
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "shared,TRUE,#DIV/0!,inline,\n\n"
+        );
     }
 
     #[test]
