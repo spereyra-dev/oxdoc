@@ -22,7 +22,7 @@ mod parsers;
 pub mod vfs;
 
 use std::fs::File;
-use std::io::{BufReader, Write};
+use std::io::{BufReader, Read, Seek, Write};
 use std::path::Path;
 
 pub use error::{OxdocError, Result};
@@ -40,7 +40,11 @@ use vfs::OoxmlPackage;
 
 pub fn extract_docx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {
     let file = File::open(path)?;
-    let mut package = OoxmlPackage::new(file)?;
+    extract_docx_text_from_reader(file)
+}
+
+pub fn extract_docx_text_from_reader<R: Read + Seek>(reader: R) -> Result<Extraction<String>> {
+    let mut package = OoxmlPackage::new(reader)?;
     let document_path = parsers::find_office_document_path(&mut package, "word/document.xml")?;
 
     package.with_entry(&document_path, |entry| {
@@ -55,7 +59,15 @@ pub fn extract_xlsx_csv<W: Write>(
     writer: W,
 ) -> Result<Extraction<()>> {
     let file = File::open(path)?;
-    let mut package = OoxmlPackage::new(file)?;
+    extract_xlsx_csv_from_reader(file, options, writer)
+}
+
+pub fn extract_xlsx_csv_from_reader<R: Read + Seek, W: Write>(
+    reader: R,
+    options: XlsxCsvOptions<'_>,
+    writer: W,
+) -> Result<Extraction<()>> {
+    let mut package = OoxmlPackage::new(reader)?;
     xlsx::write_csv(&mut package, options, writer)
 }
 
@@ -68,6 +80,13 @@ pub fn read_info(path: impl AsRef<Path>) -> Result<Extraction<DocumentInfo>> {
         .to_owned();
 
     let file = File::open(path)?;
-    let mut package = OoxmlPackage::new(file)?;
-    metadata::read_info(&mut package, file_name)
+    read_info_from_reader(file, file_name)
+}
+
+pub fn read_info_from_reader<R: Read + Seek>(
+    reader: R,
+    file_name: impl Into<String>,
+) -> Result<Extraction<DocumentInfo>> {
+    let mut package = OoxmlPackage::new(reader)?;
+    metadata::read_info(&mut package, file_name.into())
 }
