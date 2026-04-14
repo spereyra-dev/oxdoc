@@ -17,6 +17,7 @@ pub(crate) struct Relationship {
     pub id: Option<String>,
     pub target: String,
     pub relationship_type: Option<String>,
+    pub target_mode: Option<String>,
 }
 
 pub(crate) fn find_office_document_path<R: std::io::Read + std::io::Seek>(
@@ -31,7 +32,7 @@ pub(crate) fn find_office_document_path<R: std::io::Read + std::io::Seek>(
                     .as_deref()
                     .is_some_and(|kind| kind.ends_with("/officeDocument"))
                 {
-                    return Ok(normalize_part_path("", &relationship.target));
+                    return resolve_relationship_target("", &relationship, "_rels/.rels");
                 }
             }
             Ok(fallback.to_owned())
@@ -41,14 +42,24 @@ pub(crate) fn find_office_document_path<R: std::io::Read + std::io::Seek>(
     }
 }
 
-pub(crate) fn parse_relationship_map(xml: &str, path: &str) -> Result<HashMap<String, String>> {
+pub(crate) fn parse_relationship_map(
+    xml: &str,
+    path: &str,
+) -> Result<HashMap<String, Relationship>> {
     let mut map = HashMap::new();
     for relationship in parse_relationships(xml, path)? {
-        if let Some(id) = relationship.id {
-            map.insert(id, relationship.target);
+        if let Some(id) = relationship.id.clone() {
+            map.insert(id, relationship);
         }
     }
     Ok(map)
+}
+
+#[doc(hidden)]
+pub fn fuzz_parse_relationships(xml: &[u8]) -> Result<()> {
+    let xml = String::from_utf8_lossy(xml);
+    let _ = parse_relationship_map(&xml, "_rels/.rels")?;
+    Ok(())
 }
 
 fn parse_relationships(xml: &str, path: &str) -> Result<Vec<Relationship>> {
@@ -67,6 +78,7 @@ fn parse_relationships(xml: &str, path: &str) -> Result<Vec<Relationship>> {
                         id: attr_value(&element, b"Id"),
                         target,
                         relationship_type: attr_value(&element, b"Type"),
+                        target_mode: attr_value(&element, b"TargetMode"),
                     });
                 }
             }
@@ -85,23 +97,111 @@ fn parse_relationships(xml: &str, path: &str) -> Result<Vec<Relationship>> {
     Ok(relationships)
 }
 
-pub(crate) fn normalize_part_path(base_dir: &str, target: &str) -> String {
-    let target = target.trim_start_matches('/');
-    if target.contains("://") || target.starts_with(base_dir) || base_dir.is_empty() {
-        return target.replace('\\', "/");
+pub(crate) fn resolve_relationship_target(
+    base_dir: &str,
+    relationship: &Relationship,
+    relationship_path: &str,
+) -> Result<String> {
+    if relationship
+        .target_mode
+        .as_deref()
+        .is_some_and(|mode| mode.eq_ignore_ascii_case("External"))
+    {
+        return Err(suspicious_relationship_target(
+            relationship_path,
+            &relationship.target,
+            "external relationship targets are not supported",
+        ));
+    }
+
+    resolve_part_path(base_dir, &relationship.target, relationship_path)
+}
+
+pub(crate) fn resolve_part_path(
+    base_dir: &str,
+    target: &str,
+    relationship_path: &str,
+) -> Result<String> {
+    let target = target.trim();
+    if target.is_empty() {
+        return Err(suspicious_relationship_target(
+            relationship_path,
+            target,
+            "target is empty",
+        ));
+    }
+
+    if target.contains('\0') {
+        return Err(suspicious_relationship_target(
+            relationship_path,
+            target,
+            "target contains a NUL byte",
+        ));
+    }
+
+    if target.contains('\\') {
+        return Err(suspicious_relationship_target(
+            relationship_path,
+            target,
+            "backslashes are not valid OOXML part separators",
+        ));
+    }
+
+    if target.starts_with("//") || has_uri_scheme(target) {
+        return Err(suspicious_relationship_target(
+            relationship_path,
+            target,
+            "target is external or absolute outside the package",
+        ));
     }
 
     let mut parts = Vec::new();
-    for segment in base_dir.split('/').chain(target.split('/')) {
+    if !target.starts_with('/') {
+        parts.extend(base_dir.split('/').filter(|segment| !segment.is_empty()));
+    }
+
+    for segment in target.trim_start_matches('/').split('/') {
         match segment {
             "" | "." => {}
             ".." => {
-                parts.pop();
+                if parts.pop().is_none() {
+                    return Err(suspicious_relationship_target(
+                        relationship_path,
+                        target,
+                        "target escapes the OOXML package root",
+                    ));
+                }
             }
             other => parts.push(other),
         }
     }
-    parts.join("/")
+
+    if parts.is_empty() {
+        return Err(suspicious_relationship_target(
+            relationship_path,
+            target,
+            "target does not resolve to an OOXML part",
+        ));
+    }
+
+    Ok(parts.join("/"))
+}
+
+fn suspicious_relationship_target(path: &str, target: &str, reason: &str) -> OxdocError {
+    OxdocError::SuspiciousRelationshipTarget {
+        path: path.to_owned(),
+        target: target.to_owned(),
+        reason: reason.to_owned(),
+    }
+}
+
+fn has_uri_scheme(target: &str) -> bool {
+    let Some((scheme, _)) = target.split_once(':') else {
+        return false;
+    };
+    let mut bytes = scheme.bytes();
+    bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic())
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
 }
 
 pub(crate) fn parent_dir(path: &str) -> &str {
@@ -226,8 +326,8 @@ pub(crate) fn merge_warnings(
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_xml_reference, decode_xml_text, merge_warnings, normalize_part_path, parent_dir,
-        parse_relationship_map, rels_path_for,
+        decode_xml_reference, decode_xml_text, merge_warnings, parent_dir, parse_relationship_map,
+        rels_path_for, resolve_part_path,
     };
     use crate::OxdocError;
     use crate::models::OutputWarning;
@@ -248,15 +348,20 @@ mod tests {
     #[test]
     fn normalizes_part_and_relationship_paths() {
         assert_eq!(
-            normalize_part_path("xl", "worksheets/sheet1.xml"),
+            resolve_part_path("xl", "worksheets/sheet1.xml", "xl/_rels/workbook.xml.rels").unwrap(),
             "xl/worksheets/sheet1.xml"
         );
         assert_eq!(
-            normalize_part_path("xl/worksheets", "../sharedStrings.xml"),
+            resolve_part_path(
+                "xl/worksheets",
+                "../sharedStrings.xml",
+                "xl/worksheets/_rels/sheet1.xml.rels"
+            )
+            .unwrap(),
             "xl/sharedStrings.xml"
         );
         assert_eq!(
-            normalize_part_path("", "/word/document.xml"),
+            resolve_part_path("", "/word/document.xml", "_rels/.rels").unwrap(),
             "word/document.xml"
         );
         assert_eq!(parent_dir("xl/workbook.xml"), "xl");
@@ -266,6 +371,28 @@ mod tests {
             "xl/_rels/workbook.xml.rels"
         );
         assert_eq!(rels_path_for("workbook.xml"), "_rels/workbook.xml.rels");
+
+        let err =
+            resolve_part_path("xl", "../../outside.xml", "xl/_rels/workbook.xml.rels").unwrap_err();
+        assert!(matches!(
+            err,
+            OxdocError::SuspiciousRelationshipTarget { .. }
+        ));
+
+        for target in [
+            "",
+            "word\0document.xml",
+            "word\\document.xml",
+            "https://example.invalid/document.xml",
+            "/",
+        ] {
+            let err =
+                resolve_part_path("word", target, "word/_rels/document.xml.rels").unwrap_err();
+            assert!(matches!(
+                err,
+                OxdocError::SuspiciousRelationshipTarget { .. }
+            ));
+        }
     }
 
     #[test]
@@ -281,7 +408,8 @@ mod tests {
         let map = parse_relationship_map(xml, "_rels/.rels").unwrap();
 
         assert_eq!(
-            map.get("rId1").map(String::as_str),
+            map.get("rId1")
+                .map(|relationship| relationship.target.as_str()),
             Some("word/document.xml")
         );
         assert_eq!(map.len(), 1);

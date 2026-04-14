@@ -6,11 +6,105 @@ pub struct OutputWarning {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WarningCategory {
+    Parser,
+    Data,
+    Custom,
+}
+
+impl WarningCategory {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WarningCategory::Parser => "parser",
+            WarningCategory::Data => "data",
+            WarningCategory::Custom => "custom",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WarningCode {
+    MalformedXml,
+    IgnoredWorkbookSheet,
+    SharedStringIndexOutOfBounds,
+    InvalidSharedStringIndex,
+    Custom,
+}
+
+impl WarningCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WarningCode::MalformedXml => "W001",
+            WarningCode::IgnoredWorkbookSheet => "W002",
+            WarningCode::SharedStringIndexOutOfBounds => "W003",
+            WarningCode::InvalidSharedStringIndex => "W004",
+            WarningCode::Custom => "W999",
+        }
+    }
+}
+
 impl OutputWarning {
     pub fn new(path: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             path: path.into(),
             message: message.into(),
+        }
+    }
+
+    pub fn malformed_xml(path: impl Into<String>, source: impl std::fmt::Display) -> Self {
+        Self::new(path, format!("stopped after malformed XML: {source}"))
+    }
+
+    pub fn ignored_workbook_sheet(path: impl Into<String>) -> Self {
+        Self::new(
+            path,
+            "ignored workbook sheet without name or relationship id",
+        )
+    }
+
+    pub fn shared_string_index_out_of_bounds(path: impl Into<String>, index: usize) -> Self {
+        Self::new(
+            path,
+            format!("shared string index {index} is out of bounds"),
+        )
+    }
+
+    pub fn invalid_shared_string_index(path: impl Into<String>, value: impl Into<String>) -> Self {
+        Self::new(
+            path,
+            format!("invalid shared string index '{}'", value.into()),
+        )
+    }
+
+    pub fn category(&self) -> WarningCategory {
+        match self.code() {
+            WarningCode::MalformedXml => WarningCategory::Parser,
+            WarningCode::IgnoredWorkbookSheet
+            | WarningCode::SharedStringIndexOutOfBounds
+            | WarningCode::InvalidSharedStringIndex => WarningCategory::Data,
+            WarningCode::Custom => WarningCategory::Custom,
+        }
+    }
+
+    pub fn code(&self) -> WarningCode {
+        match self.message.as_str() {
+            message if message.starts_with("stopped after malformed XML: ") => {
+                WarningCode::MalformedXml
+            }
+            "ignored workbook sheet without name or relationship id" => {
+                WarningCode::IgnoredWorkbookSheet
+            }
+            message
+                if message.starts_with("shared string index ")
+                    && message.ends_with(" is out of bounds") =>
+            {
+                WarningCode::SharedStringIndexOutOfBounds
+            }
+            message if message.starts_with("invalid shared string index '") => {
+                WarningCode::InvalidSharedStringIndex
+            }
+            _ => WarningCode::Custom,
         }
     }
 }
@@ -86,11 +180,11 @@ pub struct DocumentInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::{Extraction, OutputWarning, XlsxCsvOptions};
+    use super::{Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCsvOptions};
 
     #[test]
     fn builds_and_maps_extractions() {
-        let warning = OutputWarning::new("word/document.xml", "partial text");
+        let warning = OutputWarning::malformed_xml("word/document.xml", "parse error");
         let extraction = Extraction::with_warnings("hello".to_owned(), vec![warning.clone()]);
 
         let mapped = extraction.map(|value| value.len());
@@ -98,6 +192,37 @@ mod tests {
         assert_eq!(mapped.value, 5);
         assert_eq!(mapped.warnings, vec![warning]);
         assert!(Extraction::new(()).warnings.is_empty());
+    }
+
+    #[test]
+    fn classifies_warning_codes_and_categories() {
+        let malformed = OutputWarning::malformed_xml("word/document.xml", "parse error");
+        let sheet = OutputWarning::ignored_workbook_sheet("xl/workbook.xml");
+        let shared = OutputWarning::shared_string_index_out_of_bounds("xl/sheet.xml", 7);
+        let invalid = OutputWarning::invalid_shared_string_index("xl/sheet.xml", "abc");
+
+        assert_eq!(malformed.category(), WarningCategory::Parser);
+        assert_eq!(malformed.code(), WarningCode::MalformedXml);
+        assert_eq!(sheet.category(), WarningCategory::Data);
+        assert_eq!(sheet.code(), WarningCode::IgnoredWorkbookSheet);
+        assert_eq!(shared.code(), WarningCode::SharedStringIndexOutOfBounds);
+        assert_eq!(invalid.code(), WarningCode::InvalidSharedStringIndex);
+        assert_eq!(WarningCategory::Parser.as_str(), "parser");
+        assert_eq!(WarningCategory::Data.as_str(), "data");
+        assert_eq!(WarningCode::MalformedXml.as_str(), "W001");
+        assert_eq!(WarningCode::IgnoredWorkbookSheet.as_str(), "W002");
+        assert_eq!(WarningCode::SharedStringIndexOutOfBounds.as_str(), "W003");
+        assert_eq!(WarningCode::InvalidSharedStringIndex.as_str(), "W004");
+    }
+
+    #[test]
+    fn classifies_unknown_warnings_as_custom() {
+        let warning = OutputWarning::new("custom.xml", "partial extraction");
+
+        assert_eq!(warning.category(), WarningCategory::Custom);
+        assert_eq!(warning.code(), WarningCode::Custom);
+        assert_eq!(warning.category().as_str(), "custom");
+        assert_eq!(warning.code().as_str(), "W999");
     }
 
     #[test]

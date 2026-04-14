@@ -1,12 +1,12 @@
-use std::io::{BufRead, BufReader, Read, Seek, Write};
+use std::io::{BufRead, BufReader, Cursor, Read, Seek, Write};
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::models::{Extraction, OutputWarning, XlsxCsvOptions};
 use crate::parsers::{
-    attr_value, decode_xml_reference, decode_xml_text, merge_warnings, name_eq,
-    normalize_part_path, parent_dir, parse_relationship_map, rels_path_for,
+    attr_value, decode_xml_reference, decode_xml_text, merge_warnings, name_eq, parent_dir,
+    parse_relationship_map, rels_path_for, resolve_relationship_target,
 };
 use crate::vfs::OoxmlPackage;
 use crate::{OxdocError, Result};
@@ -43,7 +43,8 @@ pub(crate) fn write_csv<R: Read + Seek, W: Write>(
     let target = workbook_rels
         .get(&selected_sheet.relation_id)
         .ok_or_else(|| OxdocError::MissingPart(selected_sheet.relation_id.clone()))?;
-    let sheet_path = normalize_part_path(parent_dir(&workbook_path), target);
+    let sheet_path =
+        resolve_relationship_target(parent_dir(&workbook_path), target, &workbook_rels_path)?;
 
     let shared_strings = if package.contains("xl/sharedStrings.xml") {
         package.with_entry("xl/sharedStrings.xml", |entry| {
@@ -105,19 +106,13 @@ fn parse_workbook_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<Workboo
                         (Some(name), Some(relation_id)) => {
                             sheets.push(WorkbookSheet { name, relation_id });
                         }
-                        _ => warnings.push(OutputWarning::new(
-                            path,
-                            "ignored workbook sheet without name or relationship id",
-                        )),
+                        _ => warnings.push(OutputWarning::ignored_workbook_sheet(path)),
                     }
                 }
             }
             Ok(Event::Eof) => break,
             Err(source) => {
-                warnings.push(OutputWarning::new(
-                    path,
-                    format!("stopped after malformed XML: {source}"),
-                ));
+                warnings.push(OutputWarning::malformed_xml(path, source));
                 break;
             }
             _ => {}
@@ -183,10 +178,7 @@ fn parse_shared_strings<R: BufRead>(source: R, path: &str) -> Result<Extraction<
             }
             Ok(Event::Eof) => break,
             Err(source) => {
-                warnings.push(OutputWarning::new(
-                    path,
-                    format!("stopped after malformed XML: {source}"),
-                ));
+                warnings.push(OutputWarning::malformed_xml(path, source));
                 break;
             }
             _ => {}
@@ -274,10 +266,7 @@ fn write_sheet_csv<R: BufRead, W: Write>(
             }
             Ok(Event::Eof) => break,
             Err(source) => {
-                warnings.push(OutputWarning::new(
-                    path,
-                    format!("stopped after malformed XML: {source}"),
-                ));
+                warnings.push(OutputWarning::malformed_xml(path, source));
                 break;
             }
             _ => {}
@@ -286,6 +275,25 @@ fn write_sheet_csv<R: BufRead, W: Write>(
     }
 
     Ok(Extraction::with_warnings((), warnings))
+}
+
+#[doc(hidden)]
+pub fn fuzz_parse_shared_strings(xml: &[u8]) -> Result<()> {
+    let _ = parse_shared_strings(Cursor::new(xml), "xl/sharedStrings.xml")?;
+    Ok(())
+}
+
+#[doc(hidden)]
+pub fn fuzz_parse_sheet(xml: &[u8]) -> Result<()> {
+    let mut sink = Vec::new();
+    let _ = write_sheet_csv(
+        Cursor::new(xml),
+        "xl/worksheets/sheet1.xml",
+        &[],
+        b',',
+        &mut sink,
+    )?;
+    Ok(())
 }
 
 fn push_cell_value(
@@ -303,16 +311,15 @@ fn push_cell_value(
     let value = if cell.value_type.as_deref() == Some("s") {
         match cell.value.trim().parse::<usize>() {
             Ok(index) => shared_strings.get(index).cloned().unwrap_or_else(|| {
-                warnings.push(OutputWarning::new(
-                    path,
-                    format!("shared string index {index} is out of bounds"),
+                warnings.push(OutputWarning::shared_string_index_out_of_bounds(
+                    path, index,
                 ));
                 String::new()
             }),
             Err(_) => {
-                warnings.push(OutputWarning::new(
+                warnings.push(OutputWarning::invalid_shared_string_index(
                     path,
-                    format!("invalid shared string index '{}'", cell.value),
+                    cell.value.clone(),
                 ));
                 cell.value
             }

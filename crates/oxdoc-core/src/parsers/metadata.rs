@@ -100,10 +100,7 @@ fn parse_core<R: BufRead>(source: R, path: &str) -> Result<Extraction<CoreProps>
             }
             Ok(Event::Eof) => break,
             Err(source) => {
-                warnings.push(OutputWarning::new(
-                    path,
-                    format!("stopped after malformed XML: {source}"),
-                ));
+                warnings.push(OutputWarning::malformed_xml(path, source));
                 break;
             }
             _ => {}
@@ -153,10 +150,7 @@ fn parse_app<R: BufRead>(source: R, path: &str) -> Result<Extraction<AppProps>> 
             }
             Ok(Event::Eof) => break,
             Err(source) => {
-                warnings.push(OutputWarning::new(
-                    path,
-                    format!("stopped after malformed XML: {source}"),
-                ));
+                warnings.push(OutputWarning::malformed_xml(path, source));
                 break;
             }
             _ => {}
@@ -217,6 +211,13 @@ fn apply_app(info: &mut DocumentInfo, props: AppProps) {
     info.page_count = props.page_count;
     info.slide_count = props.slide_count;
     info.worksheet_count = props.worksheet_count;
+}
+
+#[doc(hidden)]
+pub fn fuzz_parse_metadata(xml: &[u8]) -> Result<()> {
+    let _ = parse_core(Cursor::new(xml), "docProps/core.xml")?;
+    let _ = parse_app(Cursor::new(xml), "docProps/app.xml")?;
+    Ok(())
 }
 
 #[cfg(test)]
