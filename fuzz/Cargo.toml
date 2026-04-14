@@ -1,0 +1,51 @@
+[package]
+name = "oxdoc-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.oxdoc-core]
+path = "../crates/oxdoc-core"
+
+[[bin]]
+name = "docx_text"
+path = "fuzz_targets/docx_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xlsx_shared_strings"
+path = "fuzz_targets/xlsx_shared_strings.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xlsx_sheet"
+path = "fuzz_targets/xlsx_sheet.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "relationships"
+path = "fuzz_targets/relationships.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "metadata"
+path = "fuzz_targets/metadata.rs"
+test = false
+doc = false
+bench = false

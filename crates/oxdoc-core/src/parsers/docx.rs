@@ -1,4 +1,5 @@
 use std::io::BufRead;
+use std::io::Cursor;
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -49,10 +50,7 @@ pub(crate) fn extract_text<R: BufRead>(source: R, path: &str) -> Result<Extracti
             }
             Ok(Event::Eof) => break,
             Err(source) => {
-                warnings.push(OutputWarning::new(
-                    path,
-                    format!("stopped after malformed XML: {source}"),
-                ));
+                warnings.push(OutputWarning::malformed_xml(path, source));
                 break;
             }
             _ => {}
@@ -61,6 +59,12 @@ pub(crate) fn extract_text<R: BufRead>(source: R, path: &str) -> Result<Extracti
     }
 
     Ok(Extraction::with_warnings(text, warnings))
+}
+
+#[doc(hidden)]
+pub fn fuzz_extract_text(xml: &[u8]) -> Result<()> {
+    let _ = extract_text(Cursor::new(xml), "word/document.xml")?;
+    Ok(())
 }
 
 fn push_newline(text: &mut String) {

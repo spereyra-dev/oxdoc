@@ -16,7 +16,13 @@ fn main() -> oxdoc_core::Result<()> {
     println!("{}", extraction.value);
 
     for warning in extraction.warnings {
-        eprintln!("{}: {}", warning.path, warning.message);
+        eprintln!(
+            "warning[{}/{}]: {}: {}",
+            warning.category().as_str(),
+            warning.code().as_str(),
+            warning.path,
+            warning.message
+        );
     }
 
     Ok(())
@@ -47,7 +53,13 @@ fn main() -> oxdoc_core::Result<()> {
     )?;
 
     for warning in extraction.warnings {
-        eprintln!("{}: {}", warning.path, warning.message);
+        eprintln!(
+            "warning[{}/{}]: {}: {}",
+            warning.category().as_str(),
+            warning.code().as_str(),
+            warning.path,
+            warning.message
+        );
     }
 
     println!("{}", String::from_utf8_lossy(&output));
@@ -104,6 +116,15 @@ pub struct OutputWarning {
 ```
 
 `path` is the OOXML part that produced the warning, such as `word/document.xml`.
+
+`OutputWarning` also exposes stable classification helpers:
+
+```rust
+warning.category().as_str(); // "parser", "data", ...
+warning.code().as_str(); // "W001", "W002", ...
+```
+
+The current CLI writes these warnings to stderr and keeps them out of JSON output.
 
 ### `XlsxCsvOptions`
 

@@ -3,8 +3,9 @@
 `oxdoc` is designed to be predictable in shell pipelines:
 
 - Extraction output goes to stdout.
-- Recoverable parser warnings go to stderr.
-- Hard failures exit non-zero and print `error: ...` to stderr.
+- Recoverable parser warnings go to stderr as `warning[<category>/<code>]: <path>: <message>`.
+- Hard failures exit with code `1` and print `error[<code>]: <message>` to stderr.
+- Clap usage errors keep their normal exit behavior and are not part of the runtime extraction contract.
 
 ## Global Help
 
@@ -51,6 +52,8 @@ Output shape:
   "text": "Plain text..."
 }
 ```
+
+Warnings are still written to stderr when JSON output is selected. They are not embedded in the JSON payload.
 
 ## Extract XLSX CSV
 

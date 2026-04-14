@@ -58,10 +58,10 @@ Fields other than `file` and `has_macros` are optional and omitted when unavaila
 
 ## Warnings
 
-Warnings are currently emitted to stderr, not embedded in CLI JSON output. Library consumers receive warnings in `Extraction<T>`.
+Warnings are emitted to stderr, not embedded in CLI JSON output. Library consumers receive warnings in `Extraction<T>`.
 
 Example warning:
 
 ```text
-warning: word/document.xml: stopped after malformed XML: ...
+warning[parser/W001]: word/document.xml: stopped after malformed XML: ...
 ```

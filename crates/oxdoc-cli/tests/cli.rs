@@ -7,19 +7,25 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
+#[path = "../../../tests/fixtures/mod.rs"]
+mod fixtures;
+
 #[test]
 fn extracts_text_to_stdout() {
-    let docx = sample_docx();
+    let docx = fixtures::build_package("docx/basic", "fixture.docx");
 
     let output = oxdoc(["extract", "text", docx.to_str().unwrap()]);
 
     assert!(output.status.success());
-    assert_eq!(stdout(output), "Hello CLI\n");
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("docx_basic_text.txt").trim_end()
+    );
 }
 
 #[test]
 fn extracts_text_as_json() {
-    let docx = sample_docx();
+    let docx = fixtures::build_package("docx/basic", "fixture.docx");
 
     let output = oxdoc([
         "extract",
@@ -28,33 +34,38 @@ fn extracts_text_as_json() {
         "--format",
         "json",
     ]);
-    let stdout = stdout(output);
 
-    assert!(stdout.contains("sample.docx"));
-    assert!(stdout.contains(r#""text": "Hello CLI\n""#));
+    assert!(output.status.success());
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("cli_extract_text_json.json").trim_end()
+    );
 }
 
 #[test]
 fn extracts_csv_to_stdout() {
-    let xlsx = sample_xlsx();
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
 
     let output = oxdoc([
         "extract",
         "csv",
         xlsx.to_str().unwrap(),
         "--sheet",
-        "Ventas Q1",
+        "Sales Q1",
         "--delimiter",
         ";",
     ]);
 
     assert!(output.status.success());
-    assert_eq!(stdout(output), "id;Cliente A\n1;5000\n");
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("cli_extract_csv.txt").trim_end()
+    );
 }
 
 #[test]
 fn rejects_invalid_delimiter() {
-    let xlsx = sample_xlsx();
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
 
     let output = oxdoc([
         "extract",
@@ -65,20 +76,44 @@ fn rejects_invalid_delimiter() {
     ]);
 
     assert!(!output.status.success());
-    assert!(stderr(output).contains("delimiter must be a single-byte character"));
+    assert!(stderr(&output).contains("delimiter must be a single-byte character"));
+}
+
+#[test]
+fn reports_missing_sheet_selection_as_runtime_error() {
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Missing",
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains("error[E003]: missing required OOXML part: sheet named Missing")
+    );
 }
 
 #[test]
 fn prints_info_as_json_and_text() {
-    let docx = sample_docx();
+    let pptx = fixtures::build_package("pptx/basic", "fixture.pptx");
 
-    let json = oxdoc(["info", docx.to_str().unwrap(), "--format", "json"]);
-    let text = oxdoc(["info", docx.to_str().unwrap(), "--format", "text"]);
+    let json = oxdoc(["info", pptx.to_str().unwrap(), "--format", "json"]);
+    let text = oxdoc(["info", pptx.to_str().unwrap(), "--format", "text"]);
 
     assert!(json.status.success());
-    assert!(stdout(json).contains(r#""author": "Ada""#));
+    assert_eq!(
+        stdout(&json).trim_end(),
+        fixtures::read_snapshot("pptx_basic_info.json").trim_end()
+    );
     assert!(text.status.success());
-    assert!(stdout(text).contains("author: Ada"));
+    assert_eq!(
+        stdout(&text).trim_end(),
+        fixtures::read_snapshot("cli_info_text.txt").trim_end()
+    );
 }
 
 #[test]
@@ -88,7 +123,63 @@ fn reports_missing_files() {
     let output = oxdoc(["extract", "text", missing.to_str().unwrap()]);
 
     assert!(!output.status.success());
-    assert!(stderr(output).contains("I/O error"));
+    assert!(stderr(&output).contains("I/O error"));
+}
+
+#[test]
+fn reports_suspicious_relationship_targets_on_stderr() {
+    let docx = fixtures::build_package("docx/external-target", "fixture.docx");
+
+    let output = oxdoc(["extract", "text", docx.to_str().unwrap()]);
+
+    assert!(!output.status.success());
+    assert_eq!(
+        stderr(&output).trim_end(),
+        format!(
+            "error[E007]: {}",
+            fixtures::read_snapshot("docx_external_target_error.txt").trim_end()
+        )
+    );
+}
+
+#[test]
+fn fixture_provenance_notes_are_present() {
+    let note = fixtures::read_provenance("docx-basic.md");
+
+    assert!(note.contains("Source:"));
+    assert!(note.contains("Redistribution:"));
+}
+
+#[test]
+fn keeps_json_output_clean_when_warnings_are_emitted() {
+    let docx = create_ooxml(
+        "malformed-json.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Hello JSON</w:t></w:r></w:p><"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stdout(&output).contains(r#""text": "Hello JSON\n""#));
+    assert!(
+        stderr(&output)
+            .contains("warning[parser/W001]: word/document.xml: stopped after malformed XML")
+    );
 }
 
 fn oxdoc<const N: usize>(args: [&str; N]) -> std::process::Output {
@@ -98,64 +189,12 @@ fn oxdoc<const N: usize>(args: [&str; N]) -> std::process::Output {
         .unwrap()
 }
 
-fn stdout(output: std::process::Output) -> String {
-    String::from_utf8(output.stdout).unwrap()
+fn stdout(output: &std::process::Output) -> String {
+    String::from_utf8(output.stdout.clone()).unwrap()
 }
 
-fn stderr(output: std::process::Output) -> String {
-    String::from_utf8(output.stderr).unwrap()
-}
-
-fn sample_docx() -> PathBuf {
-    create_ooxml(
-        "sample.docx",
-        &[
-            (
-                "_rels/.rels",
-                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
-            ),
-            (
-                "word/document.xml",
-                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Hello CLI</w:t></w:r></w:p></w:body></w:document>"#,
-            ),
-            (
-                "docProps/core.xml",
-                r#"<cp:coreProperties xmlns:cp="cp" xmlns:dc="dc" xmlns:dcterms="dcterms"><dc:creator>Ada</dc:creator><dcterms:created>2024-03-12T10:00:00Z</dcterms:created></cp:coreProperties>"#,
-            ),
-            (
-                "docProps/app.xml",
-                r#"<Properties><Application>TestOffice</Application><Words>2</Words></Properties>"#,
-            ),
-        ],
-    )
-}
-
-fn sample_xlsx() -> PathBuf {
-    create_ooxml(
-        "sample.xlsx",
-        &[
-            (
-                "_rels/.rels",
-                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
-            ),
-            (
-                "xl/workbook.xml",
-                r#"<workbook xmlns:r="r"><sheets><sheet name="Ventas Q1" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
-            ),
-            (
-                "xl/_rels/workbook.xml.rels",
-                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
-            ),
-            (
-                "xl/sharedStrings.xml",
-                r#"<sst><si><t>id</t></si><si><t>Cliente A</t></si></sst>"#,
-            ),
-            (
-                "xl/worksheets/sheet1.xml",
-                r#"<worksheet><sheetData><row><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row><c r="A2"><v>1</v></c><c r="B2"><v>5000</v></c></row></sheetData></worksheet>"#,
-            ),
-        ],
-    )
+fn stderr(output: &std::process::Output) -> String {
+    String::from_utf8(output.stderr.clone()).unwrap()
 }
 
 fn create_ooxml(name: &str, entries: &[(&str, &str)]) -> PathBuf {

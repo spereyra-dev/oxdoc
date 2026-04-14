@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use oxdoc_core::{DocumentInfo, OutputWarning, XlsxCsvOptions};
+use oxdoc_core::{DocumentInfo, OutputWarning, OxdocError, XlsxCsvOptions};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -61,13 +61,13 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("error: {err}");
-            ExitCode::FAILURE
+            eprintln!("error[{}]: {err}", err.code());
+            ExitCode::from(1)
         }
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
+fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -124,18 +124,79 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[derive(Debug)]
+enum CliError {
+    Core(OxdocError),
+    InvalidArgument(String),
+    Io(std::io::Error),
+    Json(serde_json::Error),
+}
+
+impl CliError {
+    fn code(&self) -> &'static str {
+        match self {
+            CliError::Core(err) => err.code().as_str(),
+            CliError::InvalidArgument(_) => "E010",
+            CliError::Io(_) => "E011",
+            CliError::Json(_) => "E012",
+        }
+    }
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CliError::Core(err) => write!(f, "{err}"),
+            CliError::InvalidArgument(message) => write!(f, "{message}"),
+            CliError::Io(err) => write!(f, "{err}"),
+            CliError::Json(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for CliError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CliError::Core(err) => Some(err),
+            CliError::InvalidArgument(_) => None,
+            CliError::Io(err) => Some(err),
+            CliError::Json(err) => Some(err),
+        }
+    }
+}
+
+impl From<OxdocError> for CliError {
+    fn from(value: OxdocError) -> Self {
+        CliError::Core(value)
+    }
+}
+
+impl From<serde_json::Error> for CliError {
+    fn from(value: serde_json::Error) -> Self {
+        CliError::Json(value)
+    }
+}
+
+impl From<std::io::Error> for CliError {
+    fn from(value: std::io::Error) -> Self {
+        CliError::Io(value)
+    }
+}
+
 #[derive(Debug, serde::Serialize)]
 struct TextPayload {
     file: String,
     text: String,
 }
 
-fn parse_delimiter(value: &str) -> Result<u8, String> {
+fn parse_delimiter(value: &str) -> Result<u8, CliError> {
     let bytes = value.as_bytes();
     if bytes.len() == 1 {
         Ok(bytes[0])
     } else {
-        Err("delimiter must be a single-byte character".to_owned())
+        Err(CliError::InvalidArgument(
+            "delimiter must be a single-byte character".to_owned(),
+        ))
     }
 }
 
@@ -148,7 +209,13 @@ fn display_file_name(path: &std::path::Path) -> String {
 
 fn emit_warnings(warnings: &[OutputWarning]) {
     for warning in warnings {
-        eprintln!("warning: {}: {}", warning.path, warning.message);
+        eprintln!(
+            "warning[{}/{}]: {}: {}",
+            warning.category().as_str(),
+            warning.code().as_str(),
+            warning.path,
+            warning.message
+        );
     }
 }
 
@@ -177,5 +244,34 @@ fn print_optional(label: &str, value: Option<&str>) {
 fn print_optional_u64(label: &str, value: Option<u64>) {
     if let Some(value) = value {
         println!("{label}: {value}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use super::CliError;
+
+    #[test]
+    fn cli_errors_expose_stable_codes_and_sources() {
+        let core = CliError::from(oxdoc_core::OxdocError::MissingPart(
+            "word/document.xml".to_owned(),
+        ));
+        let invalid = CliError::InvalidArgument("bad delimiter".to_owned());
+        let io = CliError::from(std::io::Error::other("disk"));
+        let json = CliError::from(serde_json::from_str::<serde_json::Value>("{").unwrap_err());
+
+        assert_eq!(core.code(), "E003");
+        assert!(core.source().is_some());
+        assert_eq!(invalid.code(), "E010");
+        assert_eq!(format!("{invalid}"), "bad delimiter");
+        assert!(invalid.source().is_none());
+        assert_eq!(io.code(), "E011");
+        assert_eq!(format!("{io}"), "disk");
+        assert!(io.source().is_some());
+        assert_eq!(json.code(), "E012");
+        assert!(format!("{json}").contains("EOF"));
+        assert!(json.source().is_some());
     }
 }

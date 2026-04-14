@@ -18,6 +18,10 @@ Include:
 ## Expectations
 
 - Malformed ZIP/XML input should return errors or warnings, not panic.
+- Required encrypted ZIP parts fail with `UnsupportedEncryptedPart`; password-protected Office documents are not decrypted.
+- Required ZIP parts fail before reading when their uncompressed size exceeds 64 MiB.
+- Required ZIP parts fail as suspicious when they are at least 4 MiB and their uncompressed-to-compressed ratio exceeds 200:1.
+- Relationship targets must stay inside the OOXML package root and must not use external URLs, URI schemes, Windows drive prefixes, NUL bytes, or backslashes.
 - Fuzzing targets should be added for high-risk parser paths.
 - Large inputs should not require loading the full document into memory unless explicitly documented.
 - Sensitive sample files should not be attached to public issues.

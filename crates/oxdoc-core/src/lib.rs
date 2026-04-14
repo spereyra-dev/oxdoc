@@ -9,6 +9,14 @@ use std::path::Path;
 
 pub use error::{OxdocError, Result};
 pub use models::{DocumentInfo, Extraction, OutputWarning, XlsxCsvOptions};
+#[doc(hidden)]
+pub use parsers::docx::fuzz_extract_text as fuzz_docx_text;
+#[doc(hidden)]
+pub use parsers::fuzz_parse_relationships as fuzz_relationships;
+#[doc(hidden)]
+pub use parsers::metadata::fuzz_parse_metadata as fuzz_metadata;
+#[doc(hidden)]
+pub use parsers::xlsx::{fuzz_parse_shared_strings, fuzz_parse_sheet};
 use parsers::{docx, metadata, xlsx};
 use vfs::OoxmlPackage;
 

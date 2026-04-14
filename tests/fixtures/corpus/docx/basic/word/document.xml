@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p>
+      <w:r><w:t>Alpha</w:t></w:r>
+      <w:r><w:tab/></w:r>
+      <w:r><w:t>Beta</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:r><w:t>Gamma &amp; Delta</w:t></w:r>
+    </w:p>
+  </w:body>
+</w:document>

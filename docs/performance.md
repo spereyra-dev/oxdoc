@@ -14,11 +14,17 @@ Performance is a core part of `oxdoc`, not an afterthought.
 
 | Area | Current behavior |
 | --- | --- |
-| ZIP access | Reads targeted entries through `zip::ZipArchive`. |
+| ZIP access | Reads targeted entries through `zip::ZipArchive` after encrypted-part, size, and compression-ratio guardrails. |
 | XML parsing | Uses `quick-xml` event readers. |
 | DOCX text | Builds a `String` result for the library API. |
 | XLSX CSV | Streams worksheet output to a caller-provided writer. |
 | Shared strings | Loaded into memory for MVP. |
+
+Default ZIP part guardrails:
+
+- Maximum uncompressed required part size: 64 MiB.
+- Compression ratio check: 200:1 once a part is at least 4 MiB uncompressed.
+- Encrypted required parts are rejected because `oxdoc` does not decrypt password-protected documents.
 
 ## Known MVP Tradeoff
 

@@ -265,6 +265,8 @@ See [docs/testing.md](docs/testing.md).
 
 `oxdoc` parses untrusted Office files. Malformed ZIP/XML input should return errors or warnings, not panic.
 
+Required OOXML ZIP parts are guarded before parsing: encrypted parts are rejected, oversized parts fail predictably, zip-bomb-like compression ratios are blocked, and relationship targets must stay inside the package root.
+
 Do not open public issues for security vulnerabilities. Use GitHub private vulnerability reporting or contact the maintainers privately through GitHub.
 
 See [SECURITY.md](SECURITY.md) and [docs/security.md](docs/security.md).
