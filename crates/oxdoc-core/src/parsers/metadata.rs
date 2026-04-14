@@ -86,6 +86,12 @@ fn parse_core<R: BufRead>(source: R, path: &str) -> Result<Extraction<CoreProps>
                     assign_core_value(&mut props, field, value);
                 }
             }
+            Ok(Event::CData(value)) => {
+                if let Some(field) = &current_field {
+                    let value = decode_xml_text(value.as_ref());
+                    assign_core_value(&mut props, field, value);
+                }
+            }
             Ok(Event::GeneralRef(value)) => {
                 if let Some(field) = &current_field {
                     assign_core_value(&mut props, field, decode_xml_reference(value.as_ref()));
@@ -131,6 +137,12 @@ fn parse_app<R: BufRead>(source: R, path: &str) -> Result<Extraction<AppProps>> 
                 }
             }
             Ok(Event::Text(value)) => {
+                if let Some(field) = &current_field {
+                    let value = decode_xml_text(value.as_ref());
+                    assign_app_value(&mut props, field, value);
+                }
+            }
+            Ok(Event::CData(value)) => {
                 if let Some(field) = &current_field {
                     let value = decode_xml_text(value.as_ref());
                     assign_app_value(&mut props, field, value);
@@ -287,5 +299,29 @@ mod tests {
         assert_eq!(result.value.word_count, None);
         assert_eq!(result.value.slide_count, Some(3));
         assert_eq!(result.warnings.len(), 1);
+    }
+
+    #[test]
+    fn parses_metadata_cdata_values() {
+        let core_xml = r#"
+            <cp:coreProperties xmlns:cp="cp" xmlns:dc="dc">
+              <dc:creator><![CDATA[Ada < Linus]]></dc:creator>
+            </cp:coreProperties>
+        "#;
+        let app_xml = r#"
+            <Properties>
+              <Application><![CDATA[LibreOffice < Writer]]></Application>
+            </Properties>
+        "#;
+
+        let core = parse_core(Cursor::new(core_xml.as_bytes()), "docProps/core.xml")
+            .unwrap()
+            .value;
+        let app = parse_app(Cursor::new(app_xml.as_bytes()), "docProps/app.xml")
+            .unwrap()
+            .value;
+
+        assert_eq!(core.author.as_deref(), Some("Ada < Linus"));
+        assert_eq!(app.application.as_deref(), Some("LibreOffice < Writer"));
     }
 }

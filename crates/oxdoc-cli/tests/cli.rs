@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde_json::Value;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -17,6 +18,7 @@ fn extracts_text_to_stdout() {
     let output = oxdoc(["extract", "text", docx.to_str().unwrap()]);
 
     assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
     assert_eq!(
         stdout(&output).trim_end(),
         fixtures::read_snapshot("docx_basic_text.txt").trim_end()
@@ -36,10 +38,15 @@ fn extracts_text_as_json() {
     ]);
 
     assert!(output.status.success());
-    assert_eq!(
-        stdout(&output).trim_end(),
-        fixtures::read_snapshot("cli_extract_text_json.json").trim_end()
-    );
+    assert!(stderr(&output).is_empty());
+
+    let actual_stdout = stdout(&output);
+    let expected_snapshot = fixtures::read_snapshot("cli_extract_text_json.json");
+    let actual: Value = serde_json::from_str(&actual_stdout).unwrap();
+    let expected: Value = serde_json::from_str(&expected_snapshot).unwrap();
+
+    assert_eq!(actual, expected);
+    assert_eq!(actual_stdout.trim_end(), expected_snapshot.trim_end());
 }
 
 #[test]
@@ -57,6 +64,7 @@ fn extracts_csv_to_stdout() {
     ]);
 
     assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
     assert_eq!(
         stdout(&output).trim_end(),
         fixtures::read_snapshot("cli_extract_csv.txt").trim_end()
@@ -76,6 +84,7 @@ fn rejects_invalid_delimiter() {
     ]);
 
     assert!(!output.status.success());
+    assert!(stdout(&output).is_empty());
     assert!(stderr(&output).contains("delimiter must be a single-byte character"));
 }
 
@@ -92,6 +101,7 @@ fn reports_missing_sheet_selection_as_runtime_error() {
     ]);
 
     assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).is_empty());
     assert!(
         stderr(&output).contains("error[E003]: missing required OOXML part: sheet named Missing")
     );
@@ -105,11 +115,16 @@ fn prints_info_as_json_and_text() {
     let text = oxdoc(["info", pptx.to_str().unwrap(), "--format", "text"]);
 
     assert!(json.status.success());
-    assert_eq!(
-        stdout(&json).trim_end(),
-        fixtures::read_snapshot("pptx_basic_info.json").trim_end()
-    );
+    assert!(stderr(&json).is_empty());
+    let actual_stdout = stdout(&json);
+    let expected_snapshot = fixtures::read_snapshot("pptx_basic_info.json");
+    let actual: Value = serde_json::from_str(&actual_stdout).unwrap();
+    let expected: Value = serde_json::from_str(&expected_snapshot).unwrap();
+    assert_eq!(actual, expected);
+    assert_eq!(actual_stdout.trim_end(), expected_snapshot.trim_end());
+
     assert!(text.status.success());
+    assert!(stderr(&text).is_empty());
     assert_eq!(
         stdout(&text).trim_end(),
         fixtures::read_snapshot("cli_info_text.txt").trim_end()
@@ -123,7 +138,19 @@ fn reports_missing_files() {
     let output = oxdoc(["extract", "text", missing.to_str().unwrap()]);
 
     assert!(!output.status.success());
+    assert!(stdout(&output).is_empty());
     assert!(stderr(&output).contains("I/O error"));
+}
+
+#[test]
+fn rejects_missing_required_file_argument() {
+    let output = oxdoc(["extract", "text"]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("the following required arguments were not provided"));
+    assert!(stderr(&output).contains("Usage: oxdoc"));
+    assert!(stderr(&output).contains("extract text <FILE>"));
 }
 
 #[test]
