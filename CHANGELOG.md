@@ -13,4 +13,4 @@ The format is based on human-readable release notes. This project has not publis
 - XLSX CSV extraction with shared strings and sparse cell padding.
 - Metadata extraction from `docProps/core.xml` and `docProps/app.xml`.
 - Basic CI, Makefile, and OSS project files.
-
+- Docsify documentation site with usage, architecture, API, testing, roadmap, and security pages.

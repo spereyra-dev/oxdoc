@@ -2,7 +2,7 @@ CARGO ?= cargo
 TARGET ?=
 TARGET_FLAG := $(if $(TARGET),--target $(TARGET),)
 
-.PHONY: all fmt lint test build release musl clean
+.PHONY: all fmt lint test build release musl docs clean
 
 all: fmt lint test build
 
@@ -24,6 +24,8 @@ release:
 musl:
 	$(CARGO) build --workspace --release --target x86_64-unknown-linux-musl
 
+docs:
+	npx docsify-cli@4 serve docs --port 3000
+
 clean:
 	$(CARGO) clean
-

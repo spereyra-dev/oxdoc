@@ -1,0 +1,12 @@
+{
+  "name": "oxdoc-docs",
+  "private": true,
+  "description": "Docsify documentation tooling for oxdoc",
+  "scripts": {
+    "docs": "docsify serve docs --port 3000",
+    "docs:serve": "docsify serve docs --port 3000"
+  },
+  "devDependencies": {
+    "docsify-cli": "^4.4.4"
+  }
+}
