@@ -16,6 +16,27 @@ The MVP parser:
 - Omits text inside deleted revision ranges (`<w:del>`) and keeps inserted revision text (`<w:ins>`).
 - Emits recoverable malformed XML issues as warnings with partial text when possible.
 
+## Logical Text Contract
+
+`oxdoc` emits useful plain text, not rendered Word layout. The current contract is:
+
+| DOCX construct | Output behavior |
+| --- | --- |
+| Paragraphs | A single `\n` is emitted at the end of each paragraph that closes outside a table cell. Empty paragraphs collapse with adjacent line breaks instead of producing repeated blank lines. |
+| Table cells | Cells in the same row are separated with `\t`. |
+| Table rows | Completed rows are separated with `\n`. |
+| Multiple paragraphs inside one table cell | Paragraphs are joined with one space before the next cell separator. |
+| Nested tables | Nested table text is flattened into the containing cell while preserving the outer row shape. |
+| Tabs | `<w:tab/>` emits `\t`. |
+| Line and carriage breaks | `<w:br/>` and `<w:cr/>` emit `\n`. |
+| Lists | Numbering and bullet markers are not synthesized from `w:numPr`; only literal run text is emitted. |
+| Inserted revisions | Text inside `<w:ins>` is emitted. |
+| Deleted revisions | Text inside `<w:del>` is omitted. |
+| Fields | Field instructions such as `<w:instrText>` are omitted; visible cached/result text in `<w:t>` is emitted. |
+| Hidden text | Hidden run properties such as `<w:vanish/>` are not interpreted yet, so hidden `<w:t>` text is emitted when present in `word/document.xml`. |
+
+These rules are intentionally stable for scripts. Breaking changes to this contract should be called out before a 1.0 release.
+
 ## Example
 
 ```bash
@@ -49,7 +70,7 @@ oxdoc extract text contrato.docx --format json
 - Comments.
 - Hyperlink text.
 - Text boxes and drawing text.
-- More detailed revision semantics outside deleted and inserted text.
+- Optional policy controls for hidden text, generated list markers, and more detailed revision semantics.
 
 ## Non-Goals
 
