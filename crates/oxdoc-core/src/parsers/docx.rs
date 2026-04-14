@@ -327,4 +327,32 @@ mod tests {
 
         assert_eq!(result.value, "Keep inserted\n");
     }
+
+    #[test]
+    fn keeps_field_results_omits_list_markers_and_includes_hidden_runs() {
+        let xml = r#"
+            <w:document xmlns:w="w">
+              <w:body>
+                <w:p>
+                  <w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>
+                  <w:r><w:t>List item</w:t></w:r>
+                </w:p>
+                <w:p>
+                  <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+                  <w:r><w:instrText>DATE</w:instrText></w:r>
+                  <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+                  <w:r><w:t>2026-04-14</w:t></w:r>
+                  <w:r><w:fldChar w:fldCharType="end"/></w:r>
+                </w:p>
+                <w:p>
+                  <w:r><w:rPr><w:vanish/></w:rPr><w:t>Hidden text</w:t></w:r>
+                </w:p>
+              </w:body>
+            </w:document>
+        "#;
+
+        let result = extract_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+
+        assert_eq!(result.value, "List item\n2026-04-14\nHidden text\n");
+    }
 }
