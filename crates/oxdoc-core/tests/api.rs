@@ -33,6 +33,7 @@ fn extracts_xlsx_csv_through_public_api() {
         &file,
         XlsxCsvOptions {
             sheet_name: Some("Sales Q1"),
+            sheet_index: None,
             delimiter: b',',
         },
         &mut csv,
@@ -109,6 +110,7 @@ fn extracts_xlsx_csv_with_boolean_error_blank_and_empty_row_cells() {
         &file,
         XlsxCsvOptions {
             sheet_name: Some("Mixed"),
+            sheet_index: None,
             delimiter: b',',
         },
         &mut csv,
@@ -147,13 +149,113 @@ fn reports_missing_requested_xlsx_sheet() {
         &file,
         XlsxCsvOptions {
             sheet_name: Some("Missing"),
+            sheet_index: None,
             delimiter: b',',
         },
         &mut csv,
     )
     .unwrap_err();
 
-    assert!(matches!(err, OxdocError::MissingPart(part) if part == "sheet named Missing"));
+    assert!(matches!(err, OxdocError::MissingPart(part) if part == "visible sheet named Missing"));
+}
+
+#[test]
+fn extracts_xlsx_csv_by_visible_sheet_index() {
+    let file = create_ooxml(
+        "sheet-index.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Hidden" sheetId="1" state="hidden" r:id="rId1"/><sheet name="First Visible" sheetId="2" r:id="rId2"/><sheet name="Second Visible" sheetId="3" r:id="rId3"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/hidden.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId3" Type="worksheet" Target="worksheets/sheet2.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/hidden.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>hidden</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>first</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet2.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>second</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let mut csv = Vec::new();
+
+    oxdoc_core::extract_xlsx_csv(
+        &file,
+        XlsxCsvOptions {
+            sheet_name: None,
+            sheet_index: Some(2),
+            delimiter: b',',
+        },
+        &mut csv,
+    )
+    .unwrap();
+
+    assert_eq!(String::from_utf8(csv).unwrap(), "second\n");
+}
+
+#[test]
+fn reports_invalid_xlsx_sheet_selection_combinations() {
+    let file = create_ooxml(
+        "duplicate-sheets.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Dup" sheetId="1" r:id="rId1"/><sheet name="Dup" sheetId="2" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/sheet2.xml"/></Relationships>"#,
+            ),
+            ("xl/worksheets/sheet1.xml", r#"<worksheet/>"#),
+            ("xl/worksheets/sheet2.xml", r#"<worksheet/>"#),
+        ],
+    );
+    let mut csv = Vec::new();
+
+    let err = oxdoc_core::extract_xlsx_csv(
+        &file,
+        XlsxCsvOptions {
+            sheet_name: Some("Dup"),
+            sheet_index: None,
+            delimiter: b',',
+        },
+        &mut csv,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, OxdocError::InvalidArgument(message) if message.contains("multiple visible sheets named Dup"))
+    );
+
+    let err = oxdoc_core::extract_xlsx_csv(
+        &file,
+        XlsxCsvOptions {
+            sheet_name: Some("Dup"),
+            sheet_index: Some(1),
+            delimiter: b',',
+        },
+        &mut csv,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, OxdocError::InvalidArgument(message) if message.contains("by name or index"))
+    );
 }
 
 #[test]

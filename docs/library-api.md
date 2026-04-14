@@ -47,6 +47,7 @@ fn main() -> oxdoc_core::Result<()> {
         "data.xlsx",
         XlsxCsvOptions {
             sheet_name: Some("Ventas Q1"),
+            sheet_index: None,
             delimiter: b',',
         },
         &mut output,
@@ -131,15 +132,21 @@ The current CLI writes these warnings to stderr and keeps them out of JSON outpu
 ```rust
 pub struct XlsxCsvOptions<'a> {
     pub sheet_name: Option<&'a str>,
+    pub sheet_index: Option<usize>,
     pub delimiter: u8,
 }
 ```
+
+`sheet_name` selects a visible workbook sheet by name. `sheet_index` selects a visible workbook sheet by 1-based workbook order. Set at most one selector; when both are `None`, extraction uses the first visible sheet.
+
+Hidden and very hidden sheets are skipped by selection. Duplicate visible sheet names return an invalid-argument error so callers can retry with `sheet_index`.
 
 Defaults:
 
 ```rust
 XlsxCsvOptions {
     sheet_name: None,
+    sheet_index: None,
     delimiter: b',',
 }
 ```

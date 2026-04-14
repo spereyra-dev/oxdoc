@@ -15,6 +15,7 @@ use crate::{OxdocError, Result};
 struct WorkbookSheet {
     name: String,
     relation_id: String,
+    visible: bool,
 }
 
 #[derive(Debug, Default)]
@@ -39,7 +40,7 @@ pub(crate) fn write_csv<R: Read + Seek, W: Write>(
     let workbook_rels_xml = package.read_to_string(&workbook_rels_path)?;
     let workbook_rels = parse_relationship_map(&workbook_rels_xml, &workbook_rels_path)?;
 
-    let selected_sheet = select_sheet(&workbook.value, options.sheet_name)?;
+    let selected_sheet = select_sheet(&workbook.value, options.sheet_name, options.sheet_index)?;
     let target = workbook_rels
         .get(&selected_sheet.relation_id)
         .ok_or_else(|| OxdocError::MissingPart(selected_sheet.relation_id.clone()))?;
@@ -78,17 +79,49 @@ pub(crate) fn write_csv<R: Read + Seek, W: Write>(
 fn select_sheet<'a>(
     sheets: &'a [WorkbookSheet],
     sheet_name: Option<&str>,
+    sheet_index: Option<usize>,
 ) -> Result<&'a WorkbookSheet> {
+    if sheet_name.is_some() && sheet_index.is_some() {
+        return Err(OxdocError::InvalidArgument(
+            "select an XLSX sheet by name or index, not both".to_owned(),
+        ));
+    }
+
     if let Some(sheet_name) = sheet_name {
+        let mut matches = sheets
+            .iter()
+            .filter(|sheet| sheet.visible && sheet.name == sheet_name);
+        let selected = matches
+            .next()
+            .ok_or_else(|| OxdocError::MissingPart(format!("visible sheet named {sheet_name}")))?;
+
+        if matches.next().is_some() {
+            return Err(OxdocError::InvalidArgument(format!(
+                "multiple visible sheets named {sheet_name}; use sheet index to disambiguate"
+            )));
+        }
+
+        return Ok(selected);
+    }
+
+    if let Some(sheet_index) = sheet_index {
+        if sheet_index == 0 {
+            return Err(OxdocError::InvalidArgument(
+                "sheet index must be 1 or greater".to_owned(),
+            ));
+        }
+
         return sheets
             .iter()
-            .find(|sheet| sheet.name == sheet_name)
-            .ok_or_else(|| OxdocError::MissingPart(format!("sheet named {sheet_name}")));
+            .filter(|sheet| sheet.visible)
+            .nth(sheet_index - 1)
+            .ok_or_else(|| OxdocError::MissingPart(format!("visible sheet index {sheet_index}")));
     }
 
     sheets
-        .first()
-        .ok_or_else(|| OxdocError::MissingPart("xl/workbook.xml sheets".to_owned()))
+        .iter()
+        .find(|sheet| sheet.visible)
+        .ok_or_else(|| OxdocError::MissingPart("visible workbook sheets".to_owned()))
 }
 
 fn parse_workbook_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<WorkbookSheet>>> {
@@ -103,9 +136,11 @@ fn parse_workbook_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<Workboo
             Ok(Event::Start(element)) | Ok(Event::Empty(element)) => {
                 if name_eq(element.name().as_ref(), b"sheet") {
                     match (attr_value(&element, b"name"), attr_value(&element, b"id")) {
-                        (Some(name), Some(relation_id)) => {
-                            sheets.push(WorkbookSheet { name, relation_id });
-                        }
+                        (Some(name), Some(relation_id)) => sheets.push(WorkbookSheet {
+                            name,
+                            relation_id,
+                            visible: is_visible_sheet_state(attr_value(&element, b"state")),
+                        }),
                         _ => warnings.push(OutputWarning::ignored_workbook_sheet(path)),
                     }
                 }
@@ -121,6 +156,12 @@ fn parse_workbook_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<Workboo
     }
 
     Ok(Extraction::with_warnings(sheets, warnings))
+}
+
+fn is_visible_sheet_state(state: Option<String>) -> bool {
+    !state.is_some_and(|state| {
+        state.eq_ignore_ascii_case("hidden") || state.eq_ignore_ascii_case("veryHidden")
+    })
 }
 
 fn parse_shared_strings<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<String>>> {
@@ -411,6 +452,8 @@ fn write_csv_field<W: Write>(writer: &mut W, value: &str, delimiter: u8) -> Resu
 mod tests {
     use std::io::Cursor;
 
+    use crate::OxdocError;
+
     use super::{
         parse_cell_column, parse_shared_strings, parse_workbook_sheets, select_sheet,
         write_sheet_csv,
@@ -430,6 +473,7 @@ mod tests {
 
         assert_eq!(result.value[0].name, "Ventas Q1");
         assert_eq!(result.value[0].relation_id, "rId1");
+        assert!(result.value[0].visible);
     }
 
     #[test]
@@ -544,9 +588,85 @@ mod tests {
 
         assert_eq!(sheets.value.len(), 1);
         assert_eq!(sheets.warnings.len(), 1);
-        assert_eq!(select_sheet(&sheets.value, None).unwrap().name, "B");
-        assert!(select_sheet(&sheets.value, Some("missing")).is_err());
-        assert!(select_sheet(&[], None).is_err());
+        assert_eq!(select_sheet(&sheets.value, None, None).unwrap().name, "B");
+
+        let err = select_sheet(&sheets.value, Some("missing"), None).unwrap_err();
+        assert!(
+            matches!(err, OxdocError::MissingPart(part) if part == "visible sheet named missing")
+        );
+
+        let err = select_sheet(&sheets.value, Some("B"), Some(1)).unwrap_err();
+        assert!(
+            matches!(err, OxdocError::InvalidArgument(message) if message.contains("by name or index"))
+        );
+
+        let err = select_sheet(&sheets.value, None, Some(0)).unwrap_err();
+        assert!(
+            matches!(err, OxdocError::InvalidArgument(message) if message.contains("1 or greater"))
+        );
+
+        let err = select_sheet(&[], None, None).unwrap_err();
+        assert!(matches!(err, OxdocError::MissingPart(part) if part == "visible workbook sheets"));
+    }
+
+    #[test]
+    fn selects_visible_workbook_sheets_by_one_based_index() {
+        let sheets = parse_workbook_sheets(
+            r#"
+            <workbook xmlns:r="r">
+              <sheets>
+                <sheet name="Hidden" sheetId="1" state="hidden" r:id="rId1"/>
+                <sheet name="Visible A" sheetId="2" state="visible" r:id="rId2"/>
+                <sheet name="Very Hidden" sheetId="3" state="veryHidden" r:id="rId3"/>
+                <sheet name="Visible B" sheetId="4" r:id="rId4"/>
+              </sheets>
+            </workbook>
+            "#,
+            "xl/workbook.xml",
+        )
+        .unwrap();
+
+        assert_eq!(
+            select_sheet(&sheets.value, None, None).unwrap().name,
+            "Visible A"
+        );
+        assert_eq!(
+            select_sheet(&sheets.value, None, Some(1)).unwrap().name,
+            "Visible A"
+        );
+        assert_eq!(
+            select_sheet(&sheets.value, None, Some(2)).unwrap().name,
+            "Visible B"
+        );
+
+        let err = select_sheet(&sheets.value, Some("Hidden"), None).unwrap_err();
+        assert!(
+            matches!(err, OxdocError::MissingPart(part) if part == "visible sheet named Hidden")
+        );
+
+        let err = select_sheet(&sheets.value, None, Some(3)).unwrap_err();
+        assert!(matches!(err, OxdocError::MissingPart(part) if part == "visible sheet index 3"));
+    }
+
+    #[test]
+    fn rejects_duplicate_visible_sheet_names() {
+        let sheets = parse_workbook_sheets(
+            r#"
+            <workbook xmlns:r="r">
+              <sheets>
+                <sheet name="Dup" sheetId="1" r:id="rId1"/>
+                <sheet name="Dup" sheetId="2" r:id="rId2"/>
+              </sheets>
+            </workbook>
+            "#,
+            "xl/workbook.xml",
+        )
+        .unwrap();
+
+        let err = select_sheet(&sheets.value, Some("Dup"), None).unwrap_err();
+        assert!(
+            matches!(err, OxdocError::InvalidArgument(message) if message.contains("multiple visible sheets named Dup"))
+        );
     }
 
     #[test]

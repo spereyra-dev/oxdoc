@@ -58,7 +58,7 @@ Warnings are still written to stderr when JSON output is selected. They are not 
 ## Extract XLSX CSV
 
 ```bash
-oxdoc extract csv <FILE> [--sheet <NAME>] [--delimiter <CHAR>]
+oxdoc extract csv <FILE> [--sheet <NAME>|--sheet-index <INDEX>] [--delimiter <CHAR>]
 ```
 
 Arguments:
@@ -71,13 +71,20 @@ Options:
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--sheet <NAME>` | first workbook sheet | Visible workbook sheet name to extract. |
+| `--sheet <NAME>` | first visible workbook sheet | Visible workbook sheet name to extract. Mutually exclusive with `--sheet-index`. |
+| `--sheet-index <INDEX>` | first visible workbook sheet | 1-based visible workbook sheet index to extract. Mutually exclusive with `--sheet`. |
 | `--delimiter <CHAR>` | `,` | Single-byte CSV delimiter. |
 
 Example:
 
 ```bash
 oxdoc extract csv data.xlsx --sheet "Ventas Q1" --delimiter ","
+```
+
+Index example:
+
+```bash
+oxdoc extract csv data.xlsx --sheet-index 2
 ```
 
 Output:
@@ -90,9 +97,11 @@ id,nombre,monto
 Notes:
 
 - Sparse cells are padded with empty CSV fields.
-- Shared strings and inline strings are supported in the MVP.
+- Shared strings, inline strings, booleans, error cells, and cached formula values are supported.
 - CSV fields are quoted when they contain the delimiter, quotes, or line breaks.
 - The delimiter must be a single-byte character.
+- Hidden and very hidden sheets are skipped by default and by both sheet selectors.
+- Duplicate visible sheet names are rejected; use `--sheet-index` to disambiguate malformed workbooks.
 
 ## Read Metadata
 

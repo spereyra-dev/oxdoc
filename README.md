@@ -107,6 +107,12 @@ Output shape:
 oxdoc extract csv data.xlsx --sheet "Ventas Q1" --delimiter ","
 ```
 
+Select by visible sheet order instead:
+
+```bash
+oxdoc extract csv data.xlsx --sheet-index 2
+```
+
 Output:
 
 ```csv
@@ -117,7 +123,11 @@ id,nombre,monto
 Notes:
 
 - `--sheet` selects a visible workbook sheet name.
-- If `--sheet` is omitted, the first workbook sheet is used.
+- `--sheet-index` selects a visible workbook sheet by 1-based workbook order.
+- `--sheet` and `--sheet-index` are mutually exclusive.
+- Hidden and very hidden sheets are skipped by selection.
+- Duplicate visible sheet names are rejected; use `--sheet-index` to disambiguate malformed workbooks.
+- If no selector is provided, the first visible workbook sheet is used.
 - `--delimiter` must be a single-byte character.
 - CSV fields are quoted when needed.
 - Sparse cells are padded with empty CSV fields.
@@ -196,7 +206,7 @@ The command-line application. It owns:
 | Area | Supported now |
 | --- | --- |
 | DOCX text | Main document text from `<w:t>`, paragraph breaks, tabs, and line breaks. |
-| XLSX CSV | Workbook relationship lookup, sheet name selection, shared strings, inline strings, sparse cells, CSV escaping. |
+| XLSX CSV | Workbook relationship lookup, visible sheet name/index selection, shared strings, inline strings, sparse cells, booleans, errors, cached formula values, CSV escaping. |
 | Metadata | Core/app properties plus basic macro detection. |
 | Output | Plain text, CSV, JSON metadata, JSON DOCX text. |
 | Errors | Typed library errors, CLI non-zero hard failures. |
@@ -206,7 +216,7 @@ The command-line application. It owns:
 
 - DOCX headers, footers, footnotes, comments, and hyperlink details are planned but not complete.
 - XLSX shared strings are loaded into memory in the MVP.
-- XLSX date, boolean, error, and cached formula interpretation need hardening.
+- XLSX date and number format interpretation need hardening.
 - PPTX text extraction is planned but not implemented yet.
 - The public Rust API is not stable before 1.0.
 
