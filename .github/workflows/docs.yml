@@ -24,8 +24,15 @@ jobs:
           node-version: 24
       - name: Check docsify site
         run: |
-          npx docsify-cli@4 serve docs --port 3000 > /tmp/oxdoc-docs.log 2>&1 &
+          set -euo pipefail
+          npx --yes docsify-cli@4 serve docs --port 3000 > /tmp/oxdoc-docs.log 2>&1 &
           server_pid=$!
-          trap 'kill $server_pid' EXIT
-          sleep 5
-          curl --fail --silent http://127.0.0.1:3000/ | grep "oxdoc documentation"
+          trap 'kill $server_pid 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/ > /tmp/oxdoc-docs.html; then
+              break
+            fi
+            sleep 1
+          done
+          cat /tmp/oxdoc-docs.log
+          grep "oxdoc documentation" /tmp/oxdoc-docs.html
