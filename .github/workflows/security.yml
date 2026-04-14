@@ -1,0 +1,41 @@
+name: security
+
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - Cargo.toml
+      - crates/**/Cargo.toml
+      - .github/dependabot.yml
+      - .github/workflows/security.yml
+      - SECURITY.md
+      - docs/security.md
+  push:
+    branches: [main]
+    paths:
+      - Cargo.lock
+      - Cargo.toml
+      - crates/**/Cargo.toml
+      - .github/dependabot.yml
+      - .github/workflows/security.yml
+      - SECURITY.md
+      - docs/security.md
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rustsec:
+    name: RustSec advisory scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Audit Cargo.lock
+        run: cargo audit
