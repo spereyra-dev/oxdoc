@@ -23,3 +23,4 @@ The format is based on human-readable release notes. This project has not publis
 - `make ci-rust` for a local Rust gate aligned with GitHub Actions plus clearer contributor workflow docs.
 - `Read + Seek` library entry points for DOCX text, XLSX CSV, and OOXML metadata extraction.
 - Documented DOCX logical text semantics with parser tests for list, field, and hidden text policy.
+- Manual GitHub Release workflow for Linux, macOS, Windows, musl Linux, and SHA256 checksum artifacts.
