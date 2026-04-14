@@ -17,3 +17,4 @@ The format is based on human-readable release notes. This project has not publis
 - Makefile and CI coverage gate with `cargo-llvm-cov` at 95% line coverage.
 - XLSX CSV visible sheet selection by name or 1-based index, with explicit hidden-sheet and duplicate-name behavior.
 - Crate-local READMEs, core API examples, and crates.io dry-run publishing guidance.
+- Versioned JSON schemas for `info` and `extract text` machine-readable output.
