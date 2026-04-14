@@ -190,6 +190,59 @@ fn reports_missing_sheet_selection_as_runtime_error() {
 }
 
 #[test]
+fn reports_missing_visible_sheet_index_as_runtime_error() {
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet-index",
+        "99",
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).is_empty());
+    assert!(
+        stderr(&output)
+            .contains("error[E003]: missing required OOXML part: visible sheet index 99")
+    );
+}
+
+#[test]
+fn rejects_duplicate_visible_sheet_names_as_runtime_error() {
+    let xlsx = create_ooxml(
+        "duplicate-visible-sheets.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Dup" sheetId="1" r:id="rId1"/><sheet name="Dup" sheetId="2" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/sheet2.xml"/></Relationships>"#,
+            ),
+            ("xl/worksheets/sheet1.xml", r#"<worksheet/>"#),
+            ("xl/worksheets/sheet2.xml", r#"<worksheet/>"#),
+        ],
+    );
+
+    let output = oxdoc(["extract", "csv", xlsx.to_str().unwrap(), "--sheet", "Dup"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).is_empty());
+    assert!(
+        stderr(&output)
+            .contains("error[E010]: invalid argument: multiple visible sheets named Dup")
+    );
+    assert!(stderr(&output).contains("use sheet index to disambiguate"));
+}
+
+#[test]
 fn prints_info_as_json_and_text() {
     let pptx = fixtures::build_package("pptx/basic", "fixture.pptx");
 
@@ -260,6 +313,74 @@ fn fixture_provenance_notes_are_present() {
 }
 
 #[test]
+fn keeps_csv_stdout_clean_when_xlsx_warnings_are_emitted() {
+    let xlsx = create_ooxml(
+        "xlsx-warnings.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet sheetId="1" r:id="ignored"/><sheet name="Data" sheetId="2" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>kept</v></c></row><"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc(["extract", "csv", xlsx.to_str().unwrap(), "--sheet", "Data"]);
+
+    assert!(output.status.success());
+    assert_eq!(stdout(&output), "kept\n");
+    assert!(
+        stderr(&output).contains("warning[data/W002]: xl/workbook.xml: ignored workbook sheet")
+    );
+    assert!(
+        stderr(&output).contains(
+            "warning[parser/W001]: xl/worksheets/sheet1.xml: stopped after malformed XML"
+        )
+    );
+}
+
+#[test]
+fn keeps_info_json_stdout_clean_when_metadata_warnings_are_emitted() {
+    let docx = create_ooxml(
+        "metadata-warning.docx",
+        &[(
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="cp" xmlns:dc="dc"><dc:creator>Ada</dc:creator><"#,
+        )],
+    );
+
+    let output = oxdoc(["info", docx.to_str().unwrap(), "--format", "json"]);
+
+    assert!(output.status.success());
+    let actual_stdout = stdout(&output);
+    let actual: Value = serde_json::from_str(&actual_stdout).unwrap();
+    assert!(
+        actual["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("metadata-warning.docx")
+    );
+    assert_eq!(actual["author"], "Ada");
+    assert_eq!(actual["has_macros"], false);
+    assert!(!actual_stdout.contains("warning["));
+    assert!(
+        stderr(&output)
+            .contains("warning[parser/W001]: docProps/core.xml: stopped after malformed XML")
+    );
+}
+
+#[test]
 fn keeps_json_output_clean_when_warnings_are_emitted() {
     let docx = create_ooxml(
         "malformed-json.docx",
@@ -284,7 +405,10 @@ fn keeps_json_output_clean_when_warnings_are_emitted() {
     ]);
 
     assert!(output.status.success());
-    assert!(stdout(&output).contains(r#""text": "Hello JSON\n""#));
+    let actual_stdout = stdout(&output);
+    let actual: Value = serde_json::from_str(&actual_stdout).unwrap();
+    assert_eq!(actual["text"], "Hello JSON\n");
+    assert!(!actual_stdout.contains("warning["));
     assert!(
         stderr(&output)
             .contains("warning[parser/W001]: word/document.xml: stopped after malformed XML")
