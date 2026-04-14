@@ -1,3 +1,21 @@
+//! Core OOXML extraction APIs for `oxdoc`.
+//!
+//! This crate reads Office Open XML packages without rendering them. It exposes
+//! path-based helpers for DOCX text extraction, XLSX-to-CSV extraction, and
+//! package metadata. Extraction returns useful output plus recoverable warnings,
+//! while unrecoverable package and parser failures are returned as typed errors.
+//!
+//! ```no_run
+//! # fn demo() -> oxdoc_core::Result<()> {
+//! let extraction = oxdoc_core::extract_docx_text("contract.docx")?;
+//! println!("{}", extraction.value);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! The public API is pre-1.0 and may change while the project hardens parser
+//! behavior and streaming boundaries.
+
 mod error;
 pub mod models;
 mod parsers;

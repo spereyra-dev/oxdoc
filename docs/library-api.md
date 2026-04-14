@@ -6,6 +6,8 @@ The API is early and may change before the first stable release.
 
 ## Public Functions
 
+Runnable examples live under `crates/oxdoc-core/examples/` and are compiled by the standard workspace test target.
+
 ### `extract_docx_text`
 
 ```rust

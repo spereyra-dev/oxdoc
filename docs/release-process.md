@@ -20,6 +20,32 @@ After 1.0, use semantic versioning:
 - Minor: compatible new functionality.
 - Major: breaking CLI or API changes.
 
+## Crates.io Publishing
+
+The intended crates.io plan is to publish both crates once the pre-1.0 API and CLI contracts are ready for external consumers:
+
+- Publish `oxdoc-core` first because it is the library crate.
+- Publish `oxdoc-cli` second because it depends on the matching `oxdoc-core` version.
+- Keep the CLI binary name as `oxdoc`, even though the crate package is `oxdoc-cli`.
+- Keep crate READMEs focused on package-specific installation and API/CLI usage.
+
+Before publishing, run dry-runs from a clean checkout:
+
+```bash
+cargo publish -p oxdoc-core --dry-run
+cargo publish -p oxdoc-cli --dry-run
+```
+
+If `oxdoc-core` has not been published yet, the `oxdoc-cli` dry-run may fail registry resolution during verification. In that case, publish `oxdoc-core` first, then rerun the `oxdoc-cli` dry-run before publishing the CLI crate.
+
+Both crates must keep:
+
+- MIT licensing through package metadata.
+- A crate-local `README.md`.
+- Package include lists that avoid publishing workspace-only integration fixtures.
+- Version numbers aligned when the CLI depends on a new core API.
+- Release notes that call out breaking API or CLI behavior before 1.0.
+
 ## Binary Artifacts
 
 Planned release artifacts:
@@ -28,10 +54,6 @@ Planned release artifacts:
 - Linux musl x86_64.
 - macOS x86_64 and arm64.
 - Windows x86_64.
-
-## Crates.io
-
-Publishing `oxdoc-core` and `oxdoc-cli` to crates.io should wait until the public API and CLI behavior are less volatile.
 
 ## Changelog
 
