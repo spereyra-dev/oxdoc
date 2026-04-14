@@ -1,8 +1,15 @@
 [package]
 name = "oxdoc-core"
 version = "0.1.0"
+authors.workspace = true
+description = "Core OOXML parsing library for oxdoc"
 edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 license.workspace = true
+readme.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
@@ -10,4 +17,3 @@ quick-xml.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 zip.workspace = true
-

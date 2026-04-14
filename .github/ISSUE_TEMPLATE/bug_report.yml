@@ -1,0 +1,61 @@
+name: Bug report
+description: Report incorrect extraction, parser warnings, or crashes.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not attach private or sensitive documents.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: `oxdoc --version` output or commit SHA.
+    validations:
+      required: true
+  - type: dropdown
+    id: file_type
+    attributes:
+      label: File type
+      options:
+        - docx
+        - xlsx
+        - pptx
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      render: shell
+      description: The exact command you ran.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected output
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual output
+      description: Include stdout, stderr, warnings, or panic output.
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sample file
+      description: Link or attach a minimal file only if it is safe to redistribute.
+

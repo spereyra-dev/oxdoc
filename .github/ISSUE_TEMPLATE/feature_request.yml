@@ -1,0 +1,44 @@
+name: Feature request
+description: Propose a focused extractor feature or API improvement.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `oxdoc` extracts data from OOXML. Rendering, PDF generation, and layout fidelity are out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What extraction or integration problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should change?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - docx
+        - xlsx
+        - pptx
+        - metadata
+        - cli
+        - core api
+        - performance
+        - testing
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Any simpler or narrower approaches?
+
