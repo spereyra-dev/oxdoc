@@ -35,6 +35,8 @@ Then open:
 http://localhost:3000
 ```
 
+The `docs` GitHub Actions workflow validates that the Docsify site serves correctly. Publishing it through GitHub Pages requires enabling Pages for the repository in GitHub settings.
+
 Key documentation pages:
 
 - [Getting Started](docs/getting-started.md)

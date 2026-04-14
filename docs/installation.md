@@ -71,3 +71,5 @@ Then open:
 ```text
 http://localhost:3000
 ```
+
+The repository includes a `docs` GitHub Actions workflow that validates the Docsify site. Publishing the site through GitHub Pages requires enabling Pages for the repository in GitHub settings.
