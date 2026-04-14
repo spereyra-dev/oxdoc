@@ -48,12 +48,33 @@ Both crates must keep:
 
 ## Binary Artifacts
 
-Planned release artifacts:
+GitHub Releases are published by the manual `release` workflow. Maintainers should create and push the intended tag first, then run the workflow with that tag name. The workflow defaults to draft prereleases so artifacts can be inspected before they are made public.
 
-- Linux GNU x86_64.
-- Linux musl x86_64.
-- macOS x86_64 and arm64.
-- Windows x86_64.
+Release artifacts:
+
+- `oxdoc-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz`
+- `oxdoc-vX.Y.Z-x86_64-unknown-linux-musl.tar.gz`
+- `oxdoc-vX.Y.Z-x86_64-apple-darwin.tar.gz`
+- `oxdoc-vX.Y.Z-aarch64-apple-darwin.tar.gz`
+- `oxdoc-vX.Y.Z-x86_64-pc-windows-msvc.zip`
+
+Each archive contains the `oxdoc` binary, `README.md`, and `LICENSE`. The Windows archive contains `oxdoc.exe`.
+
+## Checksums And Signing
+
+The release workflow generates a `SHA256SUMS` file in the publish job and attaches it to the GitHub Release next to the archives. Verify downloads with:
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
+On macOS, use:
+
+```bash
+shasum -a 256 -c SHA256SUMS
+```
+
+Checksums provide integrity checks for downloaded artifacts. They are not a cryptographic signature of maintainer identity. The project does not currently have a dedicated signing key or Sigstore policy, so release signing is intentionally deferred until maintainers can document key ownership, rotation, and verification steps. When signing is added, keep `SHA256SUMS` for compatibility and attach detached signatures or provenance files alongside it.
 
 ## Changelog
 
