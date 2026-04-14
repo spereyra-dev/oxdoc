@@ -9,6 +9,20 @@ Contributions are welcome. The most useful contributions at this stage are focus
 - Open an issue first for large features or behavior changes.
 - Do not attach private or sensitive Office files.
 
+## Starter Issues
+
+Good first issues are intentionally small and labeled [`good first issue`](https://github.com/spereyra-dev/oxdoc/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22). Current starter areas include:
+
+| Area | Example issue | Useful files |
+| --- | --- | --- |
+| DOCX malformed XML | [#36](https://github.com/spereyra-dev/oxdoc/issues/36) | `crates/oxdoc-core/src/parsers/docx.rs`, `docs/errors-and-warnings.md` |
+| XLSX CSV edge cases | [#37](https://github.com/spereyra-dev/oxdoc/issues/37) | `crates/oxdoc-core/src/parsers/xlsx.rs`, `docs/formats/xlsx.md` |
+| Metadata fixtures | [#38](https://github.com/spereyra-dev/oxdoc/issues/38) | `crates/oxdoc-core/src/parsers/metadata.rs`, `docs/formats/metadata.md` |
+| CLI docs examples | [#39](https://github.com/spereyra-dev/oxdoc/issues/39) | `docs/cli.md`, `docs/getting-started.md` |
+| Safe fixture provenance | [#40](https://github.com/spereyra-dev/oxdoc/issues/40) | `tests/fixtures/README.md`, `tests/fixtures/provenance/` |
+
+Pick one issue, keep the PR scoped to that acceptance criteria, and include the exact check command you ran.
+
 ## Local Checks
 
 The closest local equivalent to the GitHub Actions Rust job is:
