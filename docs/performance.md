@@ -39,7 +39,44 @@ Future options:
 
 ## Benchmarking Plan
 
-Benchmarks should cover:
+The repository now carries an initial reproducible Criterion suite for parser
+throughput. Run it locally with:
+
+```bash
+cargo bench -p oxdoc-core
+```
+
+For a faster compile-only verification, use:
+
+```bash
+cargo bench -p oxdoc-core --no-run
+```
+
+The first suite lives in `crates/oxdoc-core/benches/throughput.rs` and builds
+safe synthetic OOXML packages in memory for each benchmark case. No external
+Office files or checked-in binary fixtures are required.
+
+Current benchmark groups:
+
+| Group | Measures | Throughput unit |
+| --- | --- | --- |
+| `docx_text_throughput` | End-to-end `extract_docx_text_from_reader` over minimal DOCX packages with generated paragraphs. | Extracted text bytes. |
+| `xlsx_row_throughput` | End-to-end `extract_xlsx_csv_from_reader` over minimal XLSX packages with dense numeric worksheets. | Worksheet rows emitted as CSV. |
+
+The DOCX benchmark includes ZIP package opening, relationship fallback, XML
+event parsing, and the returned `String` allocation. The XLSX benchmark includes
+ZIP package opening, workbook and workbook relationship parsing, worksheet XML
+event parsing, CSV escaping, and writing to a `Vec<u8>`.
+
+### Benchmark Limits
+
+These benchmarks are intended as a stable starting baseline, not a complete
+performance model. They do not yet measure CLI cold start, malformed-input
+latency, shared-string-heavy worksheets, or peak resident memory. Criterion
+reports timing and throughput, but it does not report peak memory; use an
+external profiler or platform tool when validating large-file memory behavior.
+
+Future benchmarks should cover:
 
 - CLI cold start.
 - DOCX throughput by input size.
