@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v1/oxdoc-extract-text.schema.json",
+  "title": "oxdoc extract text JSON output",
+  "description": "Schema for `oxdoc extract text --format json` output in oxdoc schema version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["file", "text"],
+  "properties": {
+    "file": {
+      "type": "string",
+      "description": "File name derived from the provided input path."
+    },
+    "text": {
+      "type": "string",
+      "description": "Extracted plain text from the main DOCX document part."
+    }
+  }
+}

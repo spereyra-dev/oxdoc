@@ -2,6 +2,24 @@
 
 JSON output exists for scripts and integrations that need stable field names instead of human-oriented text.
 
+## Versioned Schemas
+
+Machine-readable schemas live under `schemas/v1/`:
+
+| Command | Schema |
+| --- | --- |
+| `oxdoc info --format json` | [`schemas/v1/oxdoc-info.schema.json`](https://github.com/spereyra-dev/oxdoc/blob/main/schemas/v1/oxdoc-info.schema.json) |
+| `oxdoc extract text --format json` | [`schemas/v1/oxdoc-extract-text.schema.json`](https://github.com/spereyra-dev/oxdoc/blob/main/schemas/v1/oxdoc-extract-text.schema.json) |
+
+The `v1` schemas use JSON Schema draft 2020-12, include stable `$id` values, and set `additionalProperties` to `false`. New output fields are introduced through a new schema version instead of silently widening the current contract.
+
+Within a schema version:
+
+- Required fields remain required.
+- Optional fields may be omitted when the source document does not provide them.
+- Existing field names and JSON types remain stable.
+- Warnings stay on stderr and are not part of CLI JSON payloads.
+
 ## DOCX Text JSON
 
 Command:

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v1/oxdoc-info.schema.json",
+  "title": "oxdoc info JSON output",
+  "description": "Schema for `oxdoc info --format json` output in oxdoc schema version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["file", "has_macros"],
+  "properties": {
+    "file": {
+      "type": "string",
+      "description": "File name derived from the provided input path."
+    },
+    "author": {
+      "type": "string",
+      "description": "Document author from core OOXML properties."
+    },
+    "last_modified_by": {
+      "type": "string",
+      "description": "Last modifying user from core OOXML properties."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Creation timestamp from core OOXML properties, when available."
+    },
+    "modified_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last modification timestamp from core OOXML properties, when available."
+    },
+    "application": {
+      "type": "string",
+      "description": "Application name from extended OOXML properties."
+    },
+    "company": {
+      "type": "string",
+      "description": "Company name from extended OOXML properties."
+    },
+    "has_macros": {
+      "type": "boolean",
+      "description": "Whether the OOXML package contains VBA macro content."
+    },
+    "word_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Document word count, when provided by extended OOXML properties."
+    },
+    "page_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Document page count, when provided by extended OOXML properties."
+    },
+    "slide_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Presentation slide count, when provided by extended OOXML properties."
+    },
+    "worksheet_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Workbook worksheet count, when provided by extended OOXML properties."
+    },
+    "revision": {
+      "type": "string",
+      "description": "Revision value from core OOXML properties."
+    }
+  }
+}
