@@ -324,6 +324,96 @@ fn reads_metadata_from_read_seek_reader() {
 }
 
 #[test]
+fn reads_custom_metadata_properties() {
+    let file = create_ooxml(
+        "custom-metadata.docx",
+        &[(
+            "docProps/custom.xml",
+            r#"
+                <Properties xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+                  <property name="Department">
+                    <vt:lpwstr>Research &amp; Development</vt:lpwstr>
+                  </property>
+                  <property name="Reviewed">
+                    <vt:bool>true</vt:bool>
+                  </property>
+                </Properties>
+            "#,
+        )],
+    );
+
+    let extraction = oxdoc_core::read_info(&file).unwrap();
+    let custom = extraction.value.custom_properties.as_ref().unwrap();
+
+    assert_eq!(
+        custom.get("Department").map(String::as_str),
+        Some("Research & Development")
+    );
+    assert_eq!(custom.get("Reviewed").map(String::as_str), Some("true"));
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn detects_macros_from_content_types() {
+    let file = create_ooxml(
+        "macro-content-type.docm",
+        &[(
+            "[Content_Types].xml",
+            r#"
+                <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+                  <Override PartName="/custom/path/project.bin" ContentType="application/vnd.ms-office.vbaProject"/>
+                </Types>
+            "#,
+        )],
+    );
+
+    let extraction = oxdoc_core::read_info(&file).unwrap();
+
+    assert!(extraction.value.has_macros);
+    assert_eq!(extraction.value.custom_properties, None);
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn keeps_partial_metadata_and_warns_on_malformed_custom_parts() {
+    let file = create_ooxml(
+        "malformed-extra-metadata.docm",
+        &[
+            (
+                "[Content_Types].xml",
+                r#"<Types><Override ContentType="application/vnd.ms-office.vbaProject"/><"#,
+            ),
+            (
+                "docProps/custom.xml",
+                r#"<Properties><property name="Broken"><vt:lpwstr>kept</vt:lpwstr></property><"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::read_info(&file).unwrap();
+
+    assert!(extraction.value.has_macros);
+    assert_eq!(
+        extraction
+            .value
+            .custom_properties
+            .as_ref()
+            .and_then(|props| props.get("Broken"))
+            .map(String::as_str),
+        Some("kept")
+    );
+    assert_eq!(extraction.warnings.len(), 2);
+    assert_eq!(extraction.warnings[0].path, "[Content_Types].xml");
+    assert_eq!(extraction.warnings[1].path, "docProps/custom.xml");
+    assert!(
+        extraction
+            .warnings
+            .iter()
+            .all(|warning| warning.code().as_str() == "W001")
+    );
+}
+
+#[test]
 fn reports_missing_zip_entry_through_vfs() {
     let file = File::open(create_ooxml("missing-entry.docx", &[])).unwrap();
     let mut package = OoxmlPackage::new(file).unwrap();

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::{BufRead, Cursor, Read, Seek};
 
 use quick_xml::Reader;
@@ -5,7 +6,7 @@ use quick_xml::events::Event;
 
 use crate::Result;
 use crate::models::{DocumentInfo, Extraction, OutputWarning};
-use crate::parsers::{decode_xml_reference, decode_xml_text, name_eq};
+use crate::parsers::{attr_value, decode_xml_reference, decode_xml_text, name_eq};
 use crate::vfs::OoxmlPackage;
 
 const MACRO_PARTS: &[&str] = &[
@@ -25,6 +26,16 @@ pub(crate) fn read_info<R: Read + Seek>(
     };
     let mut warnings = Vec::new();
 
+    if package.contains("[Content_Types].xml") {
+        let content_types_xml = package.read_to_string("[Content_Types].xml")?;
+        let result = parse_content_types(
+            Cursor::new(content_types_xml.as_bytes()),
+            "[Content_Types].xml",
+        )?;
+        info.has_macros = info.has_macros || result.value;
+        warnings.extend(result.warnings);
+    }
+
     if package.contains("docProps/core.xml") {
         let core_xml = package.read_to_string("docProps/core.xml")?;
         let result = parse_core(Cursor::new(core_xml.as_bytes()), "docProps/core.xml")?;
@@ -36,6 +47,13 @@ pub(crate) fn read_info<R: Read + Seek>(
         let app_xml = package.read_to_string("docProps/app.xml")?;
         let result = parse_app(Cursor::new(app_xml.as_bytes()), "docProps/app.xml")?;
         apply_app(&mut info, result.value);
+        warnings.extend(result.warnings);
+    }
+
+    if package.contains("docProps/custom.xml") {
+        let custom_xml = package.read_to_string("docProps/custom.xml")?;
+        let result = parse_custom(Cursor::new(custom_xml.as_bytes()), "docProps/custom.xml")?;
+        apply_custom(&mut info, result.value);
         warnings.extend(result.warnings);
     }
 
@@ -59,6 +77,44 @@ struct AppProps {
     page_count: Option<u64>,
     slide_count: Option<u64>,
     worksheet_count: Option<u64>,
+}
+
+#[derive(Debug, Default)]
+struct CustomProps {
+    values: BTreeMap<String, String>,
+}
+
+fn parse_content_types<R: BufRead>(source: R, path: &str) -> Result<Extraction<bool>> {
+    let mut reader = Reader::from_reader(source);
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    let mut has_macros = false;
+    let mut warnings = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(element)) | Ok(Event::Empty(element)) => {
+                if matches!(
+                    crate::parsers::local_name(element.name().as_ref()),
+                    b"Default" | b"Override"
+                ) && attr_value(&element, b"ContentType")
+                    .as_deref()
+                    .is_some_and(is_vba_project_content_type)
+                {
+                    has_macros = true;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(source) => {
+                warnings.push(OutputWarning::malformed_xml(path, source));
+                break;
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(Extraction::with_warnings(has_macros, warnings))
 }
 
 fn parse_core<R: BufRead>(source: R, path: &str) -> Result<Extraction<CoreProps>> {
@@ -173,6 +229,95 @@ fn parse_app<R: BufRead>(source: R, path: &str) -> Result<Extraction<AppProps>> 
     Ok(Extraction::with_warnings(props, warnings))
 }
 
+fn parse_custom<R: BufRead>(source: R, path: &str) -> Result<Extraction<CustomProps>> {
+    let mut reader = Reader::from_reader(source);
+    reader.config_mut().trim_text(false);
+    let mut buf = Vec::new();
+    let mut props = CustomProps::default();
+    let mut warnings = Vec::new();
+    let mut current_property: Option<CustomPropertyValue> = None;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(element)) => {
+                if name_eq(element.name().as_ref(), b"property")
+                    && let Some(name) = attr_value(&element, b"name")
+                {
+                    current_property = Some(CustomPropertyValue {
+                        name,
+                        value: String::new(),
+                        saw_value: false,
+                        value_depth: 0,
+                    });
+                } else if let Some(property) = &mut current_property {
+                    property.value_depth += 1;
+                    property.saw_value = true;
+                }
+            }
+            Ok(Event::Empty(element)) => {
+                if let Some(property) = &mut current_property
+                    && !name_eq(element.name().as_ref(), b"property")
+                {
+                    property.saw_value = true;
+                }
+            }
+            Ok(Event::Text(value)) => {
+                if let Some(property) = &mut current_property
+                    && property.value_depth > 0
+                {
+                    property.value.push_str(&decode_xml_text(value.as_ref()));
+                    property.saw_value = true;
+                }
+            }
+            Ok(Event::CData(value)) => {
+                if let Some(property) = &mut current_property
+                    && property.value_depth > 0
+                {
+                    property.value.push_str(&decode_xml_text(value.as_ref()));
+                    property.saw_value = true;
+                }
+            }
+            Ok(Event::GeneralRef(value)) => {
+                if let Some(property) = &mut current_property
+                    && property.value_depth > 0
+                {
+                    property
+                        .value
+                        .push_str(&decode_xml_reference(value.as_ref()));
+                    property.saw_value = true;
+                }
+            }
+            Ok(Event::End(element)) => {
+                if name_eq(element.name().as_ref(), b"property")
+                    && let Some(property) = current_property.take()
+                    && property.saw_value
+                    && !property.name.is_empty()
+                {
+                    props.values.insert(property.name, property.value);
+                } else if let Some(property) = &mut current_property {
+                    property.value_depth = property.value_depth.saturating_sub(1);
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(source) => {
+                warnings.push(OutputWarning::malformed_xml(path, source));
+                break;
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(Extraction::with_warnings(props, warnings))
+}
+
+struct CustomPropertyValue {
+    name: String,
+    value: String,
+    saw_value: bool,
+    value_depth: usize,
+}
+
 fn apply_core(info: &mut DocumentInfo, props: CoreProps) {
     info.author = props.author;
     info.last_modified_by = props.last_modified_by;
@@ -225,10 +370,22 @@ fn apply_app(info: &mut DocumentInfo, props: AppProps) {
     info.worksheet_count = props.worksheet_count;
 }
 
+fn apply_custom(info: &mut DocumentInfo, props: CustomProps) {
+    if !props.values.is_empty() {
+        info.custom_properties = Some(props.values);
+    }
+}
+
+fn is_vba_project_content_type(content_type: &str) -> bool {
+    content_type.eq_ignore_ascii_case("application/vnd.ms-office.vbaProject")
+}
+
 #[doc(hidden)]
 pub fn fuzz_parse_metadata(xml: &[u8]) -> Result<()> {
     let _ = parse_core(Cursor::new(xml), "docProps/core.xml")?;
     let _ = parse_app(Cursor::new(xml), "docProps/app.xml")?;
+    let _ = parse_custom(Cursor::new(xml), "docProps/custom.xml")?;
+    let _ = parse_content_types(Cursor::new(xml), "[Content_Types].xml")?;
     Ok(())
 }
 
@@ -236,7 +393,7 @@ pub fn fuzz_parse_metadata(xml: &[u8]) -> Result<()> {
 mod tests {
     use std::io::Cursor;
 
-    use super::{parse_app, parse_core};
+    use super::{parse_app, parse_content_types, parse_core, parse_custom};
 
     #[test]
     fn parses_core_properties() {
@@ -323,5 +480,55 @@ mod tests {
 
         assert_eq!(core.author.as_deref(), Some("Ada < Linus"));
         assert_eq!(app.application.as_deref(), Some("LibreOffice < Writer"));
+    }
+
+    #[test]
+    fn parses_custom_properties() {
+        let xml = r#"
+            <Properties>
+              <property name="Department">
+                <vt:lpwstr>Research &amp; Development</vt:lpwstr>
+              </property>
+              <property name="Reviewed">
+                <vt:bool>true</vt:bool>
+              </property>
+              <property name="Empty">
+                <vt:lpwstr></vt:lpwstr>
+              </property>
+              <property name="">
+                <vt:lpwstr>ignored</vt:lpwstr>
+              </property>
+            </Properties>
+        "#;
+
+        let props = parse_custom(Cursor::new(xml.as_bytes()), "docProps/custom.xml")
+            .unwrap()
+            .value;
+
+        assert_eq!(
+            props.values.get("Department").map(String::as_str),
+            Some("Research & Development")
+        );
+        assert_eq!(
+            props.values.get("Reviewed").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(props.values.get("Empty").map(String::as_str), Some(""));
+        assert!(!props.values.contains_key(""));
+    }
+
+    #[test]
+    fn detects_macro_content_types() {
+        let xml = r#"
+            <Types>
+              <Default Extension="bin" ContentType="application/vnd.ms-office.vbaProject"/>
+            </Types>
+        "#;
+
+        let result =
+            parse_content_types(Cursor::new(xml.as_bytes()), "[Content_Types].xml").unwrap();
+
+        assert!(result.value);
+        assert!(result.warnings.is_empty());
     }
 }

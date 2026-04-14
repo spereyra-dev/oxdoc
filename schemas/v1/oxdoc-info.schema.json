@@ -37,6 +37,13 @@
       "type": "string",
       "description": "Company name from extended OOXML properties."
     },
+    "custom_properties": {
+      "type": "object",
+      "description": "Custom OOXML document properties from docProps/custom.xml. Values are stringified from their OOXML value type.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
     "has_macros": {
       "type": "boolean",
       "description": "Whether the OOXML package contains VBA macro content."
