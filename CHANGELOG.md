@@ -15,3 +15,4 @@ The format is based on human-readable release notes. This project has not publis
 - Basic CI, Makefile, and OSS project files.
 - Docsify documentation site with usage, architecture, API, testing, roadmap, and security pages.
 - Makefile and CI coverage gate with `cargo-llvm-cov` at 95% line coverage.
+- XLSX CSV visible sheet selection by name or 1-based index, with explicit hidden-sheet and duplicate-name behavior.

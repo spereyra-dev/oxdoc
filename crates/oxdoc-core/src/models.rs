@@ -138,6 +138,7 @@ impl<T> Extraction<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct XlsxCsvOptions<'a> {
     pub sheet_name: Option<&'a str>,
+    pub sheet_index: Option<usize>,
     pub delimiter: u8,
 }
 
@@ -145,6 +146,7 @@ impl Default for XlsxCsvOptions<'_> {
     fn default() -> Self {
         Self {
             sheet_name: None,
+            sheet_index: None,
             delimiter: b',',
         }
     }
@@ -230,6 +232,7 @@ mod tests {
         let options = XlsxCsvOptions::default();
 
         assert_eq!(options.sheet_name, None);
+        assert_eq!(options.sheet_index, None);
         assert_eq!(options.delimiter, b',');
     }
 }

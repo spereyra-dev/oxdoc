@@ -47,6 +47,12 @@ Select a sheet by visible workbook name:
 cargo run -p oxdoc-cli -- extract csv data.xlsx --sheet "Ventas Q1"
 ```
 
+Select a sheet by 1-based visible workbook order:
+
+```bash
+cargo run -p oxdoc-cli -- extract csv data.xlsx --sheet-index 2
+```
+
 Use a different single-byte delimiter:
 
 ```bash

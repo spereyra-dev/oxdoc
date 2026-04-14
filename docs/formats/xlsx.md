@@ -6,11 +6,16 @@ XLSX files are OOXML ZIP packages. `oxdoc` reads `xl/workbook.xml`, resolves the
 
 The MVP parser:
 
-- Selects the first sheet by default.
+- Selects the first visible sheet by default.
 - Can select a sheet by visible workbook name with `--sheet`.
+- Can select a sheet by 1-based visible workbook order with `--sheet-index`.
+- Rejects duplicate visible sheet names instead of guessing.
+- Skips hidden and very hidden sheets during selection.
 - Reads `xl/sharedStrings.xml` into memory.
 - Supports shared string cells (`t="s"`).
 - Supports inline string cells (`t="inlineStr"`).
+- Supports boolean cells (`t="b"`) as `TRUE` or `FALSE`.
+- Emits error cells (`t="e"`) and cached formula values as their stored workbook values.
 - Emits sparse cells as empty CSV fields.
 - Escapes CSV fields with delimiters, quotes, or line breaks.
 
@@ -18,6 +23,12 @@ The MVP parser:
 
 ```bash
 oxdoc extract csv data.xlsx --sheet "Ventas Q1" --delimiter ","
+```
+
+Select the second visible sheet:
+
+```bash
+oxdoc extract csv data.xlsx --sheet-index 2
 ```
 
 Output:
@@ -37,15 +48,20 @@ oxdoc extract csv data.xlsx --delimiter ";"
 
 Multi-byte delimiters are rejected.
 
+## Sheet Selection
+
+Sheet indexes are 1-based and count only visible sheets in workbook order. For example, `--sheet-index 2` extracts the second visible sheet, even if the package contains hidden sheets before it.
+
+`--sheet` and `--sheet-index` are mutually exclusive. If a malformed workbook contains duplicate visible sheet names, name selection fails with a stable error instead of selecting an arbitrary match. Use `--sheet-index` to disambiguate those files.
+
+Hidden and very hidden sheets are intentionally skipped by selection. A future explicit opt-in may expose hidden-sheet extraction if a workflow needs it.
+
 ## Memory Notes
 
 Worksheet XML is streamed to the caller-provided writer. Shared strings are loaded into memory in the MVP. The code keeps that responsibility isolated so a future large-file implementation can switch to a disk-backed or indexed shared-string store.
 
 ## Planned Improvements
 
-- Sheet selection by index.
 - Date and time interpretation.
-- Boolean and error values.
-- Cached formula output.
 - Large shared-string storage.
 - Multiple-sheet export modes.

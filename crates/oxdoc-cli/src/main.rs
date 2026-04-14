@@ -38,8 +38,14 @@ enum ExtractCommand {
     },
     Csv {
         file: PathBuf,
-        #[arg(long)]
+        #[arg(long, help = "Visible workbook sheet name to extract")]
         sheet: Option<String>,
+        #[arg(
+            long,
+            conflicts_with = "sheet",
+            help = "1-based visible workbook sheet index to extract"
+        )]
+        sheet_index: Option<usize>,
         #[arg(long, default_value = ",")]
         delimiter: String,
     },
@@ -92,6 +98,7 @@ fn run() -> Result<(), CliError> {
             ExtractCommand::Csv {
                 file,
                 sheet,
+                sheet_index,
                 delimiter,
             } => {
                 let delimiter = parse_delimiter(&delimiter)?;
@@ -100,6 +107,7 @@ fn run() -> Result<(), CliError> {
                     &file,
                     XlsxCsvOptions {
                         sheet_name: sheet.as_deref(),
+                        sheet_index,
                         delimiter,
                     },
                     &mut stdout,

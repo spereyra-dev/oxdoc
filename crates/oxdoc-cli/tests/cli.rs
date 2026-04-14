@@ -72,6 +72,51 @@ fn extracts_csv_to_stdout() {
 }
 
 #[test]
+fn extracts_csv_by_visible_sheet_index() {
+    let xlsx = create_ooxml(
+        "sheet-index.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Hidden" sheetId="1" state="hidden" r:id="rId1"/><sheet name="First" sheetId="2" r:id="rId2"/><sheet name="Second" sheetId="3" r:id="rId3"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/hidden.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId3" Type="worksheet" Target="worksheets/sheet2.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/hidden.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>hidden</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>first</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet2.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>second</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet-index",
+        "2",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(stdout(&output), "second\n");
+}
+
+#[test]
 fn rejects_invalid_delimiter() {
     let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
 
@@ -89,6 +134,42 @@ fn rejects_invalid_delimiter() {
 }
 
 #[test]
+fn rejects_invalid_sheet_index() {
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet-index",
+        "0",
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("sheet index must be 1 or greater"));
+}
+
+#[test]
+fn rejects_conflicting_sheet_selectors() {
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Sales Q1",
+        "--sheet-index",
+        "1",
+    ]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("cannot be used with"));
+}
+
+#[test]
 fn reports_missing_sheet_selection_as_runtime_error() {
     let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
 
@@ -103,7 +184,8 @@ fn reports_missing_sheet_selection_as_runtime_error() {
     assert_eq!(output.status.code(), Some(1));
     assert!(stdout(&output).is_empty());
     assert!(
-        stderr(&output).contains("error[E003]: missing required OOXML part: sheet named Missing")
+        stderr(&output)
+            .contains("error[E003]: missing required OOXML part: visible sheet named Missing")
     );
 }
 

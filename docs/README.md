@@ -31,6 +31,7 @@ Expect some API and CLI details to change before the first tagged release.
 ```bash
 oxdoc extract text contrato.docx
 oxdoc extract csv data.xlsx --sheet "Ventas Q1" --delimiter ","
+oxdoc extract csv data.xlsx --sheet-index 2
 oxdoc info report.docx --format json
 ```
 
