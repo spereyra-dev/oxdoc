@@ -8,7 +8,7 @@ BINARY_NAME := oxdoc
 DOCS_PORT ?= 3000
 COVERAGE_THRESHOLD ?= 95
 
-.PHONY: help all ci prepare-commit pre-push
+.PHONY: help all ci ci-rust prepare-commit pre-push
 .PHONY: fmt fmt-check check clippy lint test doctest coverage coverage-html coverage-lcov audit
 .PHONY: build build-release release build-musl musl docs docs-serve docs-check install-tools clean clean-coverage
 
@@ -25,6 +25,7 @@ help:
 	@echo "  make coverage         Enforce line coverage >= $(COVERAGE_THRESHOLD)%"
 	@echo "  make coverage-html    Generate HTML coverage report"
 	@echo "  make coverage-lcov    Generate LCOV coverage report"
+	@echo "  make ci-rust          Run the Rust gates used by GitHub Actions"
 	@echo "  make docs             Serve Docsify locally"
 	@echo "  make docs-check       Validate Docsify serves locally"
 	@echo "  make build-release    Build optimized release binary"
@@ -33,8 +34,10 @@ help:
 
 all: ci
 
-ci: fmt-check check clippy test doctest coverage docs-check build-release
+ci: ci-rust docs-check build-release
 	@echo "All CI checks passed."
+
+ci-rust: fmt-check check clippy test doctest coverage
 
 prepare-commit: ci
 

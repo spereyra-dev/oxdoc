@@ -11,16 +11,40 @@ Contributions are welcome. The most useful contributions at this stage are focus
 
 ## Local Checks
 
+The closest local equivalent to the GitHub Actions Rust job is:
+
 ```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+make ci-rust
 ```
 
-Or:
+The full local gate adds docs validation and a release build:
 
 ```bash
-make all
+make ci
+```
+
+Install optional local tools when needed:
+
+```bash
+make install-tools
+cargo install cargo-audit --locked
+```
+
+If `make` is not available, run the Rust gates directly:
+
+```bash
+cargo fmt --all -- --check
+cargo check --workspace --all-features --all-targets
+cargo clippy --workspace --all-features --all-targets -- -D warnings
+cargo test --workspace --all-features --all-targets
+cargo test --doc --workspace --all-features
+cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only
+```
+
+Docs can be checked separately:
+
+```bash
+npx docsify-cli@4 serve docs --port 3000
 ```
 
 ## Pull Request Checklist

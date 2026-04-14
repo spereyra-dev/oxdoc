@@ -20,3 +20,4 @@ The format is based on human-readable release notes. This project has not publis
 - Versioned JSON schemas for `info` and `extract text` machine-readable output.
 - Additional CLI integration coverage for warning isolation and XLSX sheet-selection failures.
 - Security advisory automation with RustSec scanning and local `make audit` support.
+- `make ci-rust` for a local Rust gate aligned with GitHub Actions plus clearer contributor workflow docs.
