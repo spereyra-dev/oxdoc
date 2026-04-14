@@ -15,6 +15,35 @@ Include:
 - The affected file type and command.
 - Whether the issue causes panic, denial of service, incorrect output, or data exposure.
 
+## Dependency Advisory Automation
+
+`oxdoc` uses `cargo audit` for RustSec advisory checks. The `security` GitHub Actions workflow runs on relevant pull requests, pushes to `main`, a weekly schedule, and manual dispatch.
+
+Run the same check locally:
+
+```sh
+cargo install cargo-audit --locked
+make audit
+```
+
+The check reads `Cargo.lock` and fails when a dependency is affected by a RustSec advisory. Scheduled runs are important because a clean lockfile can become vulnerable after a new advisory is published.
+
+## Dependency Update Flow
+
+Dependabot is configured in `.github/dependabot.yml` for weekly Cargo dependency updates and GitHub Actions updates. Maintainers should review those PRs as normal code changes:
+
+- Check whether the update fixes a RustSec advisory, a yanked crate, or an Actions security issue.
+- Read release notes for parser-relevant dependencies before merging.
+- Run `make audit` and the regular CI gate locally when the update changes dependency behavior or generated lockfile content.
+- Keep the advisory issue or PR open when no patched dependency is available.
+
+When `cargo audit` reports a vulnerable transitive dependency:
+
+1. Prefer `cargo update -p <crate>` if the existing dependency constraints allow a patched version.
+2. If the crate is pulled in transitively, update the direct dependency that owns the edge or replace the dependency when a fix is not available.
+3. Confirm whether the vulnerable code is reachable from `oxdoc`'s supported DOCX, XLSX, metadata, CLI, or library workflows.
+4. Document any temporary ignore or risk acceptance in the PR, including the advisory ID and the reason it is safe for now.
+
 ## Expectations
 
 - Malformed ZIP/XML input should return errors or warnings, not panic.

@@ -9,7 +9,7 @@ DOCS_PORT ?= 3000
 COVERAGE_THRESHOLD ?= 95
 
 .PHONY: help all ci prepare-commit pre-push
-.PHONY: fmt fmt-check check clippy lint test doctest coverage coverage-html coverage-lcov
+.PHONY: fmt fmt-check check clippy lint test doctest coverage coverage-html coverage-lcov audit
 .PHONY: build build-release release build-musl musl docs docs-serve docs-check install-tools clean clean-coverage
 
 help:
@@ -21,6 +21,7 @@ help:
 	@echo "  make clippy           Run clippy with warnings denied"
 	@echo "  make test             Run all tests"
 	@echo "  make doctest          Run Rust doctests"
+	@echo "  make audit            Check Cargo.lock for RustSec advisories"
 	@echo "  make coverage         Enforce line coverage >= $(COVERAGE_THRESHOLD)%"
 	@echo "  make coverage-html    Generate HTML coverage report"
 	@echo "  make coverage-lcov    Generate LCOV coverage report"
@@ -58,6 +59,9 @@ test:
 
 doctest:
 	$(CARGO) test --doc --workspace --all-features $(TARGET_FLAG)
+
+audit:
+	$(CARGO) audit
 
 coverage:
 	$(CARGO) llvm-cov --workspace --all-features --all-targets --fail-under-lines $(COVERAGE_THRESHOLD) --summary-only
