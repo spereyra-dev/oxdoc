@@ -96,6 +96,37 @@ Returns:
 Extraction<DocumentInfo>
 ```
 
+## `Read + Seek` Entry Points
+
+Embedding applications can pass any `Read + Seek` source, such as `std::fs::File`, `std::io::Cursor<Vec<u8>>`, or a seekable in-memory buffer:
+
+```rust
+use std::io::Cursor;
+
+use oxdoc_core::{
+    extract_docx_text_from_reader, extract_xlsx_csv_from_reader, read_info_from_reader,
+    XlsxCsvOptions,
+};
+
+fn main() -> oxdoc_core::Result<()> {
+    let docx_bytes = std::fs::read("contrato.docx")?;
+    let text = extract_docx_text_from_reader(Cursor::new(docx_bytes))?;
+    println!("{}", text.value);
+
+    let xlsx = std::fs::File::open("data.xlsx")?;
+    let mut csv = Vec::new();
+    extract_xlsx_csv_from_reader(xlsx, XlsxCsvOptions::default(), &mut csv)?;
+
+    let pptx_bytes = std::fs::read("deck.pptx")?;
+    let info = read_info_from_reader(Cursor::new(pptx_bytes), "deck.pptx")?;
+    println!("{:#?}", info.value);
+
+    Ok(())
+}
+```
+
+The reader APIs return the same `Extraction<T>` and `OxdocError` values as the path helpers. `read_info_from_reader` requires a display file name because no filesystem path is available for deriving `DocumentInfo.file`.
+
 ## Core Types
 
 ### `Extraction<T>`

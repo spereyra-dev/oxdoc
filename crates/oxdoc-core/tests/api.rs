@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Cursor, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,6 +16,20 @@ fn extracts_docx_text_through_public_api() {
     let file = fixtures::build_package("docx/basic", "fixture.docx");
 
     let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
+
+    assert_eq!(
+        extraction.value.trim_end(),
+        fixtures::read_snapshot("docx_basic_text.txt").trim_end()
+    );
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn extracts_docx_text_from_read_seek_reader() {
+    let file = fixtures::build_package("docx/basic", "fixture.docx");
+    let bytes = fs::read(file).unwrap();
+
+    let extraction = oxdoc_core::extract_docx_text_from_reader(Cursor::new(bytes)).unwrap();
 
     assert_eq!(
         extraction.value.trim_end(),
@@ -44,6 +58,30 @@ fn extracts_xlsx_csv_through_public_api() {
     assert_eq!(
         String::from_utf8(csv).unwrap().trim_end(),
         fixtures::read_snapshot("xlsx_basic_csv.txt").trim_end()
+    );
+}
+
+#[test]
+fn extracts_xlsx_csv_from_read_seek_reader() {
+    let file = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+    let reader = File::open(file).unwrap();
+    let mut csv = Vec::new();
+
+    let extraction = oxdoc_core::extract_xlsx_csv_from_reader(
+        reader,
+        XlsxCsvOptions {
+            sheet_name: Some("Sales Q1"),
+            sheet_index: None,
+            delimiter: b';',
+        },
+        &mut csv,
+    )
+    .unwrap();
+
+    assert!(extraction.warnings.is_empty());
+    assert_eq!(
+        String::from_utf8(csv).unwrap().trim_end(),
+        fixtures::read_snapshot("cli_extract_csv.txt").trim_end()
     );
 }
 
@@ -268,6 +306,20 @@ fn reads_metadata_through_public_api() {
         serde_json::to_string_pretty(&extraction.value).unwrap(),
         fixtures::read_snapshot("pptx_basic_info.json").trim_end()
     );
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn reads_metadata_from_read_seek_reader() {
+    let file = fixtures::build_package("pptx/basic", "fixture.pptx");
+    let bytes = fs::read(file).unwrap();
+
+    let extraction =
+        oxdoc_core::read_info_from_reader(Cursor::new(bytes), "embedded-name.pptx").unwrap();
+
+    assert_eq!(extraction.value.file, "embedded-name.pptx");
+    assert_eq!(extraction.value.author.as_deref(), Some("Ada"));
+    assert_eq!(extraction.value.application.as_deref(), Some("Impress"));
     assert!(extraction.warnings.is_empty());
 }
 
