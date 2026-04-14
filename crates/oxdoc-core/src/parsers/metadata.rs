@@ -266,4 +266,25 @@ mod tests {
         assert_eq!(props.page_count, Some(3));
         assert_eq!(props.worksheet_count, Some(2));
     }
+
+    #[test]
+    fn appends_split_core_text_and_warns_on_malformed_xml() {
+        let xml = r#"<cp:coreProperties xmlns:cp="cp" xmlns:dc="dc"><dc:creator>Ada &amp; Linus</dc:creator><"#;
+
+        let result = parse_core(Cursor::new(xml.as_bytes()), "docProps/core.xml").unwrap();
+
+        assert_eq!(result.value.author.as_deref(), Some("Ada & Linus"));
+        assert_eq!(result.warnings.len(), 1);
+    }
+
+    #[test]
+    fn ignores_invalid_numeric_app_properties_and_warns() {
+        let xml = r#"<Properties><Words>many</Words><Slides>3</Slides><"#;
+
+        let result = parse_app(Cursor::new(xml.as_bytes()), "docProps/app.xml").unwrap();
+
+        assert_eq!(result.value.word_count, None);
+        assert_eq!(result.value.slide_count, Some(3));
+        assert_eq!(result.warnings.len(), 1);
+    }
 }

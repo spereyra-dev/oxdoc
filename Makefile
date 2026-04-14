@@ -1,31 +1,111 @@
 CARGO ?= cargo
+NPM ?= npm
+NPX ?= npx
 TARGET ?=
 TARGET_FLAG := $(if $(TARGET),--target $(TARGET),)
 
-.PHONY: all fmt lint test build release musl docs clean
+BINARY_NAME := oxdoc
+DOCS_PORT ?= 3000
+COVERAGE_THRESHOLD ?= 95
 
-all: fmt lint test build
+.PHONY: help all ci prepare-commit pre-push
+.PHONY: fmt fmt-check check clippy lint test doctest coverage coverage-html coverage-lcov
+.PHONY: build build-release release build-musl musl docs docs-serve docs-check install-tools clean clean-coverage
+
+help:
+	@echo "oxdoc development targets"
+	@echo ""
+	@echo "  make fmt              Format Rust code"
+	@echo "  make fmt-check        Check Rust formatting"
+	@echo "  make check            cargo check across workspace"
+	@echo "  make clippy           Run clippy with warnings denied"
+	@echo "  make test             Run all tests"
+	@echo "  make doctest          Run Rust doctests"
+	@echo "  make coverage         Enforce line coverage >= $(COVERAGE_THRESHOLD)%"
+	@echo "  make coverage-html    Generate HTML coverage report"
+	@echo "  make coverage-lcov    Generate LCOV coverage report"
+	@echo "  make docs             Serve Docsify locally"
+	@echo "  make docs-check       Validate Docsify serves locally"
+	@echo "  make build-release    Build optimized release binary"
+	@echo "  make build-musl       Build static Linux musl binary"
+	@echo "  make ci               Run the full local CI gate"
+
+all: ci
+
+ci: fmt-check check clippy test doctest coverage docs-check build-release
+	@echo "All CI checks passed."
+
+prepare-commit: ci
+
+pre-push: ci
 
 fmt:
+	$(CARGO) fmt --all
+
+fmt-check:
 	$(CARGO) fmt --all -- --check
 
-lint:
-	$(CARGO) clippy --workspace --all-targets -- -D warnings
+check:
+	$(CARGO) check --workspace --all-features --all-targets $(TARGET_FLAG)
+
+clippy:
+	$(CARGO) clippy --workspace --all-features --all-targets $(TARGET_FLAG) -- -D warnings
+
+lint: clippy
 
 test:
-	$(CARGO) test --workspace
+	$(CARGO) test --workspace --all-features --all-targets $(TARGET_FLAG)
+
+doctest:
+	$(CARGO) test --doc --workspace --all-features $(TARGET_FLAG)
+
+coverage:
+	$(CARGO) llvm-cov --workspace --all-features --all-targets --fail-under-lines $(COVERAGE_THRESHOLD) --summary-only
+
+coverage-html:
+	$(CARGO) llvm-cov --workspace --all-features --all-targets --html --output-dir target/coverage/html
+	@echo "Coverage report: target/coverage/html/index.html"
+
+coverage-lcov:
+	@mkdir -p target/coverage
+	$(CARGO) llvm-cov --workspace --all-features --all-targets --lcov --output-path target/coverage/lcov.info
+	@echo "Coverage report: target/coverage/lcov.info"
 
 build:
-	$(CARGO) build --workspace $(TARGET_FLAG)
+	$(CARGO) build --workspace --all-features $(TARGET_FLAG)
 
-release:
-	$(CARGO) build --workspace --release $(TARGET_FLAG)
+build-release:
+	$(CARGO) build --workspace --all-features --release $(TARGET_FLAG)
 
-musl:
-	$(CARGO) build --workspace --release --target x86_64-unknown-linux-musl
+release: build-release
 
-docs:
-	npx docsify-cli@4 serve docs --port 3000
+build-musl:
+	$(CARGO) build --workspace --all-features --release --target x86_64-unknown-linux-musl
+
+musl: build-musl
+
+docs: docs-serve
+
+docs-serve:
+	$(NPX) --yes docsify-cli@4 serve docs --port $(DOCS_PORT)
+
+docs-check:
+	@$(NPX) --yes docsify-cli@4 serve docs --port $(DOCS_PORT) >/tmp/oxdoc-docs.log 2>&1 & \
+	server_pid=$$!; \
+	trap 'kill $$server_pid 2>/dev/null || true' EXIT; \
+	for attempt in $$(seq 1 30); do \
+		if curl --fail --silent http://127.0.0.1:$(DOCS_PORT)/ >/tmp/oxdoc-docs.html; then break; fi; \
+		sleep 1; \
+	done; \
+	cat /tmp/oxdoc-docs.log; \
+	grep "oxdoc documentation" /tmp/oxdoc-docs.html
+
+install-tools:
+	$(CARGO) install cargo-llvm-cov --locked
+
+clean-coverage:
+	$(CARGO) llvm-cov clean --workspace
+	rm -rf target/coverage
 
 clean:
 	$(CARGO) clean

@@ -83,3 +83,28 @@ pub struct DocumentInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revision: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Extraction, OutputWarning, XlsxCsvOptions};
+
+    #[test]
+    fn builds_and_maps_extractions() {
+        let warning = OutputWarning::new("word/document.xml", "partial text");
+        let extraction = Extraction::with_warnings("hello".to_owned(), vec![warning.clone()]);
+
+        let mapped = extraction.map(|value| value.len());
+
+        assert_eq!(mapped.value, 5);
+        assert_eq!(mapped.warnings, vec![warning]);
+        assert!(Extraction::new(()).warnings.is_empty());
+    }
+
+    #[test]
+    fn defaults_xlsx_csv_options() {
+        let options = XlsxCsvOptions::default();
+
+        assert_eq!(options.sheet_name, None);
+        assert_eq!(options.delimiter, b',');
+    }
+}

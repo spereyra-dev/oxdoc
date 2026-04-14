@@ -211,6 +211,7 @@ dependencies = [
  "oxdoc-core",
  "serde",
  "serde_json",
+ "zip",
 ]
 
 [[package]]
@@ -219,6 +220,7 @@ version = "0.1.0"
 dependencies = [
  "quick-xml",
  "serde",
+ "serde_json",
  "thiserror",
  "zip",
 ]

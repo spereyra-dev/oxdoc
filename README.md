@@ -223,9 +223,18 @@ Equivalent commands:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo check --workspace --all-features --all-targets
+cargo clippy --workspace --all-features --all-targets -- -D warnings
+cargo test --workspace --all-features --all-targets
+cargo test --doc --workspace --all-features
+cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only
 cargo build --workspace
+```
+
+Coverage is gated at 95% line coverage. Install the optional local tool with:
+
+```bash
+make install-tools
 ```
 
 Static Linux build:

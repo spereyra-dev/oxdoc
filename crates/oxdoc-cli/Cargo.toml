@@ -21,3 +21,6 @@ clap.workspace = true
 oxdoc-core = { path = "../oxdoc-core" }
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+zip.workspace = true

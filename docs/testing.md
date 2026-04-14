@@ -62,6 +62,11 @@ Current CI runs:
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo check --workspace --all-features --all-targets
+cargo clippy --workspace --all-features --all-targets -- -D warnings
+cargo test --workspace --all-features --all-targets
+cargo test --doc --workspace --all-features
+cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only
 ```
+
+The coverage gate is 95% line coverage.

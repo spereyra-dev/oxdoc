@@ -101,4 +101,22 @@ mod tests {
         assert_eq!(result.value, "Hola\n");
         assert_eq!(result.warnings.len(), 1);
     }
+
+    #[test]
+    fn handles_cdata_breaks_and_empty_document() {
+        let xml = r#"
+            <w:document xmlns:w="w">
+              <w:body>
+                <w:p><w:r><w:t><![CDATA[A < B]]></w:t><w:br/><w:t>&#67;</w:t></w:r></w:p>
+                <w:p><w:r><w:cr/></w:r></w:p>
+              </w:body>
+            </w:document>
+        "#;
+
+        let result = extract_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let empty = extract_text(Cursor::new(b"<w:document/>"), "word/document.xml").unwrap();
+
+        assert_eq!(result.value, "A < B\nC\n");
+        assert!(empty.value.is_empty());
+    }
 }

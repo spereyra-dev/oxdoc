@@ -381,7 +381,10 @@ fn write_csv_field<W: Write>(writer: &mut W, value: &str, delimiter: u8) -> Resu
 mod tests {
     use std::io::Cursor;
 
-    use super::{parse_cell_column, parse_shared_strings, parse_workbook_sheets, write_sheet_csv};
+    use super::{
+        parse_cell_column, parse_shared_strings, parse_workbook_sheets, select_sheet,
+        write_sheet_csv,
+    };
 
     #[test]
     fn parses_workbook_sheet_relationships() {
@@ -412,6 +415,20 @@ mod tests {
             parse_shared_strings(Cursor::new(xml.as_bytes()), "xl/sharedStrings.xml").unwrap();
 
         assert_eq!(result.value, vec!["Cliente", "A & B"]);
+    }
+
+    #[test]
+    fn parses_shared_strings_with_cdata_and_empty_breaks() {
+        let xml = r#"
+            <sst>
+              <si><t><![CDATA[A < B]]></t><r><br/></r><r><tab/></r><r><t>&quot;ok&quot;</t></r></si>
+            </sst>
+        "#;
+
+        let result =
+            parse_shared_strings(Cursor::new(xml.as_bytes()), "xl/sharedStrings.xml").unwrap();
+
+        assert_eq!(result.value, vec!["A < B\n\t\"ok\""]);
     }
 
     #[test]
@@ -451,5 +468,107 @@ mod tests {
         assert_eq!(parse_cell_column("AA12"), Some(26));
         assert_eq!(parse_cell_column("BC7"), Some(54));
         assert_eq!(parse_cell_column("12"), None);
+    }
+
+    #[test]
+    fn handles_workbook_sheet_selection_errors() {
+        let sheets = parse_workbook_sheets(
+            r#"<workbook><sheets><sheet name="A"/><sheet name="B" r:id="rId2"/></sheets></workbook>"#,
+            "xl/workbook.xml",
+        )
+        .unwrap();
+
+        assert_eq!(sheets.value.len(), 1);
+        assert_eq!(sheets.warnings.len(), 1);
+        assert_eq!(select_sheet(&sheets.value, None).unwrap().name, "B");
+        assert!(select_sheet(&sheets.value, Some("missing")).is_err());
+        assert!(select_sheet(&[], None).is_err());
+    }
+
+    #[test]
+    fn warns_on_malformed_shared_strings_and_sheet_xml() {
+        let shared = parse_shared_strings(
+            Cursor::new(br#"<sst><si><t>first</t></si><"#.as_slice()),
+            "xl/sharedStrings.xml",
+        )
+        .unwrap();
+        let mut output = Vec::new();
+        let sheet = write_sheet_csv(
+            Cursor::new(br#"<worksheet><sheetData><row><c r="A1"><v>1</v></c><"#.as_slice()),
+            "xl/worksheets/sheet1.xml",
+            &[],
+            b',',
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(shared.value, vec!["first"]);
+        assert_eq!(shared.warnings.len(), 1);
+        assert_eq!(sheet.warnings.len(), 1);
+    }
+
+    #[test]
+    fn warns_on_malformed_workbook_xml() {
+        let result = parse_workbook_sheets("<workbook><", "xl/workbook.xml").unwrap();
+
+        assert!(result.value.is_empty());
+        assert_eq!(result.warnings.len(), 1);
+    }
+
+    #[test]
+    fn warns_on_invalid_shared_string_indexes() {
+        let xml = r#"
+            <worksheet>
+              <sheetData>
+                <row>
+                  <c r="A1" t="s"><v>5</v></c>
+                  <c r="B1" t="s"><v>not-a-number</v></c>
+                </row>
+              </sheetData>
+            </worksheet>
+        "#;
+        let mut output = Vec::new();
+
+        let result = write_sheet_csv(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &["only".to_owned()],
+            b',',
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(String::from_utf8(output).unwrap(), ",not-a-number\n");
+        assert_eq!(result.warnings.len(), 2);
+    }
+
+    #[test]
+    fn writes_cdata_general_refs_duplicate_cells_and_quotes() {
+        let xml = r#"
+            <worksheet>
+              <sheetData>
+                <row>
+                  <c r="A1" t="inlineStr"><is><t>first</t></is></c>
+                  <c r="A1" t="inlineStr"><is><t><![CDATA[second]]></t></is></c>
+                  <c r="B1" t="inlineStr"><is><t>Tom &amp; "Jerry"</t></is></c>
+                </row>
+              </sheetData>
+            </worksheet>
+        "#;
+        let mut output = Vec::new();
+
+        write_sheet_csv(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &[],
+            b',',
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "second,\"Tom & \"\"Jerry\"\"\"\n"
+        );
     }
 }

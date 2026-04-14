@@ -222,3 +222,82 @@ pub(crate) fn merge_warnings(
     left.extend(right);
     left
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        decode_xml_reference, decode_xml_text, merge_warnings, normalize_part_path, parent_dir,
+        parse_relationship_map, rels_path_for,
+    };
+    use crate::OxdocError;
+    use crate::models::OutputWarning;
+
+    #[test]
+    fn decodes_text_and_general_references() {
+        assert_eq!(decode_xml_text(b"plain"), "plain");
+        assert_eq!(
+            decode_xml_text(b"&amp;&lt;&gt;&quot;&apos;&#65;&#x42;&unknown;"),
+            "&<>\"'AB&unknown;"
+        );
+        assert_eq!(decode_xml_reference(b"amp"), "&");
+        assert_eq!(decode_xml_reference(b"#65"), "A");
+        assert_eq!(decode_xml_reference(b"#x42"), "B");
+        assert_eq!(decode_xml_reference(b"custom"), "&custom;");
+    }
+
+    #[test]
+    fn normalizes_part_and_relationship_paths() {
+        assert_eq!(
+            normalize_part_path("xl", "worksheets/sheet1.xml"),
+            "xl/worksheets/sheet1.xml"
+        );
+        assert_eq!(
+            normalize_part_path("xl/worksheets", "../sharedStrings.xml"),
+            "xl/sharedStrings.xml"
+        );
+        assert_eq!(
+            normalize_part_path("", "/word/document.xml"),
+            "word/document.xml"
+        );
+        assert_eq!(parent_dir("xl/workbook.xml"), "xl");
+        assert_eq!(parent_dir("workbook.xml"), "");
+        assert_eq!(
+            rels_path_for("xl/workbook.xml"),
+            "xl/_rels/workbook.xml.rels"
+        );
+        assert_eq!(rels_path_for("workbook.xml"), "_rels/workbook.xml.rels");
+    }
+
+    #[test]
+    fn parses_relationship_maps_and_errors_on_malformed_xml() {
+        let xml = r#"
+            <Relationships>
+              <Relationship Id="rId1" Type="officeDocument" Target="word/document.xml"/>
+              <Relationship Type="ignored-without-id" Target="ignored.xml"/>
+              <Relationship Id="rId2" Type="empty-without-target"/>
+            </Relationships>
+        "#;
+
+        let map = parse_relationship_map(xml, "_rels/.rels").unwrap();
+
+        assert_eq!(
+            map.get("rId1").map(String::as_str),
+            Some("word/document.xml")
+        );
+        assert_eq!(map.len(), 1);
+
+        let err = parse_relationship_map("<Relationships><", "_rels/.rels").unwrap_err();
+        assert!(matches!(err, OxdocError::MalformedXmlNode { .. }));
+    }
+
+    #[test]
+    fn merges_warnings_in_order() {
+        let warnings = merge_warnings(
+            vec![OutputWarning::new("a.xml", "first")],
+            vec![OutputWarning::new("b.xml", "second")],
+        );
+
+        assert_eq!(warnings[0].path, "a.xml");
+        assert_eq!(warnings[1].message, "second");
+    }
+}
