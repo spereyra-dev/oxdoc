@@ -665,8 +665,13 @@ fn fixture_provenance_notes_are_present() {
     ] {
         let note = fixtures::read_provenance(provenance);
         assert!(note.contains("Source:"));
+        assert!(note.contains("Producer:"));
         assert!(note.contains("Redistribution:"));
+        assert!(note.contains("Purpose:"));
     }
+
+    let xlsx_note = fixtures::read_provenance("xlsx-basic.md");
+    assert!(xlsx_note.contains("no `.xlsx` binary is checked in"));
 }
 
 #[test]

@@ -309,7 +309,9 @@ fn fixture_provenance_notes_are_present() {
     let note = fixtures::read_provenance("docx-basic.md");
 
     assert!(note.contains("Source:"));
+    assert!(note.contains("Producer:"));
     assert!(note.contains("Redistribution:"));
+    assert!(note.contains("Purpose:"));
 }
 
 #[test]
