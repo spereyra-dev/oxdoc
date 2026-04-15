@@ -26,3 +26,4 @@ The format is based on human-readable release notes. This project has not publis
 - Initial Criterion benchmark suite for DOCX text throughput and XLSX row throughput.
 - Manual GitHub Release workflow for Linux, macOS, Windows, musl Linux, and SHA256 checksum artifacts.
 - Metadata extraction for `docProps/custom.xml` custom properties and macro detection from `[Content_Types].xml`.
+- Regression coverage for DOCX malformed XML warnings and XLSX CSV sparse-field escaping.

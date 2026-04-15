@@ -39,6 +39,24 @@ fn extracts_docx_text_from_read_seek_reader() {
 }
 
 #[test]
+fn keeps_partial_docx_text_and_warns_on_malformed_document_xml() {
+    let file = create_ooxml(
+        "malformed-document.docx",
+        &[(
+            "word/document.xml",
+            r#"<w:document><w:p><w:r><w:t>before break</w:t></w:r></w:p><"#,
+        )],
+    );
+
+    let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
+
+    assert_eq!(extraction.value, "before break\n");
+    assert_eq!(extraction.warnings.len(), 1);
+    assert_eq!(extraction.warnings[0].path, "word/document.xml");
+    assert_eq!(extraction.warnings[0].code().as_str(), "W001");
+}
+
+#[test]
 fn extracts_xlsx_csv_through_public_api() {
     let file = fixtures::build_package("xlsx/basic", "fixture.xlsx");
     let mut csv = Vec::new();
@@ -113,6 +131,56 @@ fn extracts_xlsx_csv_without_shared_strings() {
     oxdoc_core::extract_xlsx_csv(&file, XlsxCsvOptions::default(), &mut csv).unwrap();
 
     assert_eq!(String::from_utf8(csv).unwrap(), "inline\n");
+}
+
+#[test]
+fn escapes_xlsx_sparse_fields_for_comma_and_semicolon_csv() {
+    let file = create_ooxml(
+        "escaping-and-sparse.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Escaping" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1" t="inlineStr"><is><t>alpha;beta</t></is></c><c r="C1" t="inlineStr"><is><t>He said &quot;hi&quot;</t></is></c><c r="E1" t="inlineStr"><is><t>line&#10;break</t></is></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+
+    let mut comma_csv = Vec::new();
+    oxdoc_core::extract_xlsx_csv(&file, XlsxCsvOptions::default(), &mut comma_csv).unwrap();
+
+    assert_eq!(
+        String::from_utf8(comma_csv).unwrap(),
+        "alpha;beta,,\"He said \"\"hi\"\"\",,\"line\nbreak\"\n"
+    );
+
+    let mut semicolon_csv = Vec::new();
+    oxdoc_core::extract_xlsx_csv(
+        &file,
+        XlsxCsvOptions {
+            sheet_name: Some("Escaping"),
+            sheet_index: None,
+            delimiter: b';',
+        },
+        &mut semicolon_csv,
+    )
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(semicolon_csv).unwrap(),
+        "\"alpha;beta\";;\"He said \"\"hi\"\"\";;\"line\nbreak\"\n"
+    );
 }
 
 #[test]
