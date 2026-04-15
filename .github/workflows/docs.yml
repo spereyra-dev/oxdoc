@@ -4,13 +4,21 @@ on:
   push:
     branches: [main]
     paths:
+      - README.md
       - docs/**
+      - schemas/**
+      - Makefile
       - package.json
+      - .markdown-link-check.json
       - .github/workflows/docs.yml
   pull_request:
     paths:
+      - README.md
       - docs/**
+      - schemas/**
+      - Makefile
       - package.json
+      - .markdown-link-check.json
       - .github/workflows/docs.yml
   workflow_dispatch:
 
@@ -23,16 +31,8 @@ jobs:
         with:
           node-version: 24
       - name: Check docsify site
-        run: |
-          set -euo pipefail
-          npx --yes docsify-cli@4 serve docs --port 3000 > /tmp/oxdoc-docs.log 2>&1 &
-          server_pid=$!
-          trap 'kill $server_pid 2>/dev/null || true' EXIT
-          for attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:3000/ > /tmp/oxdoc-docs.html; then
-              break
-            fi
-            sleep 1
-          done
-          cat /tmp/oxdoc-docs.log
-          grep "oxdoc documentation" /tmp/oxdoc-docs.html
+        run: make docs-check
+      - name: Check docs links
+        run: make docs-links
+      - name: Check published schema copies
+        run: make docs-schemas-check

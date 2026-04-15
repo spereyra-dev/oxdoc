@@ -22,7 +22,7 @@ APIs and CLI behavior may still change before the first tagged release.
 
 ## Documentation
 
-The complete documentation site is built with Docsify and lives in [`docs/`](docs/).
+The complete documentation site is built with Docsify and lives in [`docs/`](docs/). The public site URL is [spereyra-dev.github.io/oxdoc](https://spereyra-dev.github.io/oxdoc/).
 
 Serve it locally:
 
@@ -36,7 +36,7 @@ Then open:
 http://localhost:3000
 ```
 
-The `docs` GitHub Actions workflow validates that the Docsify site serves correctly. Publishing it through GitHub Pages requires enabling Pages for the repository in GitHub settings.
+The `docs` GitHub Actions workflow validates that the Docsify site serves correctly, checks internal Markdown links, and verifies the published schema copies stay in sync. Publishing it through GitHub Pages requires enabling Pages for the repository in GitHub settings.
 
 Key documentation pages:
 

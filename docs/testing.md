@@ -16,7 +16,7 @@ Current examples:
 
 ## Fixture Tests
 
-Fixture tests use a checked-in corpus under [`tests/fixtures/`](../tests/fixtures/).
+Fixture tests use a checked-in corpus under `tests/fixtures/`.
 
 The corpus is source-controlled OOXML, not opaque binaries:
 

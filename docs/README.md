@@ -4,6 +4,8 @@
 
 The project is designed for shell pipelines, CI jobs, serverless functions, and future embedding through a stable Rust library API.
 
+Public documentation URL: [spereyra-dev.github.io/oxdoc](https://spereyra-dev.github.io/oxdoc/).
+
 ## What It Does
 
 - Extracts DOCX text from the main document part.
