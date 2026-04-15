@@ -12,6 +12,7 @@ Fast OOXML extraction without rendering.
 
 - DOCX text extraction from the main document part.
 - DOCX logical text semantics for paragraph breaks, table cell and row separation, tabs, line breaks, and deleted revision text handling.
+- PPTX text extraction from slide text boxes and speaker notes.
 - XLSX worksheet-to-CSV extraction.
 - Metadata extraction from `docProps/core.xml` and `docProps/app.xml`.
 - A reusable `oxdoc-core` crate and a CLI-facing `oxdoc-cli` crate.
@@ -74,10 +75,16 @@ cargo install --path crates/oxdoc-cli
 
 ## CLI Usage
 
-### Extract DOCX Text
+### Extract DOCX or PPTX Text
 
 ```bash
 oxdoc extract text contrato.docx
+```
+
+For presentations:
+
+```bash
+oxdoc extract text deck.pptx
 ```
 
 Plain text is written to stdout:
@@ -206,9 +213,10 @@ The command-line application. It owns:
 | Area | Supported now |
 | --- | --- |
 | DOCX text | Main document text from `<w:t>`, paragraph breaks, tabs, and line breaks. |
+| PPTX text | Slide text boxes and linked speaker notes in presentation order. |
 | XLSX CSV | Workbook relationship lookup, visible sheet name/index selection, shared strings, inline strings, sparse cells, booleans, errors, cached formula values, CSV escaping. |
 | Metadata | Core/app properties plus basic macro detection. |
-| Output | Plain text, CSV, JSON metadata, JSON DOCX text. |
+| Output | Plain text, CSV, JSON metadata, JSON text extraction. |
 | Errors | Typed library errors, CLI non-zero hard failures. |
 | Warnings | Recoverable parser warnings with OOXML part paths. |
 
@@ -217,7 +225,7 @@ The command-line application. It owns:
 - DOCX headers, footers, footnotes, comments, and hyperlink details are planned but not complete.
 - XLSX shared strings are loaded into memory in the MVP.
 - XLSX date and number format interpretation need hardening.
-- PPTX text extraction is planned but not implemented yet.
+- PPTX extraction does not render slides, synthesize bullets, or preserve visual layout.
 - The public Rust API is not stable before 1.0.
 
 See [ROADMAP.md](ROADMAP.md) and [docs/roadmap.md](docs/roadmap.md).

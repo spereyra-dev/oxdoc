@@ -13,7 +13,7 @@
 oxdoc --help
 ```
 
-## Extract DOCX Text
+## Extract DOCX or PPTX Text
 
 ```bash
 oxdoc extract text <FILE> [--format text|json]
@@ -23,7 +23,7 @@ Arguments:
 
 | Name | Required | Description |
 | --- | --- | --- |
-| `FILE` | yes | Path to a `.docx` file. |
+| `FILE` | yes | Path to a `.docx` or `.pptx` file. |
 
 Options:
 
@@ -36,6 +36,12 @@ Example:
 
 ```bash
 oxdoc extract text contrato.docx
+```
+
+Presentation example:
+
+```bash
+oxdoc extract text deck.pptx
 ```
 
 JSON example:
@@ -54,6 +60,8 @@ Output shape:
 ```
 
 Warnings are still written to stderr when JSON output is selected. They are not embedded in the JSON payload.
+
+PPTX extraction preserves presentation slide order, extracts DrawingML text boxes, and includes linked speaker notes after each slide.
 
 ## Extract XLSX CSV
 

@@ -15,7 +15,7 @@ Status: in progress.
 
 - Improve DOCX extraction beyond the main document body: headers, footers, footnotes, comments, text boxes, and defined ordering for extra parts.
 - Improve XLSX CSV extraction for sparse dimensions, date/number formatting, and larger workbooks. Visible sheet selection by name or 1-based index, booleans, errors, and cached formula values are implemented in the MVP path.
-- Add PPTX text extraction for slide text boxes and speaker notes.
+- Harden PPTX text extraction beyond the MVP slide text box and speaker notes path.
 - Expand metadata coverage across DOCX, XLSX, and PPTX.
 - Keep warnings structured and actionable.
 

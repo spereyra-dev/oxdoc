@@ -10,7 +10,7 @@ The full OOXML surface is large and includes many rendering and layout concerns 
 
 ## Does it support PPTX?
 
-PPTX text extraction is planned but not implemented in the current MVP. Metadata extraction can still read common package metadata when the parts are present.
+Yes. `oxdoc extract text deck.pptx` extracts slide text boxes in presentation order and includes linked speaker notes. It does not render slides, synthesize bullets, or preserve layout.
 
 ## Is memory bounded for huge XLSX files?
 

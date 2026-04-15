@@ -1,5 +1,6 @@
 pub(crate) mod docx;
 pub(crate) mod metadata;
+pub(crate) mod pptx;
 pub(crate) mod xlsx;
 
 use std::collections::HashMap;

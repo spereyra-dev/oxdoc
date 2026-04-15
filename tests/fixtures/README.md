@@ -20,4 +20,5 @@ Current fixtures:
 - `corpus/xlsx/basic`
 - `corpus/xlsx/app-metadata`
 - `corpus/pptx/basic`
+- `corpus/pptx/text`
 - `corpus/docx/external-target`

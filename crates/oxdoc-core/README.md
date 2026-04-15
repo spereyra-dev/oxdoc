@@ -2,11 +2,12 @@
 
 Reusable OOXML extraction library for `oxdoc`.
 
-`oxdoc-core` reads Office Open XML packages such as `.docx`, `.xlsx`, and `.pptx` metadata without rendering pages, slides, or worksheets. It is built for tooling that needs predictable extraction output, typed failures, and recoverable parser warnings.
+`oxdoc-core` reads Office Open XML packages such as `.docx`, `.xlsx`, and `.pptx` without rendering pages, slides, or worksheets. It is built for tooling that needs predictable extraction output, typed failures, and recoverable parser warnings.
 
 ## Capabilities
 
 - Extract DOCX plain text from the supported document parts.
+- Extract PPTX plain text from slide text boxes and speaker notes.
 - Stream XLSX worksheet data to a caller-owned CSV writer.
 - Read core and app metadata from OOXML packages.
 - Use path helpers or `Read + Seek` entry points for embedding.

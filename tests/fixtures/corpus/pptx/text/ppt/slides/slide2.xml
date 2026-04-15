@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp>
+        <p:txBody>
+          <a:p><a:r><a:t>First Slide</a:t></a:r></a:p>
+          <a:p>
+            <a:r><a:t>Alpha</a:t></a:r>
+            <a:tab/>
+            <a:r><a:t>Beta &amp; Co</a:t></a:r>
+            <a:br/>
+            <a:r><a:t><![CDATA[Gamma < Delta]]></a:t></a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>

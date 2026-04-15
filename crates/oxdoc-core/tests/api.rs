@@ -39,6 +39,69 @@ fn extracts_docx_text_from_read_seek_reader() {
 }
 
 #[test]
+fn extracts_pptx_text_through_public_api() {
+    let file = fixtures::build_package("pptx/text", "fixture.pptx");
+
+    let extraction = oxdoc_core::extract_pptx_text(&file).unwrap();
+
+    assert_eq!(
+        extraction.value.trim_end(),
+        fixtures::read_snapshot("pptx_text.txt").trim_end()
+    );
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn extracts_pptx_text_from_read_seek_reader() {
+    let file = fixtures::build_package("pptx/text", "fixture.pptx");
+    let bytes = fs::read(file).unwrap();
+
+    let extraction = oxdoc_core::extract_pptx_text_from_reader(Cursor::new(bytes)).unwrap();
+
+    assert_eq!(
+        extraction.value.trim_end(),
+        fixtures::read_snapshot("pptx_text.txt").trim_end()
+    );
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn keeps_partial_pptx_text_and_warns_on_malformed_slide_xml() {
+    let file = create_ooxml(
+        "malformed-slide.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId r:id="rId1"/><p:sldId r:id="rId2"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" Target="slides/slide1.xml"/><Relationship Id="rId2" Type="slide" Target="slides/slide2.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"<p:sld><a:p><a:r><a:t>before break</a:t></a:r><"#,
+            ),
+            (
+                "ppt/slides/slide2.xml",
+                r#"<p:sld><a:p><a:r><a:t>after break</a:t></a:r></a:p></p:sld>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_pptx_text(&file).unwrap();
+
+    assert_eq!(extraction.value, "before break\nafter break\n");
+    assert_eq!(extraction.warnings.len(), 1);
+    assert_eq!(extraction.warnings[0].path, "ppt/slides/slide1.xml");
+    assert_eq!(extraction.warnings[0].code().as_str(), "W001");
+}
+
+#[test]
 fn keeps_partial_docx_text_and_warns_on_malformed_document_xml() {
     let file = create_ooxml(
         "malformed-document.docx",
@@ -674,12 +737,50 @@ fn rejects_workbook_relationship_targets_that_escape_package_root() {
 }
 
 #[test]
+fn rejects_pptx_notes_relationship_targets_that_escape_package_root() {
+    let file = create_ooxml(
+        "escaping-notes-target.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId r:id="rId1"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" Target="slides/slide1.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"<p:sld><a:p><a:r><a:t>slide</a:t></a:r></a:p></p:sld>"#,
+            ),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../../../outside.xml"/></Relationships>"#,
+            ),
+        ],
+    );
+
+    let err = oxdoc_core::extract_pptx_text(&file).unwrap_err();
+
+    assert!(matches!(
+        err,
+        OxdocError::SuspiciousRelationshipTarget { path, target, .. }
+            if path == "ppt/slides/_rels/slide1.xml.rels" && target == "../../../outside.xml"
+    ));
+}
+
+#[test]
 fn fixture_provenance_notes_are_present() {
     for provenance in [
         "docx-basic.md",
         "xlsx-basic.md",
         "xlsx-app-metadata.md",
         "pptx-basic.md",
+        "pptx-text.md",
         "docx-external-target.md",
     ] {
         let note = fixtures::read_provenance(provenance);
@@ -709,6 +810,7 @@ fn fuzz_entry_points_parse_minimal_xml_inputs() {
         br#"<cp:coreProperties xmlns:cp="cp" xmlns:dc="dc"><dc:creator>Ada</dc:creator></cp:coreProperties>"#,
     )
     .unwrap();
+    oxdoc_core::fuzz_pptx_text(br#"<p:sld><a:p><a:r><a:t>Fuzz</a:t></a:r></a:p></p:sld>"#).unwrap();
     oxdoc_core::fuzz_parse_shared_strings(br#"<sst><si><t>value</t></si></sst>"#).unwrap();
     oxdoc_core::fuzz_parse_sheet(
         br#"<worksheet><sheetData><row><c r="A1"><v>1</v></c></row></sheetData></worksheet>"#,

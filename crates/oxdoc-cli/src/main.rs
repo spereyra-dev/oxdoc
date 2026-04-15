@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -79,7 +79,7 @@ fn run() -> Result<(), CliError> {
     match cli.command {
         Command::Extract { command } => match command {
             ExtractCommand::Text { file, format } => {
-                let result = oxdoc_core::extract_docx_text(&file)?;
+                let result = extract_text(&file)?;
                 emit_warnings(&result.warnings);
                 match format {
                     TextFormat::Text => {
@@ -130,6 +130,18 @@ fn run() -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+fn extract_text(file: &Path) -> Result<oxdoc_core::Extraction<String>, CliError> {
+    if file
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("pptx"))
+    {
+        return Ok(oxdoc_core::extract_pptx_text(file)?);
+    }
+
+    Ok(oxdoc_core::extract_docx_text(file)?)
 }
 
 #[derive(Debug)]

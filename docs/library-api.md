@@ -37,6 +37,26 @@ Returns:
 Extraction<String>
 ```
 
+### `extract_pptx_text`
+
+```rust
+use oxdoc_core::extract_pptx_text;
+
+fn main() -> oxdoc_core::Result<()> {
+    let extraction = extract_pptx_text("deck.pptx")?;
+    println!("{}", extraction.value);
+    Ok(())
+}
+```
+
+Returns:
+
+```rust
+Extraction<String>
+```
+
+The text value includes slide text boxes in presentation order and linked speaker notes after their slide text.
+
 ### `extract_xlsx_csv`
 
 ```rust
@@ -104,8 +124,8 @@ Embedding applications can pass any `Read + Seek` source, such as `std::fs::File
 use std::io::Cursor;
 
 use oxdoc_core::{
-    extract_docx_text_from_reader, extract_xlsx_csv_from_reader, read_info_from_reader,
-    XlsxCsvOptions,
+    extract_docx_text_from_reader, extract_pptx_text_from_reader, extract_xlsx_csv_from_reader,
+    read_info_from_reader, XlsxCsvOptions,
 };
 
 fn main() -> oxdoc_core::Result<()> {
@@ -113,12 +133,16 @@ fn main() -> oxdoc_core::Result<()> {
     let text = extract_docx_text_from_reader(Cursor::new(docx_bytes))?;
     println!("{}", text.value);
 
+    let pptx_bytes = std::fs::read("deck.pptx")?;
+    let slide_text = extract_pptx_text_from_reader(Cursor::new(pptx_bytes))?;
+    println!("{}", slide_text.value);
+
     let xlsx = std::fs::File::open("data.xlsx")?;
     let mut csv = Vec::new();
     extract_xlsx_csv_from_reader(xlsx, XlsxCsvOptions::default(), &mut csv)?;
 
-    let pptx_bytes = std::fs::read("deck.pptx")?;
-    let info = read_info_from_reader(Cursor::new(pptx_bytes), "deck.pptx")?;
+    let info_bytes = std::fs::read("deck.pptx")?;
+    let info = read_info_from_reader(Cursor::new(info_bytes), "deck.pptx")?;
     println!("{:#?}", info.value);
 
     Ok(())

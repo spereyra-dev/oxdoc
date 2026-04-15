@@ -31,3 +31,4 @@ The format is based on human-readable release notes. This project has not publis
 - Stronger fixture provenance checks and explicit XLSX archive generation notes.
 - Fixture coverage for optional XLSX app metadata fields.
 - Docs link checking plus published JSON schema copies for the Docsify site.
+- PPTX text extraction for slide text boxes and speaker notes.
