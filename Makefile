@@ -10,7 +10,7 @@ COVERAGE_THRESHOLD ?= 95
 
 .PHONY: help all ci ci-rust prepare-commit pre-push
 .PHONY: fmt fmt-check check clippy lint test doctest coverage coverage-html coverage-lcov audit
-.PHONY: build build-release release build-musl musl docs docs-serve docs-check install-tools clean clean-coverage
+.PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check install-tools clean clean-coverage
 
 help:
 	@echo "oxdoc development targets"
@@ -28,13 +28,14 @@ help:
 	@echo "  make ci-rust          Run the Rust gates used by GitHub Actions"
 	@echo "  make docs             Serve Docsify locally"
 	@echo "  make docs-check       Validate Docsify serves locally"
+	@echo "  make docs-links       Validate README and Docsify Markdown links"
 	@echo "  make build-release    Build optimized release binary"
 	@echo "  make build-musl       Build static Linux musl binary"
 	@echo "  make ci               Run the full local CI gate"
 
 all: ci
 
-ci: ci-rust docs-check build-release
+ci: ci-rust docs-check docs-links docs-schemas-check build-release
 	@echo "All CI checks passed."
 
 ci-rust: fmt-check check clippy test doctest coverage
@@ -106,6 +107,12 @@ docs-check:
 	done; \
 	cat /tmp/oxdoc-docs.log; \
 	grep "oxdoc documentation" /tmp/oxdoc-docs.html
+
+docs-links:
+	@find README.md docs -name '*.md' -print0 | xargs -0 $(NPX) --yes markdown-link-check@3 --config .markdown-link-check.json
+
+docs-schemas-check:
+	@diff -ru schemas/v1 docs/schemas/v1
 
 install-tools:
 	$(CARGO) install cargo-llvm-cov --locked
