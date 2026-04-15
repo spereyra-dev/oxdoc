@@ -392,6 +392,24 @@ fn reads_metadata_from_read_seek_reader() {
 }
 
 #[test]
+fn reads_optional_app_metadata_from_fixture() {
+    let file = fixtures::build_package("xlsx/app-metadata", "fixture.xlsx");
+
+    let extraction = oxdoc_core::read_info(&file).unwrap();
+
+    assert_eq!(
+        extraction.value.application.as_deref(),
+        Some("Fixture Generator")
+    );
+    assert_eq!(extraction.value.company.as_deref(), Some("Fixture Labs"));
+    assert_eq!(extraction.value.worksheet_count, Some(3));
+    assert_eq!(extraction.value.page_count, None);
+    assert_eq!(extraction.value.slide_count, None);
+    assert_eq!(extraction.value.custom_properties, None);
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
 fn reads_custom_metadata_properties() {
     let file = create_ooxml(
         "custom-metadata.docx",
@@ -660,6 +678,7 @@ fn fixture_provenance_notes_are_present() {
     for provenance in [
         "docx-basic.md",
         "xlsx-basic.md",
+        "xlsx-app-metadata.md",
         "pptx-basic.md",
         "docx-external-target.md",
     ] {
@@ -670,8 +689,10 @@ fn fixture_provenance_notes_are_present() {
         assert!(note.contains("Purpose:"));
     }
 
-    let xlsx_note = fixtures::read_provenance("xlsx-basic.md");
-    assert!(xlsx_note.contains("no `.xlsx` binary is checked in"));
+    for provenance in ["xlsx-basic.md", "xlsx-app-metadata.md"] {
+        let note = fixtures::read_provenance(provenance);
+        assert!(note.contains("no `.xlsx` binary is checked in"));
+    }
 }
 
 #[test]

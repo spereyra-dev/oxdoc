@@ -29,3 +29,4 @@ The format is based on human-readable release notes. This project has not publis
 - Regression coverage for DOCX malformed XML warnings and XLSX CSV sparse-field escaping.
 - CLI documentation example copied from a real XLSX fixture run.
 - Stronger fixture provenance checks and explicit XLSX archive generation notes.
+- Fixture coverage for optional XLSX app metadata fields.
