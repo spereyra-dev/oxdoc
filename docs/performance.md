@@ -17,6 +17,7 @@ Performance is a core part of `oxdoc`, not an afterthought.
 | ZIP access | Reads targeted entries through `zip::ZipArchive` after encrypted-part, size, and compression-ratio guardrails. |
 | XML parsing | Uses `quick-xml` event readers. |
 | DOCX text | Builds a `String` result for the library API. |
+| PPTX text | Builds a `String` result from slide and notes text parts. |
 | XLSX CSV | Streams worksheet output to a caller-provided writer. |
 | Shared strings | Loaded into memory for MVP. |
 

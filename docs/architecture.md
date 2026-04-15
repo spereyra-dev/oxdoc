@@ -31,7 +31,7 @@ Important modules:
 | Module | Responsibility |
 | --- | --- |
 | `vfs` | ZIP-backed virtual file system abstraction. |
-| `parsers` | DOCX, XLSX, metadata, relationship, and shared XML helpers. |
+| `parsers` | DOCX, PPTX, XLSX, metadata, relationship, and shared XML helpers. |
 | `models` | Public data structures returned by the library. |
 | `error` | `OxdocError` and `Result<T>`. |
 

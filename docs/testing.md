@@ -46,6 +46,7 @@ High-value fuzz targets:
 - DOCX document XML parser.
 - XLSX shared string parser.
 - XLSX sheet parser.
+- PPTX slide text parser.
 - Relationship parser.
 - Metadata parser.
 

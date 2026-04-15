@@ -42,7 +42,7 @@ Fields:
 | Field | Type | Description |
 | --- | --- | --- |
 | `file` | string | File name derived from the provided path. |
-| `text` | string | Extracted plain text. |
+| `text` | string | Extracted plain text from DOCX or PPTX input. |
 
 ## Metadata JSON
 

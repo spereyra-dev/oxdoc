@@ -50,6 +50,45 @@ fn extracts_text_as_json() {
 }
 
 #[test]
+fn extracts_pptx_text_to_stdout() {
+    let pptx = fixtures::build_package("pptx/text", "fixture.PPTX");
+
+    let output = oxdoc(["extract", "text", pptx.to_str().unwrap()]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("pptx_text.txt").trim_end()
+    );
+}
+
+#[test]
+fn extracts_pptx_text_as_json() {
+    let pptx = fixtures::build_package("pptx/text", "fixture.pptx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        pptx.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+
+    let actual_stdout = stdout(&output);
+    let actual: Value = serde_json::from_str(&actual_stdout).unwrap();
+
+    assert_eq!(actual["file"], "fixture.pptx");
+    assert_eq!(
+        actual["text"].as_str().unwrap().trim_end(),
+        fixtures::read_snapshot("pptx_text.txt").trim_end()
+    );
+}
+
+#[test]
 fn extracts_csv_to_stdout() {
     let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
 

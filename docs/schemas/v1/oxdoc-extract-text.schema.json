@@ -13,7 +13,7 @@
     },
     "text": {
       "type": "string",
-      "description": "Extracted plain text from the main DOCX document part."
+      "description": "Extracted plain text from supported OOXML text-bearing document parts."
     }
   }
 }

@@ -1,8 +1,8 @@
 //! Core OOXML extraction APIs for `oxdoc`.
 //!
 //! This crate reads Office Open XML packages without rendering them. It exposes
-//! path-based helpers for DOCX text extraction, XLSX-to-CSV extraction, and
-//! package metadata. Extraction returns useful output plus recoverable warnings,
+//! path-based helpers for DOCX/PPTX text extraction, XLSX-to-CSV extraction,
+//! and package metadata. Extraction returns useful output plus recoverable warnings,
 //! while unrecoverable package and parser failures are returned as typed errors.
 //!
 //! ```no_run
@@ -34,8 +34,10 @@ pub use parsers::fuzz_parse_relationships as fuzz_relationships;
 #[doc(hidden)]
 pub use parsers::metadata::fuzz_parse_metadata as fuzz_metadata;
 #[doc(hidden)]
+pub use parsers::pptx::fuzz_extract_text as fuzz_pptx_text;
+#[doc(hidden)]
 pub use parsers::xlsx::{fuzz_parse_shared_strings, fuzz_parse_sheet};
-use parsers::{docx, metadata, xlsx};
+use parsers::{docx, metadata, pptx, xlsx};
 use vfs::OoxmlPackage;
 
 pub fn extract_docx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {
@@ -51,6 +53,16 @@ pub fn extract_docx_text_from_reader<R: Read + Seek>(reader: R) -> Result<Extrac
         let reader = BufReader::new(entry);
         docx::extract_text(reader, &document_path)
     })
+}
+
+pub fn extract_pptx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {
+    let file = File::open(path)?;
+    extract_pptx_text_from_reader(file)
+}
+
+pub fn extract_pptx_text_from_reader<R: Read + Seek>(reader: R) -> Result<Extraction<String>> {
+    let mut package = OoxmlPackage::new(reader)?;
+    pptx::extract_text(&mut package)
 }
 
 pub fn extract_xlsx_csv<W: Write>(

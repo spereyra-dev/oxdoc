@@ -9,6 +9,7 @@ Public documentation URL: [spereyra-dev.github.io/oxdoc](https://spereyra-dev.gi
 ## What It Does
 
 - Extracts DOCX text from the main document part.
+- Extracts PPTX text from slide text boxes and speaker notes.
 - Converts XLSX worksheets to CSV.
 - Reads core and app metadata from Office documents.
 - Emits structured warnings for recoverable parser problems.
