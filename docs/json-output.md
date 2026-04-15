@@ -63,6 +63,10 @@ Shape:
   "modified_at": "2024-03-13T10:00:00Z",
   "application": "LibreOffice",
   "company": "Example Inc",
+  "custom_properties": {
+    "Department": "Research & Development",
+    "Reviewed": "true"
+  },
   "has_macros": false,
   "word_count": 1542,
   "page_count": 12,
@@ -73,6 +77,8 @@ Shape:
 ```
 
 Fields other than `file` and `has_macros` are optional and omitted when unavailable.
+
+`custom_properties` contains values from `docProps/custom.xml`. Values are emitted as strings regardless of the OOXML custom property value type.
 
 ## Warnings
 

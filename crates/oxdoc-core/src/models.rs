@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,6 +169,8 @@ pub struct DocumentInfo {
     pub application: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub company: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_properties: Option<BTreeMap<String, String>>,
     pub has_macros: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub word_count: Option<u64>,

@@ -25,3 +25,4 @@ The format is based on human-readable release notes. This project has not publis
 - Documented DOCX logical text semantics with parser tests for list, field, and hidden text policy.
 - Initial Criterion benchmark suite for DOCX text throughput and XLSX row throughput.
 - Manual GitHub Release workflow for Linux, macOS, Windows, musl Linux, and SHA256 checksum artifacts.
+- Metadata extraction for `docProps/custom.xml` custom properties and macro detection from `[Content_Types].xml`.
