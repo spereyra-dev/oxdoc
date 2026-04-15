@@ -94,6 +94,21 @@ id,nombre,monto
 1,Cliente A,5000
 ```
 
+Fixture-backed example:
+
+```bash
+oxdoc extract csv fixtures/xlsx-basic.xlsx --sheet "Sales Q1"
+```
+
+stdout:
+
+```csv
+id,Cliente A,monto
+1,,5000
+```
+
+stderr is empty for this fixture. The blank middle field in the second row is intentional; the worksheet has no `B2` cell, so `oxdoc` preserves the sparse column as an empty CSV field.
+
 Notes:
 
 - Sparse cells are padded with empty CSV fields.
