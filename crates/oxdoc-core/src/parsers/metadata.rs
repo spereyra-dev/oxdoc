@@ -93,16 +93,15 @@ fn parse_content_types<R: BufRead>(source: R, path: &str) -> Result<Extraction<b
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(element)) | Ok(Event::Empty(element)) => {
+            Ok(Event::Start(element)) | Ok(Event::Empty(element))
                 if matches!(
                     crate::parsers::local_name(element.name().as_ref()),
                     b"Default" | b"Override"
                 ) && attr_value(&element, b"ContentType")
                     .as_deref()
-                    .is_some_and(is_vba_project_content_type)
-                {
-                    has_macros = true;
-                }
+                    .is_some_and(is_vba_project_content_type) =>
+            {
+                has_macros = true;
             }
             Ok(Event::Eof) => break,
             Err(source) => {
@@ -153,12 +152,12 @@ fn parse_core<R: BufRead>(source: R, path: &str) -> Result<Extraction<CoreProps>
                     assign_core_value(&mut props, field, decode_xml_reference(value.as_ref()));
                 }
             }
-            Ok(Event::End(element)) => {
+            Ok(Event::End(element))
                 if current_field.as_deref().is_some_and(|field| {
                     name_eq(element.name().as_ref(), crate::parsers::local_name(field))
-                }) {
-                    current_field = None;
-                }
+                }) =>
+            {
+                current_field = None;
             }
             Ok(Event::Eof) => break,
             Err(source) => {
@@ -209,12 +208,12 @@ fn parse_app<R: BufRead>(source: R, path: &str) -> Result<Extraction<AppProps>> 
                     assign_app_value(&mut props, field, decode_xml_reference(value.as_ref()));
                 }
             }
-            Ok(Event::End(element)) => {
+            Ok(Event::End(element))
                 if current_field.as_deref().is_some_and(|field| {
                     name_eq(element.name().as_ref(), crate::parsers::local_name(field))
-                }) {
-                    current_field = None;
-                }
+                }) =>
+            {
+                current_field = None;
             }
             Ok(Event::Eof) => break,
             Err(source) => {
