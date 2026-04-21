@@ -1,14 +1,92 @@
-use std::io::BufRead;
 use std::io::Cursor;
+use std::io::{BufRead, BufReader, Read, Seek};
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use crate::Result;
 use crate::models::{Extraction, OutputWarning};
-use crate::parsers::{decode_xml_reference, decode_xml_text, name_eq};
+use crate::parsers::find_office_document_path;
+use crate::parsers::{
+    decode_xml_reference, decode_xml_text, name_eq, parent_dir, parse_relationships, rels_path_for,
+    resolve_relationship_target,
+};
+use crate::vfs::OoxmlPackage;
+use crate::{OxdocError, Result};
 
-pub(crate) fn extract_text<R: BufRead>(source: R, path: &str) -> Result<Extraction<String>> {
+pub(crate) fn extract_text<R: Read + Seek>(
+    package: &mut OoxmlPackage<R>,
+) -> Result<Extraction<String>> {
+    let document_path = find_office_document_path(package, "word/document.xml")?;
+    let document = extract_part_text(package, &document_path)?;
+    let relationships_path = rels_path_for(&document_path);
+
+    let mut text = document.value;
+    let mut warnings = document.warnings;
+
+    let relationships_xml = match package.read_to_string(&relationships_path) {
+        Ok(xml) => xml,
+        Err(OxdocError::MissingPart(_)) => return Ok(Extraction::with_warnings(text, warnings)),
+        Err(err) => return Err(err),
+    };
+
+    for relationship in parse_relationships(&relationships_xml, &relationships_path)? {
+        if !is_related_docx_text_part(relationship.relationship_type.as_deref()) {
+            continue;
+        }
+
+        let part_path = resolve_relationship_target(
+            parent_dir(&document_path),
+            &relationship,
+            &relationships_path,
+        )?;
+        match extract_part_text(package, &part_path) {
+            Ok(part) => {
+                append_related_text(&mut text, &part.value);
+                warnings.extend(part.warnings);
+            }
+            Err(OxdocError::MissingPart(part)) => warnings.push(OutputWarning::new(
+                &relationships_path,
+                format!("skipped related DOCX text part {part}: missing part"),
+            )),
+            Err(err) => return Err(err),
+        }
+    }
+
+    Ok(Extraction::with_warnings(text, warnings))
+}
+
+fn extract_part_text<R: Read + Seek>(
+    package: &mut OoxmlPackage<R>,
+    path: &str,
+) -> Result<Extraction<String>> {
+    package.with_entry(path, |entry| {
+        let reader = BufReader::new(entry);
+        extract_xml_text(reader, path)
+    })
+}
+
+fn is_related_docx_text_part(relationship_type: Option<&str>) -> bool {
+    relationship_type.is_some_and(|kind| {
+        kind.ends_with("/header")
+            || kind.ends_with("/footer")
+            || kind.ends_with("/footnotes")
+            || kind.ends_with("/endnotes")
+            || kind.ends_with("/comments")
+    })
+}
+
+fn append_related_text(text: &mut String, related_text: &str) {
+    if related_text.is_empty() {
+        return;
+    }
+
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(related_text);
+}
+
+fn extract_xml_text<R: BufRead>(source: R, path: &str) -> Result<Extraction<String>> {
     let mut reader = Reader::from_reader(source);
     reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
@@ -131,7 +209,7 @@ pub(crate) fn extract_text<R: BufRead>(source: R, path: &str) -> Result<Extracti
 
 #[doc(hidden)]
 pub fn fuzz_extract_text(xml: &[u8]) -> Result<()> {
-    let _ = extract_text(Cursor::new(xml), "word/document.xml")?;
+    let _ = extract_xml_text(Cursor::new(xml), "word/document.xml")?;
     Ok(())
 }
 
@@ -206,7 +284,7 @@ fn push_newline(text: &mut String) {
 mod tests {
     use std::io::Cursor;
 
-    use super::extract_text;
+    use super::extract_xml_text;
 
     #[test]
     fn extracts_word_text_with_logical_breaks() {
@@ -219,7 +297,7 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
 
         assert_eq!(result.value, "Hola\tMundo\nSegundo & final\n");
         assert!(result.warnings.is_empty());
@@ -229,7 +307,7 @@ mod tests {
     fn returns_partial_text_after_malformed_xml() {
         let xml = br#"<w:document><w:p><w:r><w:t>Hola</w:t></w:r></w:p><"#;
 
-        let result = extract_text(Cursor::new(xml.as_slice()), "word/document.xml").unwrap();
+        let result = extract_xml_text(Cursor::new(xml.as_slice()), "word/document.xml").unwrap();
 
         assert_eq!(result.value, "Hola\n");
         assert_eq!(result.warnings.len(), 1);
@@ -246,11 +324,26 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
-        let empty = extract_text(Cursor::new(b"<w:document/>"), "word/document.xml").unwrap();
+        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let empty = extract_xml_text(Cursor::new(b"<w:document/>"), "word/document.xml").unwrap();
 
         assert_eq!(result.value, "A < B\nC\n");
         assert!(empty.value.is_empty());
+    }
+
+    #[test]
+    fn extracts_drawing_text_by_local_text_name() {
+        let xml = r#"
+            <w:document xmlns:w="w" xmlns:a="a">
+              <w:body>
+                <w:p><w:r><w:drawing><a:t>Drawing text</a:t></w:drawing></w:r></w:p>
+              </w:body>
+            </w:document>
+        "#;
+
+        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+
+        assert_eq!(result.value, "Drawing text\n");
     }
 
     #[test]
@@ -275,7 +368,7 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
 
         assert_eq!(result.value, "A\tB\nC one C two\tD\n");
     }
@@ -302,7 +395,7 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
 
         assert_eq!(result.value, "Outer Inner\tSibling\n");
     }
@@ -321,7 +414,7 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
 
         assert_eq!(result.value, "Keep inserted\n");
     }
@@ -349,7 +442,7 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
 
         assert_eq!(result.value, "List item\n2026-04-14\nHidden text\n");
     }

@@ -22,7 +22,7 @@ mod parsers;
 pub mod vfs;
 
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, Write};
+use std::io::{Read, Seek, Write};
 use std::path::Path;
 
 pub use error::{OxdocError, Result};
@@ -47,12 +47,7 @@ pub fn extract_docx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {
 
 pub fn extract_docx_text_from_reader<R: Read + Seek>(reader: R) -> Result<Extraction<String>> {
     let mut package = OoxmlPackage::new(reader)?;
-    let document_path = parsers::find_office_document_path(&mut package, "word/document.xml")?;
-
-    package.with_entry(&document_path, |entry| {
-        let reader = BufReader::new(entry);
-        docx::extract_text(reader, &document_path)
-    })
+    docx::extract_text(&mut package)
 }
 
 pub fn extract_pptx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {

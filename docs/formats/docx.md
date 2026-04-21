@@ -7,6 +7,7 @@ DOCX files are OOXML ZIP packages. The primary text content usually lives in `wo
 The MVP parser:
 
 - Reads the main document XML part.
+- Follows main-document relationships for headers, footers, footnotes, endnotes, and comments.
 - Extracts text from `<w:t>` nodes.
 - Converts `<w:tab/>` into a tab character.
 - Converts `<w:br/>` and `<w:cr/>` into line breaks.
@@ -34,6 +35,9 @@ The MVP parser:
 | Deleted revisions | Text inside `<w:del>` is omitted. |
 | Fields | Field instructions such as `<w:instrText>` are omitted; visible cached/result text in `<w:t>` is emitted. |
 | Hidden text | Hidden run properties such as `<w:vanish/>` are not interpreted yet, so hidden `<w:t>` text is emitted when present in `word/document.xml`. |
+| Hyperlinks | Visible run text inside hyperlinks is emitted; relationship targets are not emitted. |
+| Related text parts | The main document body is emitted first, then headers, footers, footnotes, endnotes, and comments are appended in `word/_rels/document.xml.rels` relationship order. Missing related parts are skipped with a warning. |
+| Text boxes and drawings | Visible text is emitted when it appears in `*:t` text nodes in parsed DOCX parts. Layout and drawing geometry are not interpreted. |
 
 These rules are intentionally stable for scripts. Breaking changes to this contract should be called out before a 1.0 release.
 
@@ -65,12 +69,8 @@ oxdoc extract text contrato.docx --format json
 
 ## Planned Improvements
 
-- Headers and footers.
-- Footnotes and endnotes.
-- Comments.
-- Hyperlink text.
-- Text boxes and drawing text.
-- Optional policy controls for hidden text, generated list markers, and more detailed revision semantics.
+- Section-aware ordering for headers and footers.
+- Optional policy controls for hidden text, generated list markers, comments, related parts, and more detailed revision semantics.
 
 ## Non-Goals
 
