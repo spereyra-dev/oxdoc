@@ -83,7 +83,7 @@ jobs:
         run: |
           $package = "oxdoc-${{ inputs.tag_name }}-${{ matrix.target }}"
           Compress-Archive -Path "dist/$package" -DestinationPath "$package.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: oxdoc-${{ inputs.tag_name }}-${{ matrix.target }}
           path: oxdoc-${{ inputs.tag_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
