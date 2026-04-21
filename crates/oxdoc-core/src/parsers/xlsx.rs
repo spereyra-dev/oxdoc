@@ -133,16 +133,16 @@ fn parse_workbook_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<Workboo
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(element)) | Ok(Event::Empty(element)) => {
-                if name_eq(element.name().as_ref(), b"sheet") {
-                    match (attr_value(&element, b"name"), attr_value(&element, b"id")) {
-                        (Some(name), Some(relation_id)) => sheets.push(WorkbookSheet {
-                            name,
-                            relation_id,
-                            visible: is_visible_sheet_state(attr_value(&element, b"state")),
-                        }),
-                        _ => warnings.push(OutputWarning::ignored_workbook_sheet(path)),
-                    }
+            Ok(Event::Start(element)) | Ok(Event::Empty(element))
+                if name_eq(element.name().as_ref(), b"sheet") =>
+            {
+                match (attr_value(&element, b"name"), attr_value(&element, b"id")) {
+                    (Some(name), Some(relation_id)) => sheets.push(WorkbookSheet {
+                        name,
+                        relation_id,
+                        visible: is_visible_sheet_state(attr_value(&element, b"state")),
+                    }),
+                    _ => warnings.push(OutputWarning::ignored_workbook_sheet(path)),
                 }
             }
             Ok(Event::Eof) => break,
