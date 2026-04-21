@@ -39,6 +39,149 @@ fn extracts_docx_text_from_read_seek_reader() {
 }
 
 #[test]
+fn extracts_docx_text_from_related_parts_in_relationship_order() {
+    let file = create_ooxml(
+        "docx-related-parts.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w" xmlns:r="r"><w:body><w:p><w:r><w:t>Body </w:t></w:r><w:hyperlink r:id="rLink"><w:r><w:t>visible link</w:t></w:r></w:hyperlink></w:p></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rFootnotes" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rEndnotes" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/><Relationship Id="rComments" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/><Relationship Id="rLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" TargetMode="External" Target="https://example.invalid"/></Relationships>"#,
+            ),
+            (
+                "word/footer1.xml",
+                r#"<w:ftr xmlns:w="w"><w:p><w:r><w:t>Footer text</w:t></w:r></w:p></w:ftr>"#,
+            ),
+            (
+                "word/header1.xml",
+                r#"<w:hdr xmlns:w="w"><w:p><w:r><w:t>Header text</w:t></w:r></w:p></w:hdr>"#,
+            ),
+            (
+                "word/footnotes.xml",
+                r#"<w:footnotes xmlns:w="w"><w:footnote w:id="1"><w:p><w:r><w:t>Footnote text</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+            ),
+            (
+                "word/endnotes.xml",
+                r#"<w:endnotes xmlns:w="w"><w:endnote w:id="1"><w:p><w:r><w:t>Endnote text</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+            ),
+            (
+                "word/comments.xml",
+                r#"<w:comments xmlns:w="w"><w:comment w:id="1"><w:p><w:r><w:t>Comment text</w:t></w:r></w:p></w:comment></w:comments>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
+
+    assert_eq!(
+        extraction.value,
+        "Body visible link\nFooter text\nHeader text\nFootnote text\nEndnote text\nComment text\n"
+    );
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn warns_on_missing_docx_related_part() {
+    let file = create_ooxml(
+        "docx-missing-related-part.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="missing-header.xml"/></Relationships>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
+
+    assert_eq!(extraction.value, "Body\n");
+    assert_eq!(extraction.warnings.len(), 1);
+    assert_eq!(extraction.warnings[0].path, "word/_rels/document.xml.rels");
+    assert!(
+        extraction.warnings[0]
+            .message
+            .contains("skipped related DOCX text part word/missing-header.xml")
+    );
+}
+
+#[test]
+fn keeps_partial_related_docx_text_and_warns_on_malformed_part() {
+    let file = create_ooxml(
+        "docx-malformed-related-part.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+            ),
+            (
+                "word/header1.xml",
+                r#"<w:hdr xmlns:w="w"><w:p><w:r><w:t>Header before break</w:t></w:r></w:p><"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
+
+    assert_eq!(extraction.value, "Body\nHeader before break\n");
+    assert_eq!(extraction.warnings.len(), 1);
+    assert_eq!(extraction.warnings[0].path, "word/header1.xml");
+    assert_eq!(extraction.warnings[0].code().as_str(), "W001");
+}
+
+#[test]
+fn rejects_external_docx_related_part_targets() {
+    let file = create_ooxml(
+        "docx-external-related-part.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" TargetMode="External" Target="https://example.invalid/header.xml"/></Relationships>"#,
+            ),
+        ],
+    );
+
+    let err = oxdoc_core::extract_docx_text(&file).unwrap_err();
+
+    assert!(
+        matches!(err, OxdocError::SuspiciousRelationshipTarget { path, target, reason }
+            if path == "word/_rels/document.xml.rels"
+                && target == "https://example.invalid/header.xml"
+                && reason.contains("external"))
+    );
+}
+
+#[test]
 fn extracts_pptx_text_through_public_api() {
     let file = fixtures::build_package("pptx/text", "fixture.pptx");
 

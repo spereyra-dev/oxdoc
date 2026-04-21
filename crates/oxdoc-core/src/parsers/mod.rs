@@ -63,7 +63,7 @@ pub fn fuzz_parse_relationships(xml: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn parse_relationships(xml: &str, path: &str) -> Result<Vec<Relationship>> {
+pub(crate) fn parse_relationships(xml: &str, path: &str) -> Result<Vec<Relationship>> {
     let mut reader = Reader::from_reader(Cursor::new(xml.as_bytes()));
     reader.config_mut().trim_text(true);
     let mut buf = Vec::new();
