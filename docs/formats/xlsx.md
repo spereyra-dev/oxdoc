@@ -19,6 +19,10 @@ The MVP parser:
 - Emits sparse cells as empty CSV fields.
 - Escapes CSV fields with delimiters, quotes, or line breaks.
 
+Numeric cells are emitted as the raw stored value from the worksheet XML. Date and time cells are also emitted as their stored serial values; `oxdoc` does not read `styles.xml`, apply number formats, convert Excel date systems, or localize numeric output yet.
+
+Only rows present in `sheetData` are emitted. `oxdoc` pads missing cells within a present row, but it does not synthesize blank CSV rows from worksheet `dimension` ranges or row numbers.
+
 ## Example
 
 ```bash
@@ -62,6 +66,6 @@ Worksheet XML is streamed to the caller-provided writer. Shared strings are load
 
 ## Planned Improvements
 
-- Date and time interpretation.
+- Date, time, and number-format interpretation.
 - Large shared-string storage.
 - Multiple-sheet export modes.

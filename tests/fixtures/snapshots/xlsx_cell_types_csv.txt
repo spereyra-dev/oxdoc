@@ -1,0 +1,3 @@
+shared,,FALSE,TRUE,FALSE,#N/A,7,done,45291,1234.50,,"needs, ""quotes""
+and newline"
+,tail
