@@ -293,6 +293,56 @@ fn extracts_xlsx_csv_with_boolean_error_blank_and_empty_row_cells() {
 }
 
 #[test]
+fn extracts_xlsx_csv_cell_type_edge_cases_as_stable_snapshot() {
+    let file = create_ooxml(
+        "xlsx-cell-types.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Types" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/sharedStrings.xml",
+                r#"<sst><si><t>shared</t></si><si/></sst>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<styleSheet><cellXfs><xf numFmtId="14"/></cellXfs></styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><dimension ref="A1:L3"/><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="b"><v>0</v></c><c r="D1" t="b"><v>true</v></c><c r="E1" t="b"><v>false</v></c><c r="F1" t="e"><v>#N/A</v></c><c r="G1"><f>SUM(A2:A3)</f><v>7</v></c><c r="H1" t="str"><f>&quot;done&quot;</f><v>done</v></c><c r="I1" s="1"><v>45291</v></c><c r="J1"><v>1234.50</v></c><c r="L1" t="inlineStr"><is><t>needs, &quot;quotes&quot;&#10;and newline</t></is></c></row><row r="3"><c r="B3"><v>tail</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let mut csv = Vec::new();
+
+    oxdoc_core::extract_xlsx_csv(
+        &file,
+        XlsxCsvOptions {
+            sheet_name: Some("Types"),
+            sheet_index: None,
+            delimiter: b',',
+        },
+        &mut csv,
+    )
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(csv).unwrap(),
+        fixtures::read_snapshot("xlsx_cell_types_csv.txt")
+    );
+}
+
+#[test]
 fn reports_missing_requested_xlsx_sheet() {
     let file = create_ooxml(
         "missing-sheet.xlsx",

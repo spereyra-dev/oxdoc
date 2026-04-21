@@ -183,7 +183,9 @@ fn parse_shared_strings<R: BufRead>(source: R, path: &str) -> Result<Extraction<
                 }
             }
             Ok(Event::Empty(element)) => {
-                if let Some(value) = &mut current_string {
+                if name_eq(element.name().as_ref(), b"si") {
+                    strings.push(String::new());
+                } else if let Some(value) = &mut current_string {
                     if name_eq(element.name().as_ref(), b"tab") {
                         value.push('\t');
                     } else if name_eq(element.name().as_ref(), b"br")
@@ -496,13 +498,14 @@ mod tests {
         let xml = r#"
             <sst>
               <si><t><![CDATA[A < B]]></t><r><br/></r><r><tab/></r><r><t>&quot;ok&quot;</t></r></si>
+              <si/>
             </sst>
         "#;
 
         let result =
             parse_shared_strings(Cursor::new(xml.as_bytes()), "xl/sharedStrings.xml").unwrap();
 
-        assert_eq!(result.value, vec!["A < B\n\t\"ok\""]);
+        assert_eq!(result.value, vec!["A < B\n\t\"ok\"", ""]);
     }
 
     #[test]
