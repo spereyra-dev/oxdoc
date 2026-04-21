@@ -46,20 +46,18 @@ pub(crate) fn extract_text<R: BufRead>(source: R, path: &str) -> Result<Extracti
                     in_text_node = true;
                 }
             }
-            Ok(Event::Empty(element)) => {
-                if deleted_revision_depth == 0 {
-                    if name_eq(element.name().as_ref(), b"tab") {
-                        flush_cell_paragraph_separator(
-                            &mut text,
-                            &mut pending_cell_paragraph_separator,
-                        );
-                        text.push('\t');
-                    } else if name_eq(element.name().as_ref(), b"br")
-                        || name_eq(element.name().as_ref(), b"cr")
-                    {
-                        pending_cell_paragraph_separator = false;
-                        push_newline(&mut text);
-                    }
+            Ok(Event::Empty(element)) if deleted_revision_depth == 0 => {
+                if name_eq(element.name().as_ref(), b"tab") {
+                    flush_cell_paragraph_separator(
+                        &mut text,
+                        &mut pending_cell_paragraph_separator,
+                    );
+                    text.push('\t');
+                } else if name_eq(element.name().as_ref(), b"br")
+                    || name_eq(element.name().as_ref(), b"cr")
+                {
+                    pending_cell_paragraph_separator = false;
+                    push_newline(&mut text);
                 }
             }
             Ok(Event::Text(value)) if in_text_node => {

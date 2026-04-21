@@ -58,16 +58,16 @@ fn parse_slide_relation_ids(xml: &str, path: &str) -> Result<Extraction<Vec<Stri
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(element)) | Ok(Event::Empty(element)) => {
-                if name_eq(element.name().as_ref(), b"sldId") {
-                    if let Some(relation_id) = relationship_id_value(&element) {
-                        slide_ids.push(relation_id);
-                    } else {
-                        warnings.push(OutputWarning::new(
-                            path,
-                            "ignored presentation slide without relationship id",
-                        ));
-                    }
+            Ok(Event::Start(element)) | Ok(Event::Empty(element))
+                if name_eq(element.name().as_ref(), b"sldId") =>
+            {
+                if let Some(relation_id) = relationship_id_value(&element) {
+                    slide_ids.push(relation_id);
+                } else {
+                    warnings.push(OutputWarning::new(
+                        path,
+                        "ignored presentation slide without relationship id",
+                    ));
                 }
             }
             Ok(Event::Eof) => break,
