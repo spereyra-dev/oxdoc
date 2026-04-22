@@ -5,6 +5,8 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use oxdoc_core::{DocumentInfo, OutputWarning, OxdocError, XlsxCsvOptions};
 
+mod update;
+
 #[derive(Debug, Parser)]
 #[command(
     name = "oxdoc",
@@ -26,6 +28,15 @@ enum Command {
         file: PathBuf,
         #[arg(long, value_enum, default_value_t = InfoFormat::Json)]
         format: InfoFormat,
+    },
+    /// Check for a newer release and install it
+    Update {
+        /// Only check if an update is available; do not download or install
+        #[arg(long)]
+        check: bool,
+        /// Install a specific version instead of the latest (e.g. v0.2.0)
+        #[arg(long, value_name = "VERSION")]
+        version: Option<String>,
     },
 }
 
@@ -127,6 +138,20 @@ fn run() -> Result<(), CliError> {
                 InfoFormat::Text => print_info(&result.value),
             }
         }
+        Command::Update { check, version } => {
+            match update::run(check, version).map_err(CliError::Update)? {
+                update::UpdateOutcome::AlreadyUpToDate { version } => {
+                    println!("oxdoc {version} is already up to date.");
+                }
+                update::UpdateOutcome::UpdateAvailable { current, latest } => {
+                    println!("Update available: {current} → {latest}");
+                    println!("Run `oxdoc update` to install.");
+                }
+                update::UpdateOutcome::Updated { from, to } => {
+                    println!("Updated oxdoc from {from} to {to}.");
+                }
+            }
+        }
     }
 
     Ok(())
@@ -150,6 +175,7 @@ enum CliError {
     InvalidArgument(String),
     Io(std::io::Error),
     Json(serde_json::Error),
+    Update(String),
 }
 
 impl CliError {
@@ -159,6 +185,7 @@ impl CliError {
             CliError::InvalidArgument(_) => "E010",
             CliError::Io(_) => "E011",
             CliError::Json(_) => "E012",
+            CliError::Update(_) => "E013",
         }
     }
 }
@@ -170,6 +197,7 @@ impl std::fmt::Display for CliError {
             CliError::InvalidArgument(message) => write!(f, "{message}"),
             CliError::Io(err) => write!(f, "{err}"),
             CliError::Json(err) => write!(f, "{err}"),
+            CliError::Update(message) => write!(f, "{message}"),
         }
     }
 }
@@ -181,6 +209,7 @@ impl std::error::Error for CliError {
             CliError::InvalidArgument(_) => None,
             CliError::Io(err) => Some(err),
             CliError::Json(err) => Some(err),
+            CliError::Update(_) => None,
         }
     }
 }
