@@ -243,6 +243,10 @@ fn parse_delimiter(value: &str) -> Result<u8, CliError> {
         return Ok(b'\t');
     }
 
+    if value == "\\n" {
+        return Ok(b'\n');
+    }
+
     let bytes = value.as_bytes();
     if bytes.len() == 1 {
         Ok(bytes[0])
@@ -361,5 +365,10 @@ mod tests {
             format!("{multi_byte}"),
             "delimiter must be a single-byte character"
         );
+    }
+
+    #[test]
+    fn parse_delimiter_supports_newline_escape_sequence() {
+        assert_eq!(parse_delimiter("\\n").unwrap(), b'\n');
     }
 }
