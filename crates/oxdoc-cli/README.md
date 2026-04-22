@@ -4,13 +4,27 @@ Command-line interface for `oxdoc`.
 
 `oxdoc` extracts text, CSV, and metadata from Office Open XML packages. It is designed for shell pipelines and automation: extracted data is written to stdout, recoverable warnings are written to stderr, and hard failures exit non-zero with stable error codes.
 
-## Install From Source
+## Install
+
+From GitHub Releases on macOS/Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/spereyra-dev/oxdoc/main/install.sh | sh
+```
+
+From crates.io after publication:
 
 ```bash
 cargo install oxdoc-cli
 ```
 
 The installed binary is named `oxdoc`.
+
+From a local checkout:
+
+```bash
+cargo install --path crates/oxdoc-cli
+```
 
 ## Usage
 

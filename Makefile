@@ -8,7 +8,7 @@ BINARY_NAME := oxdoc
 DOCS_PORT ?= 3000
 COVERAGE_THRESHOLD ?= 95
 
-.PHONY: help all ci ci-rust prepare-commit pre-push
+.PHONY: help all ci ci-rust prepare-commit pre-push scripts-test
 .PHONY: fmt fmt-check check clippy lint test doctest coverage coverage-html coverage-lcov audit
 .PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check install-tools clean clean-coverage
 
@@ -29,13 +29,14 @@ help:
 	@echo "  make docs             Serve Docsify locally"
 	@echo "  make docs-check       Validate Docsify serves locally"
 	@echo "  make docs-links       Validate README and Docsify Markdown links"
+	@echo "  make scripts-test     Test release/install helper scripts"
 	@echo "  make build-release    Build optimized release binary"
 	@echo "  make build-musl       Build static Linux musl binary"
 	@echo "  make ci               Run the full local CI gate"
 
 all: ci
 
-ci: ci-rust docs-check docs-links docs-schemas-check build-release
+ci: ci-rust scripts-test docs-check docs-links docs-schemas-check build-release
 	@echo "All CI checks passed."
 
 ci-rust: fmt-check check clippy test doctest coverage
@@ -63,6 +64,11 @@ test:
 
 doctest:
 	$(CARGO) test --doc --workspace --all-features $(TARGET_FLAG)
+
+scripts-test:
+	sh -n install.sh tests/install.sh scripts/render-homebrew-formula.sh tests/homebrew_formula.sh
+	sh tests/install.sh
+	sh tests/homebrew_formula.sh
 
 audit:
 	$(CARGO) audit

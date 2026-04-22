@@ -1,6 +1,7 @@
 # Release Process
 
-`oxdoc` has not published a versioned release yet. This page documents the intended release process.
+This page documents the release process for GitHub Release binaries, the shell
+installer, Homebrew tap updates, and future crates.io publishing.
 
 ## Pre-Release Checklist
 
@@ -9,6 +10,7 @@
 - CLI help and docs are updated.
 - Version numbers are updated consistently.
 - Release artifacts are built from a clean checkout.
+- `install.sh` and Homebrew formula rendering tests pass.
 
 ## Versioning
 
@@ -19,6 +21,49 @@ After 1.0, use semantic versioning:
 - Patch: bug fixes with compatible behavior.
 - Minor: compatible new functionality.
 - Major: breaking CLI or API changes.
+
+## Shell Installer
+
+`install.sh` is a small Unix installer for GitHub Release assets. It:
+
+- detects supported macOS/Linux targets,
+- downloads the matching `tar.gz` archive,
+- downloads `SHA256SUMS`,
+- verifies the archive checksum,
+- installs `oxdoc` into `$HOME/.local/bin` unless `OXDOC_INSTALL_DIR` is set.
+
+Run its offline test harness before release changes:
+
+```bash
+make scripts-test
+```
+
+The installer supports these maintainer/test overrides:
+
+- `OXDOC_VERSION`, for example `v0.1.0` or `0.1.0`.
+- `OXDOC_TARGET`, for explicit target asset selection.
+- `OXDOC_INSTALL_DIR`, for destination directory.
+- `OXDOC_REPO`, for forks.
+- `OXDOC_DOWNLOAD_BASE`, for tests or mirrors that already contain release assets.
+
+## Homebrew Tap
+
+The project keeps Homebrew tap generation in-repo but does not commit tap
+formula output here. After a GitHub Release is public:
+
+1. Download the source tarball checksum from GitHub or compute it locally.
+2. Render the formula:
+
+   ```bash
+   scripts/render-homebrew-formula.sh v0.1.0 <source-tarball-sha256> > Formula/oxdoc.rb
+   ```
+
+3. Copy or commit `Formula/oxdoc.rb` into `spereyra-dev/homebrew-tap`.
+4. Run `brew test oxdoc` in the tap before publishing the tap update.
+
+The formula builds from tagged source with Cargo. This keeps the tap aligned
+with Homebrew conventions and avoids shipping platform-specific bottles before
+the project has enough release volume to maintain them.
 
 ## Crates.io Publishing
 
@@ -48,7 +93,9 @@ Both crates must keep:
 
 ## Binary Artifacts
 
-GitHub Releases are published by the manual `release` workflow. Maintainers should create and push the intended tag first, then run the workflow with that tag name. The workflow defaults to draft prereleases so artifacts can be inspected before they are made public.
+GitHub Releases are published by the `release` workflow. Pushing a `v*` tag
+publishes a non-draft release. Maintainers can also run the workflow manually
+with an existing tag and choose draft/prerelease flags for inspection.
 
 Release artifacts:
 
@@ -58,7 +105,8 @@ Release artifacts:
 - `oxdoc-vX.Y.Z-aarch64-apple-darwin.tar.gz`
 - `oxdoc-vX.Y.Z-x86_64-pc-windows-msvc.zip`
 
-Each archive contains the `oxdoc` binary, `README.md`, and `LICENSE`. The Windows archive contains `oxdoc.exe`.
+Each archive contains the `oxdoc` binary, `README.md`, `LICENSE`, and
+`install.sh`. The Windows archive contains `oxdoc.exe`.
 
 ## Checksums And Signing
 
