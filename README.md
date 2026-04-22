@@ -55,7 +55,13 @@ Key documentation pages:
 
 ## Quick Start
 
-Build the workspace:
+Install the latest macOS/Linux release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/spereyra-dev/oxdoc/main/install.sh | sh
+```
+
+Or build the workspace from source:
 
 ```bash
 cargo build --workspace
@@ -222,8 +228,7 @@ The command-line application. It owns:
 
 ## Known MVP Limitations
 
-- DOCX headers, footers, footnotes, comments, and hyperlink details are planned but not complete.
-- XLSX shared strings are loaded into memory in the MVP.
+- DOCX section-aware ordering and some advanced revision/comment semantics need hardening.
 - XLSX date and number format interpretation need hardening.
 - PPTX extraction does not render slides, synthesize bullets, or preserve visual layout.
 - The public Rust API is not stable before 1.0.

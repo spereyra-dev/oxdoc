@@ -32,3 +32,6 @@ The format is based on human-readable release notes. This project has not publis
 - Fixture coverage for optional XLSX app metadata fields.
 - Docs link checking plus published JSON schema copies for the Docsify site.
 - PPTX text extraction for slide text boxes and speaker notes.
+- `install.sh` for checksum-verified GitHub Release installs on macOS and Linux.
+- Release workflow support for pushed `v*` tags, native smoke checks, and packaged `install.sh`.
+- Homebrew formula rendering script for maintaining a tap.
