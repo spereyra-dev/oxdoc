@@ -57,6 +57,38 @@ fn xlsx_row_throughput(c: &mut Criterion) {
     group.finish();
 }
 
+fn xlsx_shared_string_throughput(c: &mut Criterion) {
+    let mut group = c.benchmark_group("xlsx_shared_string_throughput");
+
+    for (label, shared_count, value_len) in [
+        ("memory", 128usize, 32usize),
+        ("spill", 4_096usize, 2_048usize),
+    ] {
+        let fixture = synthetic_xlsx_shared_strings(shared_count, value_len);
+        group.throughput(Throughput::Bytes(fixture.expected_csv_bytes as u64));
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{label}_{shared_count}x{value_len}")),
+            &fixture,
+            |b, fixture| {
+                b.iter(|| {
+                    let mut csv = Vec::with_capacity(fixture.expected_csv_bytes);
+                    let extraction = extract_xlsx_csv_from_reader(
+                        Cursor::new(fixture.package.as_slice()),
+                        XlsxCsvOptions::default(),
+                        &mut csv,
+                    )
+                    .expect("synthetic shared-string XLSX should parse");
+                    assert!(extraction.warnings.is_empty());
+                    assert_eq!(csv.len(), fixture.expected_csv_bytes);
+                    black_box(csv);
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 #[derive(Debug)]
 struct DocxFixture {
     package: Vec<u8>,
@@ -133,6 +165,56 @@ fn synthetic_xlsx(rows: usize, columns: usize) -> XlsxFixture {
     }
 }
 
+fn synthetic_xlsx_shared_strings(shared_count: usize, value_len: usize) -> XlsxFixture {
+    let workbook = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+    let workbook_rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#;
+
+    let mut shared_strings = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">"#,
+    );
+    let mut sheet = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>"#,
+    );
+    let mut expected_csv_bytes = 0;
+
+    for index in 0..shared_count {
+        let value = shared_string_value(index, value_len);
+        shared_strings.push_str("<si><t>");
+        shared_strings.push_str(&value);
+        shared_strings.push_str("</t></si>");
+
+        let row = index + 1;
+        sheet.push_str("<row>");
+        sheet.push_str(&format!(r#"<c r="A{row}" t="s"><v>{index}</v></c>"#));
+        sheet.push_str("</row>");
+        expected_csv_bytes += value.len() + 1;
+    }
+
+    shared_strings.push_str("</sst>");
+    sheet.push_str("</sheetData></worksheet>");
+
+    XlsxFixture {
+        package: zip_package([
+            ("xl/workbook.xml", workbook.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", workbook_rels.as_bytes()),
+            ("xl/sharedStrings.xml", shared_strings.as_bytes()),
+            ("xl/worksheets/sheet1.xml", sheet.as_bytes()),
+        ]),
+        expected_csv_bytes,
+    }
+}
+
+fn shared_string_value(index: usize, value_len: usize) -> String {
+    let prefix = format!("shared-{index:08}-");
+    if prefix.len() >= value_len {
+        return prefix[..value_len].to_owned();
+    }
+
+    let mut value = prefix;
+    value.extend(std::iter::repeat_n('x', value_len - value.len()));
+    value
+}
+
 fn zip_package<'a>(entries: impl IntoIterator<Item = (&'a str, &'a [u8])>) -> Vec<u8> {
     let mut cursor = Cursor::new(Vec::new());
     let mut zip = ZipWriter::new(&mut cursor);
@@ -162,5 +244,10 @@ fn column_name(mut index: usize) -> String {
     String::from_utf8(name).expect("column name should be ASCII")
 }
 
-criterion_group!(benches, docx_text_throughput, xlsx_row_throughput);
+criterion_group!(
+    benches,
+    docx_text_throughput,
+    xlsx_row_throughput,
+    xlsx_shared_string_throughput
+);
 criterion_main!(benches);

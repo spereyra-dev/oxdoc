@@ -49,11 +49,30 @@ impl<R: Read + Seek> OoxmlPackage<R> {
         path: &str,
         read_entry: impl FnOnce(&mut dyn Read) -> Result<T>,
     ) -> Result<T> {
-        let limits = self.limits;
+        self.with_entry_limits(path, self.limits, read_entry)
+    }
+
+    pub fn with_entry_limits<T>(
+        &mut self,
+        path: &str,
+        limits: OoxmlLimits,
+        read_entry: impl FnOnce(&mut dyn Read) -> Result<T>,
+    ) -> Result<T> {
         match self.archive.by_name(path) {
             Ok(mut entry) => {
                 validate_entry(path, &entry, limits)?;
-                read_entry(&mut entry)
+                let mut entry =
+                    LimitedEntryReader::new(&mut entry, limits.max_part_uncompressed_size);
+                let result = read_entry(&mut entry);
+                if entry.exceeded_limit() {
+                    Err(OxdocError::PartTooLarge {
+                        path: path.to_owned(),
+                        size: entry.observed_size(),
+                        limit: limits.max_part_uncompressed_size,
+                    })
+                } else {
+                    result
+                }
             }
             Err(err) => Err(map_zip_entry_error(path, err)),
         }
@@ -73,6 +92,63 @@ impl<R: Read + Seek> OoxmlPackage<R> {
 
     pub fn contains_any(&mut self, paths: &[&str]) -> bool {
         paths.iter().any(|path| self.contains(path))
+    }
+}
+
+struct LimitedEntryReader<'a, R: Read + ?Sized> {
+    inner: &'a mut R,
+    limit: u64,
+    read: u64,
+    exceeded: bool,
+    observed_size: u64,
+}
+
+impl<'a, R: Read + ?Sized> LimitedEntryReader<'a, R> {
+    fn new(inner: &'a mut R, limit: u64) -> Self {
+        Self {
+            inner,
+            limit,
+            read: 0,
+            exceeded: false,
+            observed_size: 0,
+        }
+    }
+
+    fn exceeded_limit(&self) -> bool {
+        self.exceeded
+    }
+
+    fn observed_size(&self) -> u64 {
+        self.observed_size.max(self.read)
+    }
+}
+
+impl<R: Read + ?Sized> Read for LimitedEntryReader<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        if self.read >= self.limit {
+            let mut probe = [0u8; 1];
+            let bytes = self.inner.read(&mut probe)?;
+            if bytes == 0 {
+                return Ok(0);
+            }
+            self.exceeded = true;
+            self.observed_size = self.read.saturating_add(bytes as u64);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "OOXML part exceeded its configured uncompressed size limit",
+            ));
+        }
+
+        let remaining = self.limit - self.read;
+        let allowed = (buf.len() as u64).min(remaining) as usize;
+        let bytes = self.inner.read(&mut buf[..allowed])?;
+        self.read = self.read.saturating_add(bytes as u64);
+        self.observed_size = self.read;
+        Ok(bytes)
     }
 }
 

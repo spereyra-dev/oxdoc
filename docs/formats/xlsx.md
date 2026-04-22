@@ -11,7 +11,7 @@ The MVP parser:
 - Can select a sheet by 1-based visible workbook order with `--sheet-index`.
 - Rejects duplicate visible sheet names instead of guessing.
 - Skips hidden and very hidden sheets during selection.
-- Reads `xl/sharedStrings.xml` into memory.
+- Stores `xl/sharedStrings.xml` in memory up to an internal threshold, then spills shared-string data to temporary files.
 - Supports shared string cells (`t="s"`).
 - Supports inline string cells (`t="inlineStr"`).
 - Supports boolean cells (`t="b"`) as `TRUE` or `FALSE`.
@@ -62,10 +62,12 @@ Hidden and very hidden sheets are intentionally skipped by selection. A future e
 
 ## Memory Notes
 
-Worksheet XML is streamed to the caller-provided writer. Shared strings are loaded into memory in the MVP. The code keeps that responsibility isolated so a future large-file implementation can switch to a disk-backed or indexed shared-string store.
+Worksheet XML is streamed to the caller-provided writer. Shared strings use a bounded store: values stay in memory up to an internal threshold and spill to temporary files after that. Temporary files are created in the OS temporary directory and are removed when the extraction finishes or errors.
+
+The memory bound applies to the shared-string table within the documented ZIP input limits. Memory can still grow with workbook metadata, the largest shared string currently being parsed, the current row width, ZIP library bookkeeping, and the caller's output writer. Very wide rows or sparse cells far to the right can allocate many empty CSV fields before the row is written.
 
 ## Planned Improvements
 
 - Date, time, and number-format interpretation.
-- Large shared-string storage.
+- Configurable large-file memory and temp-file policies.
 - Multiple-sheet export modes.

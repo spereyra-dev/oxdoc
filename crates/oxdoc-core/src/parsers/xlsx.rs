@@ -4,6 +4,9 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::models::{Extraction, OutputWarning, XlsxCsvOptions};
+use crate::parsers::xlsx_shared_strings::{
+    DEFAULT_SHARED_STRING_MEMORY_LIMIT, SharedStringLookup, SharedStringStore,
+};
 use crate::parsers::{
     attr_value, decode_xml_reference, decode_xml_text, merge_warnings, name_eq, parent_dir,
     parse_relationship_map, rels_path_for, resolve_relationship_target,
@@ -32,6 +35,20 @@ pub(crate) fn write_csv<R: Read + Seek, W: Write>(
     options: XlsxCsvOptions<'_>,
     mut writer: W,
 ) -> Result<Extraction<()>> {
+    write_csv_with_shared_string_memory_limit(
+        package,
+        options,
+        DEFAULT_SHARED_STRING_MEMORY_LIMIT,
+        &mut writer,
+    )
+}
+
+fn write_csv_with_shared_string_memory_limit<R: Read + Seek, W: Write>(
+    package: &mut OoxmlPackage<R>,
+    options: XlsxCsvOptions<'_>,
+    shared_string_memory_limit: usize,
+    writer: &mut W,
+) -> Result<Extraction<()>> {
     let workbook_path = crate::parsers::find_office_document_path(package, "xl/workbook.xml")?;
     let workbook_xml = package.read_to_string(&workbook_path)?;
     let workbook = parse_workbook_sheets(&workbook_xml, &workbook_path)?;
@@ -47,13 +64,17 @@ pub(crate) fn write_csv<R: Read + Seek, W: Write>(
     let sheet_path =
         resolve_relationship_target(parent_dir(&workbook_path), target, &workbook_rels_path)?;
 
-    let shared_strings = if package.contains("xl/sharedStrings.xml") {
+    let mut shared_strings = if package.contains("xl/sharedStrings.xml") {
         package.with_entry("xl/sharedStrings.xml", |entry| {
             let reader = BufReader::new(entry);
-            parse_shared_strings(reader, "xl/sharedStrings.xml")
+            SharedStringStore::parse_with_memory_limit(
+                reader,
+                "xl/sharedStrings.xml",
+                shared_string_memory_limit,
+            )
         })?
     } else {
-        Extraction::new(Vec::new())
+        Extraction::new(SharedStringStore::empty())
     };
 
     let sheet = package.with_entry(&sheet_path, |entry| {
@@ -61,9 +82,9 @@ pub(crate) fn write_csv<R: Read + Seek, W: Write>(
         write_sheet_csv(
             reader,
             &sheet_path,
-            &shared_strings.value,
+            &mut shared_strings.value,
             options.delimiter,
-            &mut writer,
+            writer,
         )
     })?;
 
@@ -164,78 +185,10 @@ fn is_visible_sheet_state(state: Option<String>) -> bool {
     })
 }
 
-fn parse_shared_strings<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<String>>> {
-    let mut reader = Reader::from_reader(source);
-    reader.config_mut().trim_text(false);
-    let mut buf = Vec::new();
-    let mut strings = Vec::new();
-    let mut warnings = Vec::new();
-    let mut current_string: Option<String> = None;
-    let mut in_text = false;
-
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(element)) => {
-                if name_eq(element.name().as_ref(), b"si") {
-                    current_string = Some(String::new());
-                } else if current_string.is_some() && name_eq(element.name().as_ref(), b"t") {
-                    in_text = true;
-                }
-            }
-            Ok(Event::Empty(element)) => {
-                if name_eq(element.name().as_ref(), b"si") {
-                    strings.push(String::new());
-                } else if let Some(value) = &mut current_string {
-                    if name_eq(element.name().as_ref(), b"tab") {
-                        value.push('\t');
-                    } else if name_eq(element.name().as_ref(), b"br")
-                        || name_eq(element.name().as_ref(), b"cr")
-                    {
-                        value.push('\n');
-                    }
-                }
-            }
-            Ok(Event::Text(value)) if in_text => {
-                if let Some(current) = &mut current_string {
-                    current.push_str(&decode_xml_text(value.as_ref()));
-                }
-            }
-            Ok(Event::CData(value)) if in_text => {
-                if let Some(current) = &mut current_string {
-                    current.push_str(&decode_xml_text(value.as_ref()));
-                }
-            }
-            Ok(Event::GeneralRef(value)) if in_text => {
-                if let Some(current) = &mut current_string {
-                    current.push_str(&decode_xml_reference(value.as_ref()));
-                }
-            }
-            Ok(Event::End(element)) => {
-                if name_eq(element.name().as_ref(), b"t") {
-                    in_text = false;
-                } else if name_eq(element.name().as_ref(), b"si")
-                    && let Some(current) = current_string.take()
-                {
-                    strings.push(current);
-                }
-            }
-            Ok(Event::Eof) => break,
-            Err(source) => {
-                warnings.push(OutputWarning::malformed_xml(path, source));
-                break;
-            }
-            _ => {}
-        }
-        buf.clear();
-    }
-
-    Ok(Extraction::with_warnings(strings, warnings))
-}
-
 fn write_sheet_csv<R: BufRead, W: Write>(
     source: R,
     path: &str,
-    shared_strings: &[String],
+    shared_strings: &mut impl SharedStringLookup,
     delimiter: u8,
     writer: &mut W,
 ) -> Result<Extraction<()>> {
@@ -270,7 +223,7 @@ fn write_sheet_csv<R: BufRead, W: Write>(
                     in_row = false;
                 } else if name_eq(element.name().as_ref(), b"c") && in_row {
                     let cell = cell_state_from_element(&element, row.len());
-                    push_cell_value(&mut row, cell, shared_strings, path, &mut warnings);
+                    push_cell_value(&mut row, cell, shared_strings, path, &mut warnings)?;
                 }
             }
             Ok(Event::Text(value)) => {
@@ -305,7 +258,7 @@ fn write_sheet_csv<R: BufRead, W: Write>(
 
                 if name_eq(element.name().as_ref(), b"c") {
                     if let Some(cell) = current_cell.take() {
-                        push_cell_value(&mut row, cell, shared_strings, path, &mut warnings);
+                        push_cell_value(&mut row, cell, shared_strings, path, &mut warnings)?;
                     }
                 } else if name_eq(element.name().as_ref(), b"row") && in_row {
                     write_csv_row(writer, &row, delimiter)?;
@@ -327,17 +280,18 @@ fn write_sheet_csv<R: BufRead, W: Write>(
 
 #[doc(hidden)]
 pub fn fuzz_parse_shared_strings(xml: &[u8]) -> Result<()> {
-    let _ = parse_shared_strings(Cursor::new(xml), "xl/sharedStrings.xml")?;
+    let _ = SharedStringStore::parse(Cursor::new(xml), "xl/sharedStrings.xml")?;
     Ok(())
 }
 
 #[doc(hidden)]
 pub fn fuzz_parse_sheet(xml: &[u8]) -> Result<()> {
     let mut sink = Vec::new();
+    let mut shared_strings = SharedStringStore::empty();
     let _ = write_sheet_csv(
         Cursor::new(xml),
         "xl/worksheets/sheet1.xml",
-        &[],
+        &mut shared_strings,
         b',',
         &mut sink,
     )?;
@@ -347,10 +301,10 @@ pub fn fuzz_parse_sheet(xml: &[u8]) -> Result<()> {
 fn push_cell_value(
     row: &mut Vec<String>,
     cell: CellState,
-    shared_strings: &[String],
+    shared_strings: &mut impl SharedStringLookup,
     path: &str,
     warnings: &mut Vec<OutputWarning>,
-) {
+) -> Result<()> {
     let target_column = cell.column_index.unwrap_or(row.len());
     while row.len() < target_column {
         row.push(String::new());
@@ -358,12 +312,15 @@ fn push_cell_value(
 
     let value = if cell.value_type.as_deref() == Some("s") {
         match cell.value.trim().parse::<usize>() {
-            Ok(index) => shared_strings.get(index).cloned().unwrap_or_else(|| {
-                warnings.push(OutputWarning::shared_string_index_out_of_bounds(
-                    path, index,
-                ));
-                String::new()
-            }),
+            Ok(index) => match shared_strings.lookup(index)? {
+                Some(value) => value,
+                None => {
+                    warnings.push(OutputWarning::shared_string_index_out_of_bounds(
+                        path, index,
+                    ));
+                    String::new()
+                }
+            },
             Err(_) => {
                 warnings.push(OutputWarning::invalid_shared_string_index(
                     path,
@@ -387,6 +344,8 @@ fn push_cell_value(
     } else if let Some(slot) = row.get_mut(target_column) {
         *slot = value;
     }
+
+    Ok(())
 }
 
 fn cell_state_from_element(
@@ -455,11 +414,9 @@ mod tests {
     use std::io::Cursor;
 
     use crate::OxdocError;
+    use crate::parsers::xlsx_shared_strings::{SharedStringLookup, SharedStringStore};
 
-    use super::{
-        parse_cell_column, parse_shared_strings, parse_workbook_sheets, select_sheet,
-        write_sheet_csv,
-    };
+    use super::{parse_cell_column, parse_workbook_sheets, select_sheet, write_sheet_csv};
 
     #[test]
     fn parses_workbook_sheet_relationships() {
@@ -487,10 +444,13 @@ mod tests {
             </sst>
         "#;
 
-        let result =
-            parse_shared_strings(Cursor::new(xml.as_bytes()), "xl/sharedStrings.xml").unwrap();
+        let mut store =
+            SharedStringStore::parse(Cursor::new(xml.as_bytes()), "xl/sharedStrings.xml")
+                .unwrap()
+                .value;
 
-        assert_eq!(result.value, vec!["Cliente", "A & B"]);
+        assert_eq!(store.lookup(0).unwrap().as_deref(), Some("Cliente"));
+        assert_eq!(store.lookup(1).unwrap().as_deref(), Some("A & B"));
     }
 
     #[test]
@@ -502,10 +462,13 @@ mod tests {
             </sst>
         "#;
 
-        let result =
-            parse_shared_strings(Cursor::new(xml.as_bytes()), "xl/sharedStrings.xml").unwrap();
+        let mut store =
+            SharedStringStore::parse(Cursor::new(xml.as_bytes()), "xl/sharedStrings.xml")
+                .unwrap()
+                .value;
 
-        assert_eq!(result.value, vec!["A < B\n\t\"ok\"", ""]);
+        assert_eq!(store.lookup(0).unwrap().as_deref(), Some("A < B\n\t\"ok\""));
+        assert_eq!(store.lookup(1).unwrap().as_deref(), Some(""));
     }
 
     #[test]
@@ -523,13 +486,13 @@ mod tests {
               </sheetData>
             </worksheet>
         "#;
-        let shared_strings = vec!["id".to_owned()];
+        let mut shared_strings = SharedStringStore::from_values(vec!["id".to_owned()]);
         let mut output = Vec::new();
 
         write_sheet_csv(
             Cursor::new(xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
-            &shared_strings,
+            &mut shared_strings,
             b',',
             &mut output,
         )
@@ -554,13 +517,13 @@ mod tests {
               </sheetData>
             </worksheet>
         "#;
-        let shared_strings = vec!["shared".to_owned()];
+        let mut shared_strings = SharedStringStore::from_values(vec!["shared".to_owned()]);
         let mut output = Vec::new();
 
         write_sheet_csv(
             Cursor::new(xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
-            &shared_strings,
+            &mut shared_strings,
             b',',
             &mut output,
         )
@@ -569,6 +532,50 @@ mod tests {
         assert_eq!(
             String::from_utf8(output).unwrap(),
             "shared,TRUE,#DIV/0!,inline,\n\n"
+        );
+    }
+
+    #[test]
+    fn writes_sheet_csv_with_disk_backed_shared_strings() {
+        let shared_xml = r#"
+            <sst>
+              <si><t>alpha</t></si>
+              <si><t>beta, needs quotes</t></si>
+              <si><t>gamma</t></si>
+            </sst>
+        "#;
+        let sheet_xml = r#"
+            <worksheet>
+              <sheetData>
+                <row>
+                  <c r="A1" t="s"><v>2</v></c>
+                  <c r="B1" t="s"><v>1</v></c>
+                  <c r="C1" t="s"><v>0</v></c>
+                </row>
+              </sheetData>
+            </worksheet>
+        "#;
+        let mut shared_strings = SharedStringStore::parse_with_memory_limit(
+            Cursor::new(shared_xml.as_bytes()),
+            "xl/sharedStrings.xml",
+            4,
+        )
+        .unwrap()
+        .value;
+        let mut output = Vec::new();
+
+        write_sheet_csv(
+            Cursor::new(sheet_xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            b',',
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "gamma,\"beta, needs quotes\",alpha\n"
         );
     }
 
@@ -674,22 +681,24 @@ mod tests {
 
     #[test]
     fn warns_on_malformed_shared_strings_and_sheet_xml() {
-        let shared = parse_shared_strings(
+        let shared = SharedStringStore::parse(
             Cursor::new(br#"<sst><si><t>first</t></si><"#.as_slice()),
             "xl/sharedStrings.xml",
         )
         .unwrap();
+        let mut shared_value = shared.value;
         let mut output = Vec::new();
+        let mut empty_shared_strings = SharedStringStore::empty();
         let sheet = write_sheet_csv(
             Cursor::new(br#"<worksheet><sheetData><row><c r="A1"><v>1</v></c><"#.as_slice()),
             "xl/worksheets/sheet1.xml",
-            &[],
+            &mut empty_shared_strings,
             b',',
             &mut output,
         )
         .unwrap();
 
-        assert_eq!(shared.value, vec!["first"]);
+        assert_eq!(shared_value.lookup(0).unwrap().as_deref(), Some("first"));
         assert_eq!(shared.warnings.len(), 1);
         assert_eq!(sheet.warnings.len(), 1);
     }
@@ -715,11 +724,12 @@ mod tests {
             </worksheet>
         "#;
         let mut output = Vec::new();
+        let mut shared_strings = SharedStringStore::from_values(vec!["only".to_owned()]);
 
         let result = write_sheet_csv(
             Cursor::new(xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
-            &["only".to_owned()],
+            &mut shared_strings,
             b',',
             &mut output,
         )
@@ -743,11 +753,12 @@ mod tests {
             </worksheet>
         "#;
         let mut output = Vec::new();
+        let mut shared_strings = SharedStringStore::empty();
 
         write_sheet_csv(
             Cursor::new(xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
-            &[],
+            &mut shared_strings,
             b',',
             &mut output,
         )
