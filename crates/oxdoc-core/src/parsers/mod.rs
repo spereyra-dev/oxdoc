@@ -2,6 +2,7 @@ pub(crate) mod docx;
 pub(crate) mod metadata;
 pub(crate) mod pptx;
 pub(crate) mod xlsx;
+pub(crate) mod xlsx_shared_strings;
 
 use std::collections::HashMap;
 use std::io::Cursor;

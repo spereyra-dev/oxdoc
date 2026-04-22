@@ -20,7 +20,7 @@ This roadmap is intentionally practical: `oxdoc` should become a reliable, fast,
 ## Phase 1: MVP Hardening
 
 - Improve DOCX extraction beyond the main document body. Headers, footers, footnotes, endnotes, comments, hyperlink visible text, and deterministic related-part ordering are implemented; section-aware ordering remains future work.
-- Improve XLSX CSV extraction for sparse dimensions, date/number formatting, and larger workbooks. Visible sheet selection by name or 1-based index, booleans, errors, and cached formula values are implemented in the MVP path.
+- Improve XLSX CSV extraction for sparse dimensions, date/number formatting, and larger workbooks. Visible sheet selection by name or 1-based index, booleans, errors, cached formula values, and bounded shared-string storage are implemented in the MVP path.
 - Add PPTX text extraction for slide text boxes and speaker notes.
 - Expand metadata coverage across DOCX, XLSX, and PPTX.
 - Keep warnings structured and actionable.
@@ -35,8 +35,8 @@ This roadmap is intentionally practical: `oxdoc` should become a reliable, fast,
 ## Phase 3: Performance and Memory
 
 - Add benchmarks for cold start, throughput, and peak memory.
-- Add large XLSX scenarios with shared strings, inline strings, and sparse rows.
-- Isolate the shared-string store behind an interface that can later use a disk-backed or indexed implementation.
+- Expand large XLSX scenarios with shared strings, inline strings, sparse rows, and peak-memory probes.
+- Add configurable memory and temporary-file policies for high-volume XLSX extraction.
 - Publish baseline benchmark numbers in release notes.
 
 ## Phase 4: Public API

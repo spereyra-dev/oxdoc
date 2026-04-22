@@ -805,6 +805,50 @@ fn rejects_oversized_zip_entries_before_reading() {
 }
 
 #[test]
+fn allows_entry_specific_vfs_limits_without_changing_package_default() {
+    let file = File::open(create_ooxml(
+        "entry-specific-limit.xlsx",
+        &[("xl/sharedStrings.xml", "0123456789")],
+    ))
+    .unwrap();
+    let mut package = OoxmlPackage::with_limits(
+        file,
+        OoxmlLimits {
+            max_part_uncompressed_size: 5,
+            ..OoxmlLimits::default()
+        },
+    )
+    .unwrap();
+
+    let err = package.read_to_string("xl/sharedStrings.xml").unwrap_err();
+    assert!(matches!(
+        err,
+        OxdocError::PartTooLarge {
+            path,
+            size: 10,
+            limit: 5
+        } if path == "xl/sharedStrings.xml"
+    ));
+
+    let content = package
+        .with_entry_limits(
+            "xl/sharedStrings.xml",
+            OoxmlLimits {
+                max_part_uncompressed_size: 10,
+                ..OoxmlLimits::default()
+            },
+            |entry| {
+                let mut content = String::new();
+                entry.read_to_string(&mut content)?;
+                Ok(content)
+            },
+        )
+        .unwrap();
+
+    assert_eq!(content, "0123456789");
+}
+
+#[test]
 fn rejects_zip_bomb_like_compression_ratios() {
     let repeated_xml = "<worksheet>".repeat(512);
     let file = File::open(create_ooxml_with_method(

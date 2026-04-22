@@ -14,7 +14,7 @@ Yes. `oxdoc extract text deck.pptx` extracts slide text boxes in presentation or
 
 ## Is memory bounded for huge XLSX files?
 
-Worksheet parsing streams to a writer, but shared strings are loaded into memory in the MVP. A disk-backed or indexed shared-string store is planned.
+Shared-string tables use bounded memory within documented ZIP input limits: values stay in memory up to an internal threshold, then spill to temporary files. Worksheet rows are still buffered one row at a time, so very wide or extremely sparse rows can allocate more memory before they are written.
 
 ## Where do warnings go?
 
