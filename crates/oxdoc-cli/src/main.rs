@@ -134,7 +134,11 @@ fn run() -> Result<(), CliError> {
             emit_warnings(&result.warnings, cli.quiet);
             match format {
                 InfoFormat::Json => {
-                    serde_json::to_writer_pretty(io::stdout().lock(), &result.value)?;
+                    let payload = InfoPayload {
+                        oxdoc_version: env!("CARGO_PKG_VERSION"),
+                        info: &result.value,
+                    };
+                    serde_json::to_writer_pretty(io::stdout().lock(), &payload)?;
                     println!();
                 }
                 InfoFormat::Text => print_info(&result.value),
@@ -238,6 +242,13 @@ impl From<std::io::Error> for CliError {
 struct TextPayload {
     file: String,
     text: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct InfoPayload<'a> {
+    oxdoc_version: &'static str,
+    #[serde(flatten)]
+    info: &'a DocumentInfo,
 }
 
 fn parse_delimiter(value: &str) -> Result<u8, CliError> {
