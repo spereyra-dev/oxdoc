@@ -48,6 +48,14 @@ pub fn read_snapshot(relative_path: &str) -> String {
     fs::read_to_string(path).unwrap()
 }
 
+pub fn fixture_file(relative_path: &str) -> PathBuf {
+    workspace_root()
+        .join("tests")
+        .join("fixtures")
+        .join("files")
+        .join(relative_path)
+}
+
 pub fn read_provenance(relative_path: &str) -> String {
     let path = workspace_root()
         .join("tests")

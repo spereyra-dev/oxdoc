@@ -39,6 +39,19 @@ fn extracts_docx_text_from_read_seek_reader() {
 }
 
 #[test]
+fn extracts_application_generated_docx_text_fixture() {
+    let file = fixtures::fixture_file("docx/python-docx-basic.docx");
+
+    let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
+
+    assert_eq!(
+        extraction.value.trim_end(),
+        fixtures::read_snapshot("docx_python_docx_text.txt").trim_end()
+    );
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
 fn extracts_docx_text_from_related_parts_in_relationship_order() {
     let file = create_ooxml(
         "docx-related-parts.docx",
@@ -209,6 +222,19 @@ fn extracts_pptx_text_from_read_seek_reader() {
 }
 
 #[test]
+fn extracts_application_generated_pptx_text_fixture() {
+    let file = fixtures::fixture_file("pptx/python-pptx-basic.pptx");
+
+    let extraction = oxdoc_core::extract_pptx_text(&file).unwrap();
+
+    assert_eq!(
+        extraction.value.trim_end(),
+        fixtures::read_snapshot("pptx_python_pptx_text.txt").trim_end()
+    );
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
 fn keeps_partial_pptx_text_and_warns_on_malformed_slide_xml() {
     let file = create_ooxml(
         "malformed-slide.pptx",
@@ -306,6 +332,29 @@ fn extracts_xlsx_csv_from_read_seek_reader() {
     assert_eq!(
         String::from_utf8(csv).unwrap().trim_end(),
         fixtures::read_snapshot("cli_extract_csv.txt").trim_end()
+    );
+}
+
+#[test]
+fn extracts_application_generated_xlsx_csv_fixture() {
+    let file = fixtures::fixture_file("xlsx/openpyxl-basic.xlsx");
+    let mut csv = Vec::new();
+
+    let extraction = oxdoc_core::extract_xlsx_csv(
+        &file,
+        XlsxCsvOptions {
+            sheet_name: Some("Data"),
+            sheet_index: None,
+            delimiter: b',',
+        },
+        &mut csv,
+    )
+    .unwrap();
+
+    assert!(extraction.warnings.is_empty());
+    assert_eq!(
+        String::from_utf8(csv).unwrap(),
+        fixtures::read_snapshot("xlsx_openpyxl_csv.txt")
     );
 }
 
@@ -1014,10 +1063,13 @@ fn rejects_pptx_notes_relationship_targets_that_escape_package_root() {
 fn fixture_provenance_notes_are_present() {
     for provenance in [
         "docx-basic.md",
+        "docx-python-docx-basic.md",
         "xlsx-basic.md",
         "xlsx-app-metadata.md",
+        "xlsx-openpyxl-basic.md",
         "pptx-basic.md",
         "pptx-text.md",
+        "pptx-python-pptx-basic.md",
         "docx-external-target.md",
     ] {
         let note = fixtures::read_provenance(provenance);

@@ -1,0 +1,5 @@
+Name,Value,Notes
+Ada,42,plain
+"Quote, comma",TRUE,"He said ""hi"""
+Line break,3.5,"alpha
+beta"
