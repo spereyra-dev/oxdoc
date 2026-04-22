@@ -3,24 +3,11 @@ name: docs
 on:
   push:
     branches: [main]
-    paths:
-      - README.md
-      - docs/**
-      - schemas/**
-      - Makefile
-      - package.json
-      - .markdown-link-check.json
-      - .github/workflows/docs.yml
   pull_request:
-    paths:
-      - README.md
-      - docs/**
-      - schemas/**
-      - Makefile
-      - package.json
-      - .markdown-link-check.json
-      - .github/workflows/docs.yml
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   validate:
