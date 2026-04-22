@@ -12,6 +12,8 @@ use oxdoc_core::{DocumentInfo, OutputWarning, OxdocError, XlsxCsvOptions};
     about = "Fast OOXML text, CSV, and metadata extractor"
 )]
 struct Cli {
+    #[arg(long, short, global = true)]
+    quiet: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -80,7 +82,7 @@ fn run() -> Result<(), CliError> {
         Command::Extract { command } => match command {
             ExtractCommand::Text { file, format } => {
                 let result = extract_text(&file)?;
-                emit_warnings(&result.warnings);
+                emit_warnings(&result.warnings, cli.quiet);
                 match format {
                     TextFormat::Text => {
                         print!("{}", result.value);
@@ -113,12 +115,12 @@ fn run() -> Result<(), CliError> {
                     &mut stdout,
                 )?;
                 stdout.flush()?;
-                emit_warnings(&result.warnings);
+                emit_warnings(&result.warnings, cli.quiet);
             }
         },
         Command::Info { file, format } => {
             let result = oxdoc_core::read_info(&file)?;
-            emit_warnings(&result.warnings);
+            emit_warnings(&result.warnings, cli.quiet);
             match format {
                 InfoFormat::Json => {
                     serde_json::to_writer_pretty(io::stdout().lock(), &result.value)?;
@@ -231,7 +233,11 @@ fn display_file_name(path: &std::path::Path) -> String {
         .to_owned()
 }
 
-fn emit_warnings(warnings: &[OutputWarning]) {
+fn emit_warnings(warnings: &[OutputWarning], quiet: bool) {
+    if quiet {
+        return;
+    }
+
     for warning in warnings {
         eprintln!(
             "warning[{}/{}]: {}: {}",
