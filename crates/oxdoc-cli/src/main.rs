@@ -210,6 +210,10 @@ struct TextPayload {
 }
 
 fn parse_delimiter(value: &str) -> Result<u8, CliError> {
+    if value == "\\t" {
+        return Ok(b'\t');
+    }
+
     let bytes = value.as_bytes();
     if bytes.len() == 1 {
         Ok(bytes[0])
