@@ -275,7 +275,7 @@ fn print_optional_u64(label: &str, value: Option<u64>) {
 mod tests {
     use std::error::Error;
 
-    use super::CliError;
+    use super::{CliError, parse_delimiter};
 
     #[test]
     fn cli_errors_expose_stable_codes_and_sources() {
@@ -297,5 +297,27 @@ mod tests {
         assert_eq!(json.code(), "E012");
         assert!(format!("{json}").contains("EOF"));
         assert!(json.source().is_some());
+    }
+
+    #[test]
+    fn parse_delimiter_handles_supported_and_invalid_values() {
+        assert_eq!(parse_delimiter(",").unwrap(), b',');
+        assert_eq!(parse_delimiter("\\t").unwrap(), b'\t');
+        assert_eq!(parse_delimiter("|").unwrap(), b'|');
+        assert_eq!(parse_delimiter(";").unwrap(), b';');
+
+        let empty = parse_delimiter("").unwrap_err();
+        assert_eq!(empty.code(), "E010");
+        assert_eq!(
+            format!("{empty}"),
+            "delimiter must be a single-byte character"
+        );
+
+        let multi_byte = parse_delimiter("ab").unwrap_err();
+        assert_eq!(multi_byte.code(), "E010");
+        assert_eq!(
+            format!("{multi_byte}"),
+            "delimiter must be a single-byte character"
+        );
     }
 }
