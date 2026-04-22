@@ -73,12 +73,8 @@ fn fetch_latest_tag() -> Result<String, String> {
         .call()
         .map_err(|e| format!("failed to fetch latest release: {e}"))?;
 
-    let json: serde_json::Value = serde_json::from_reader(
-        response
-            .into_body()
-            .as_reader(),
-    )
-    .map_err(|e| format!("failed to parse release response: {e}"))?;
+    let json: serde_json::Value = serde_json::from_reader(response.into_body().as_reader())
+        .map_err(|e| format!("failed to parse release response: {e}"))?;
 
     let tag = json["tag_name"]
         .as_str()
@@ -134,8 +130,8 @@ fn compute_sha256(path: &Path) -> Result<String, String> {
 }
 
 fn verify_checksum(archive: &Path, archive_name: &str, checksums: &Path) -> Result<(), String> {
-    let content = fs::read_to_string(checksums)
-        .map_err(|e| format!("failed to read SHA256SUMS: {e}"))?;
+    let content =
+        fs::read_to_string(checksums).map_err(|e| format!("failed to read SHA256SUMS: {e}"))?;
 
     let expected = content
         .lines()
@@ -156,28 +152,35 @@ fn verify_checksum(archive: &Path, archive_name: &str, checksums: &Path) -> Resu
     Ok(())
 }
 
-fn extract_binary(archive: &Path, tag: &str, target: &str, dest_dir: &Path) -> Result<PathBuf, String> {
+fn extract_binary(
+    archive: &Path,
+    tag: &str,
+    target: &str,
+    dest_dir: &Path,
+) -> Result<PathBuf, String> {
     use flate2::read::GzDecoder;
     use tar::Archive;
 
-    let file =
-        File::open(archive).map_err(|e| format!("failed to open archive: {e}"))?;
+    let file = File::open(archive).map_err(|e| format!("failed to open archive: {e}"))?;
     let gz = GzDecoder::new(file);
     let mut tar = Archive::new(gz);
 
     let expected_suffix = format!("oxdoc-{tag}-{target}/oxdoc");
     let dest = dest_dir.join("oxdoc");
 
-    for entry in tar.entries().map_err(|e| format!("failed to read archive: {e}"))? {
+    for entry in tar
+        .entries()
+        .map_err(|e| format!("failed to read archive: {e}"))?
+    {
         let mut entry = entry.map_err(|e| format!("failed to read archive entry: {e}"))?;
         let path = entry
             .path()
             .map_err(|e| format!("failed to read entry path: {e}"))?;
 
-        if path.to_str().is_some_and(|p| p.ends_with("/oxdoc") || p == "oxdoc")
-            || path
-                .to_str()
-                .is_some_and(|p| p == expected_suffix.as_str())
+        if path
+            .to_str()
+            .is_some_and(|p| p.ends_with("/oxdoc") || p == "oxdoc")
+            || path.to_str().is_some_and(|p| p == expected_suffix.as_str())
         {
             entry
                 .unpack(&dest)
