@@ -81,6 +81,8 @@ cargo install --path crates/oxdoc-cli
 
 ## CLI Usage
 
+For the runtime and usage exit code contract, see [docs/cli.md#exit-codes](docs/cli.md#exit-codes).
+
 ### Extract DOCX or PPTX Text
 
 ```bash
