@@ -214,6 +214,10 @@ fn parse_delimiter(value: &str) -> Result<u8, CliError> {
         return Ok(b'\t');
     }
 
+    if value == "\\n" {
+        return Ok(b'\n');
+    }
+
     let bytes = value.as_bytes();
     if bytes.len() == 1 {
         Ok(bytes[0])
@@ -275,7 +279,7 @@ fn print_optional_u64(label: &str, value: Option<u64>) {
 mod tests {
     use std::error::Error;
 
-    use super::CliError;
+    use super::{CliError, parse_delimiter};
 
     #[test]
     fn cli_errors_expose_stable_codes_and_sources() {
@@ -297,5 +301,10 @@ mod tests {
         assert_eq!(json.code(), "E012");
         assert!(format!("{json}").contains("EOF"));
         assert!(json.source().is_some());
+    }
+
+    #[test]
+    fn parse_delimiter_supports_newline_escape_sequence() {
+        assert_eq!(parse_delimiter("\\n").unwrap(), b'\n');
     }
 }
