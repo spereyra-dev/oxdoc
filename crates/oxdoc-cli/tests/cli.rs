@@ -407,6 +407,24 @@ fn fixture_provenance_notes_are_present() {
 }
 
 #[test]
+fn suppresses_warnings_with_quiet_flag() {
+    let docx = create_ooxml(
+        "quiet-warning.docx",
+        &[(
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="cp" xmlns:dc="dc"><dc:creator>Ada</dc:creator><"#,
+        )],
+    );
+
+    let output = oxdoc(["-q", "info", docx.to_str().unwrap(), "--format", "json"]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual["author"], "Ada");
+}
+
+#[test]
 fn keeps_csv_stdout_clean_when_xlsx_warnings_are_emitted() {
     let xlsx = create_ooxml(
         "xlsx-warnings.xlsx",
