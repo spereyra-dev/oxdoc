@@ -18,19 +18,23 @@ Current examples:
 
 Fixture tests use a checked-in corpus under `tests/fixtures/`.
 
-The corpus is source-controlled OOXML, not opaque binaries:
+The corpus is source-controlled OOXML:
 
 - `tests/fixtures/corpus/` contains minimal `.docx`, `.xlsx`, and `.pptx` package trees.
+- `tests/fixtures/files/` contains small application-generated `.docx`, `.xlsx`, and `.pptx` binaries that are consumed as-is.
 - `tests/fixtures/provenance/` documents source and redistribution status for each fixture.
 - `tests/fixtures/snapshots/` stores the expected text, CSV, and JSON outputs.
+- `tests/fixtures/tools/` stores optional generator scripts. CI consumes the checked-in fixtures and does not require these tools.
 
-The current corpus is hand-authored and redistributable. It is intentionally not attributed to Microsoft Office, LibreOffice, or Google Workspace outputs unless such a fixture is explicitly added later with clear provenance.
+The current corpus includes hand-authored package trees plus producer-generated fixtures from python-docx, openpyxl, and python-pptx. Every fixture must be generated from repository-authored content or another legally redistributable source, and every fixture needs provenance that states the producer, redistribution status, purpose, and sanitization.
+
+Do not commit private Office files. Microsoft Office, LibreOffice, and Google Workspace exports are welcome only when the content was created for this repository and the provenance note makes redistribution status explicit.
 
 ## Snapshot Tests
 
 Snapshot tests verify that command output does not change accidentally after parser refactors.
 
-This repository uses versioned text snapshots instead of an extra snapshot dependency. The tests read expected output from `tests/fixtures/snapshots/` and compare it directly in CI.
+This repository uses versioned text snapshots instead of an extra snapshot dependency. The tests read expected output from `tests/fixtures/snapshots/` and compare it directly in CI for both core parser APIs and CLI output.
 
 ## Fuzzing
 

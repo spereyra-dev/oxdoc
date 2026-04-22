@@ -8,6 +8,7 @@ Contributions are welcome. The most useful contributions at this stage are focus
 - Check [Roadmap](roadmap.md).
 - Open an issue first for large features or behavior changes.
 - Do not attach private or sensitive Office files.
+- Add fixture provenance for every checked-in package tree or binary fixture.
 
 ## Starter Issues
 

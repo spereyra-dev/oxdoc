@@ -50,6 +50,20 @@ fn extracts_text_as_json() {
 }
 
 #[test]
+fn extracts_application_generated_docx_text_to_stdout() {
+    let docx = fixtures::fixture_file("docx/python-docx-basic.docx");
+
+    let output = oxdoc(["extract", "text", docx.to_str().unwrap()]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("docx_python_docx_text.txt").trim_end()
+    );
+}
+
+#[test]
 fn extracts_pptx_text_to_stdout() {
     let pptx = fixtures::build_package("pptx/text", "fixture.PPTX");
 
@@ -89,6 +103,20 @@ fn extracts_pptx_text_as_json() {
 }
 
 #[test]
+fn extracts_application_generated_pptx_text_to_stdout() {
+    let pptx = fixtures::fixture_file("pptx/python-pptx-basic.pptx");
+
+    let output = oxdoc(["extract", "text", pptx.to_str().unwrap()]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("pptx_python_pptx_text.txt").trim_end()
+    );
+}
+
+#[test]
 fn extracts_csv_to_stdout() {
     let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
 
@@ -107,6 +135,20 @@ fn extracts_csv_to_stdout() {
     assert_eq!(
         stdout(&output).trim_end(),
         fixtures::read_snapshot("cli_extract_csv.txt").trim_end()
+    );
+}
+
+#[test]
+fn extracts_application_generated_xlsx_csv_to_stdout() {
+    let xlsx = fixtures::fixture_file("xlsx/openpyxl-basic.xlsx");
+
+    let output = oxdoc(["extract", "csv", xlsx.to_str().unwrap(), "--sheet", "Data"]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        stdout(&output),
+        fixtures::read_snapshot("xlsx_openpyxl_csv.txt")
     );
 }
 
@@ -345,12 +387,23 @@ fn reports_suspicious_relationship_targets_on_stderr() {
 
 #[test]
 fn fixture_provenance_notes_are_present() {
-    let note = fixtures::read_provenance("docx-basic.md");
-
-    assert!(note.contains("Source:"));
-    assert!(note.contains("Producer:"));
-    assert!(note.contains("Redistribution:"));
-    assert!(note.contains("Purpose:"));
+    for provenance in [
+        "docx-basic.md",
+        "docx-python-docx-basic.md",
+        "xlsx-basic.md",
+        "xlsx-app-metadata.md",
+        "xlsx-openpyxl-basic.md",
+        "pptx-basic.md",
+        "pptx-text.md",
+        "pptx-python-pptx-basic.md",
+        "docx-external-target.md",
+    ] {
+        let note = fixtures::read_provenance(provenance);
+        assert!(note.contains("Source:"), "{provenance}");
+        assert!(note.contains("Producer:"), "{provenance}");
+        assert!(note.contains("Redistribution:"), "{provenance}");
+        assert!(note.contains("Purpose:"), "{provenance}");
+    }
 }
 
 #[test]

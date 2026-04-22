@@ -271,10 +271,11 @@ make docs
 
 ## Testing Strategy
 
-The current test suite focuses on parser unit tests. The roadmap includes:
+The test suite combines parser unit tests, fixture corpus tests, and versioned snapshots. Current coverage includes:
 
-- Real fixture files from Microsoft Office, LibreOffice, Google Docs, and third-party exporters.
-- Snapshot tests with `insta`.
+- Hand-authored OOXML package trees.
+- Application-generated `.docx`, `.xlsx`, and `.pptx` fixtures with provenance.
+- Snapshot tests for core parser APIs and CLI output.
 - Fuzz targets for XML parser paths.
 - Performance benchmarks for cold start, throughput, and peak memory.
 
