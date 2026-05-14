@@ -530,4 +530,64 @@ mod tests {
         assert!(result.value);
         assert!(result.warnings.is_empty());
     }
+
+    #[test]
+    fn parses_metadata_general_refs() {
+        let core_xml = r#"<cp:coreProperties xmlns:cp="cp" xmlns:dc="dc"><dc:creator>Ada &amp; Linus</dc:creator></cp:coreProperties>"#;
+        let app_xml = r#"<Properties><Application>A &amp; B</Application></Properties>"#;
+
+        let core = parse_core(Cursor::new(core_xml.as_bytes()), "docProps/core.xml")
+            .unwrap()
+            .value;
+        let app = parse_app(Cursor::new(app_xml.as_bytes()), "docProps/app.xml")
+            .unwrap()
+            .value;
+
+        assert_eq!(core.author.as_deref(), Some("Ada & Linus"));
+        assert_eq!(app.application.as_deref(), Some("A & B"));
+    }
+
+    #[test]
+    fn parses_custom_cdata_and_general_ref() {
+        let xml = r#"
+            <Properties>
+              <property name="GeneralRef">
+                <vt:lpwstr>foo &amp; bar</vt:lpwstr>
+              </property>
+              <property name="CData">
+                <vt:lpwstr><![CDATA[foo < bar]]></vt:lpwstr>
+              </property>
+              <property name="NoValue" />
+            </Properties>
+        "#;
+        let props = parse_custom(Cursor::new(xml.as_bytes()), "docProps/custom.xml")
+            .unwrap()
+            .value;
+        assert_eq!(
+            props.values.get("GeneralRef").map(String::as_str),
+            Some("foo & bar")
+        );
+        assert_eq!(
+            props.values.get("CData").map(String::as_str),
+            Some("foo < bar")
+        );
+    }
+
+    #[test]
+    fn detects_macro_content_types_start_end() {
+        let xml = r#"
+            <Types>
+              <Override Extension="bin" ContentType="application/vnd.ms-office.vbaProject"></Override>
+            </Types>
+        "#;
+        let result =
+            parse_content_types(Cursor::new(xml.as_bytes()), "[Content_Types].xml").unwrap();
+        assert!(result.value);
+    }
+
+    #[test]
+    fn test_fuzz_parse_metadata() {
+        use super::fuzz_parse_metadata;
+        assert!(fuzz_parse_metadata(b"<xml/>").is_ok());
+    }
 }

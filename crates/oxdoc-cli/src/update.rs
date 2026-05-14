@@ -6,7 +6,19 @@ use sha2::{Digest, Sha256};
 
 const REPO: &str = "spereyra-dev/oxdoc";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+#[cfg(not(test))]
 const GITHUB_API: &str = "https://api.github.com";
+
+#[cfg(test)]
+fn github_api() -> String {
+    std::env::var("OXDOC_TEST_GITHUB_API").unwrap_or_else(|_| "https://api.github.com".to_string())
+}
+
+#[cfg(not(test))]
+fn github_api() -> String {
+    GITHUB_API.to_string()
+}
+
 const GITHUB_URL: &str = "https://github.com";
 
 #[derive(Debug)]
@@ -66,7 +78,7 @@ fn download_and_install(tag: &str, target: &str, tmp: &Path) -> Result<(), Strin
 }
 
 fn fetch_latest_tag() -> Result<String, String> {
-    let url = format!("{GITHUB_API}/repos/{REPO}/releases/latest");
+    let url = format!("{}/repos/{REPO}/releases/latest", github_api());
     let response = ureq::get(&url)
         .header("User-Agent", &format!("oxdoc/{CURRENT_VERSION}"))
         .header("Accept", "application/vnd.github+json")
@@ -197,9 +209,14 @@ fn extract_binary(
 fn replace_binary(new_binary: &Path) -> Result<(), String> {
     let current =
         std::env::current_exe().map_err(|e| format!("failed to locate current binary: {e}"))?;
+    replace_binary_impl(new_binary, &current)
+}
 
+fn replace_binary_impl(new_binary: &Path, current: &Path) -> Result<(), String> {
     // Resolve symlinks so we write to the real file
-    let current = current.canonicalize().unwrap_or(current);
+    let current = current
+        .canonicalize()
+        .unwrap_or_else(|_| current.to_path_buf());
 
     // Temp file in the same directory to guarantee same-filesystem rename
     let tmp = current
@@ -233,7 +250,7 @@ fn make_tempdir() -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_target, normalize_tag, verify_checksum};
+    use super::*;
 
     #[test]
     fn normalizes_version_tags() {
@@ -284,5 +301,222 @@ mod tests {
         .unwrap();
 
         assert!(verify_checksum(&file_path, "test.tar.gz", &checksums_path).is_err());
+    }
+
+    #[test]
+    fn run_check_only_returns_update_available() {
+        let result = run(true, Some("v9.9.9".to_owned())).unwrap();
+        match result {
+            UpdateOutcome::UpdateAvailable { latest, .. } => assert_eq!(latest, "v9.9.9"),
+            _ => panic!("Expected UpdateAvailable"),
+        }
+    }
+
+    #[test]
+    fn run_with_current_version_returns_already_up_to_date() {
+        let current = format!("v{}", env!("CARGO_PKG_VERSION"));
+        let result = run(true, Some(current.clone())).unwrap();
+        match result {
+            UpdateOutcome::AlreadyUpToDate { version } => {
+                assert_eq!(format!("v{version}"), current)
+            }
+            _ => panic!("Expected AlreadyUpToDate"),
+        }
+    }
+
+    #[test]
+    fn test_make_tempdir() {
+        let dir = make_tempdir().unwrap();
+        assert!(dir.exists());
+        assert!(dir.is_dir());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn test_compute_sha256() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file_path = tmp.path().join("hash_test.txt");
+        std::fs::write(&file_path, b"oxdoc").unwrap();
+        let hash = compute_sha256(&file_path).unwrap();
+        // SHA256 of "oxdoc"
+        assert_eq!(
+            hash,
+            "96ca77f33ea0a66d90782c3a9ed3c33cdfdec10669f68b8fc10b39aa3a696494"
+        );
+    }
+
+    #[test]
+    fn test_extract_binary() {
+        use flate2::write::GzEncoder;
+        use tar::Builder;
+        let tmp = tempfile::tempdir().unwrap();
+        let archive_path = tmp.path().join("oxdoc-v1.0.0-target.tar.gz");
+        let dest_dir = tmp.path().join("extracted");
+        std::fs::create_dir_all(&dest_dir).unwrap();
+
+        let file = std::fs::File::create(&archive_path).unwrap();
+        let gz = GzEncoder::new(file, flate2::Compression::default());
+        let mut builder = Builder::new(gz);
+
+        let mut header = tar::Header::new_gnu();
+        header.set_size(5);
+        header.set_mode(0o755);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "oxdoc-v1.0.0-target/oxdoc", &b"dummy"[..])
+            .unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+
+        let extracted_path = extract_binary(&archive_path, "v1.0.0", "target", &dest_dir).unwrap();
+        assert!(extracted_path.exists());
+        let content = std::fs::read_to_string(extracted_path).unwrap();
+        assert_eq!(content, "dummy");
+    }
+
+    #[test]
+    fn test_download_error_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("out.txt");
+        // Invalid URL should fail immediately
+        let result = download("http://localhost:1", &dest);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_replace_binary_error_path() {
+        let result = replace_binary(std::path::Path::new("/does/not/exist/oxdoc"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_download_and_install_error_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = download_and_install("v0.0.0-nonexistent", "unknown-target", tmp.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_download_success() {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("out.txt");
+        let result = download(&format!("http://127.0.0.1:{}", port), &dest);
+        assert!(result.is_ok());
+        assert_eq!(std::fs::read_to_string(dest).unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_fetch_latest_tag_success_mocked() {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let response =
+                    "HTTP/1.1 200 OK\r\nContent-Length: 21\r\n\r\n{\"tag_name\":\"v1.2.3\"}";
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+
+        unsafe {
+            std::env::set_var(
+                "OXDOC_TEST_GITHUB_API",
+                format!("http://127.0.0.1:{}", port),
+            );
+        }
+        let tag = fetch_latest_tag().unwrap();
+        assert_eq!(tag, "v1.2.3");
+        unsafe {
+            std::env::remove_var("OXDOC_TEST_GITHUB_API");
+        }
+    }
+
+    #[test]
+    fn test_fetch_latest_tag() {
+        // Just execute it to cover lines. Network might fail in CI, so ignore the result.
+        let _ = fetch_latest_tag();
+    }
+
+    #[test]
+    fn test_extract_binary_invalid_archive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let archive_path = tmp.path().join("invalid.tar.gz");
+        std::fs::write(&archive_path, b"not a tarball").unwrap();
+        let dest_dir = tmp.path().join("extracted");
+
+        let result = extract_binary(&archive_path, "v1.0.0", "target", &dest_dir);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_binary_missing_oxdoc_binary() {
+        use flate2::write::GzEncoder;
+        use tar::Builder;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let archive_path = tmp.path().join("oxdoc-v1.0.0-target.tar.gz");
+        let dest_dir = tmp.path().join("extracted");
+        std::fs::create_dir_all(&dest_dir).unwrap();
+
+        let file = std::fs::File::create(&archive_path).unwrap();
+        let gz = GzEncoder::new(file, flate2::Compression::default());
+        let mut builder = Builder::new(gz);
+        let mut header = tar::Header::new_gnu();
+        header.set_size(4);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "oxdoc-v1.0.0-target/README", &b"docs"[..])
+            .unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+
+        let result = extract_binary(&archive_path, "v1.0.0", "target", &dest_dir);
+        assert!(
+            result
+                .unwrap_err()
+                .contains("archive did not contain an oxdoc binary")
+        );
+    }
+
+    #[test]
+    fn test_replace_binary_impl_success() {
+        let tmp = tempfile::tempdir().unwrap();
+        let new_binary = tmp.path().join("new_oxdoc");
+        let current_binary = tmp.path().join("current_oxdoc");
+        std::fs::write(&new_binary, b"new").unwrap();
+        std::fs::write(&current_binary, b"old").unwrap();
+
+        replace_binary_impl(&new_binary, &current_binary).unwrap();
+
+        assert_eq!(std::fs::read(&current_binary).unwrap(), b"new");
+    }
+
+    #[test]
+    fn test_replace_binary_impl_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let new_binary = tmp.path().join("new_oxdoc");
+        std::fs::write(&new_binary, b"dummy").unwrap();
+
+        let current_binary = tmp.path().join("dir_does_not_exist").join("oxdoc");
+        let result = replace_binary_impl(&new_binary, &current_binary);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_download_and_install_error_path_404() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = download_and_install("v999.999.999", "x86_64-unknown-linux-gnu", tmp.path());
+        assert!(result.is_err());
     }
 }

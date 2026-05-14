@@ -326,5 +326,18 @@ mod tests {
         assert_eq!(json.code(), "E012");
         assert!(format!("{json}").contains("EOF"));
         assert!(json.source().is_some());
+
+        let update = CliError::Update("update error".to_owned());
+        assert_eq!(update.code(), "E013");
+        assert_eq!(format!("{update}"), "update error");
+        assert!(update.source().is_none());
+    }
+
+    #[test]
+    fn test_parse_delimiter() {
+        use super::parse_delimiter;
+        assert_eq!(parse_delimiter("\\t").unwrap(), b'\t');
+        assert_eq!(parse_delimiter(",").unwrap(), b',');
+        assert!(parse_delimiter("foo").is_err());
     }
 }
