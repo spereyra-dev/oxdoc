@@ -22,11 +22,13 @@ mod parsers;
 pub mod vfs;
 
 use std::fs::File;
-use std::io::{Read, Seek, Write};
+use std::io::{Cursor, Read, Seek, Write};
 use std::path::Path;
 
 pub use error::{OxdocError, Result};
-pub use models::{DocumentInfo, Extraction, OutputWarning, XlsxCsvOptions};
+pub use models::{
+    DocumentInfo, DocumentType, Extraction, OutputWarning, XlsxCsvOptions, XlsxSheet,
+};
 #[doc(hidden)]
 pub use parsers::docx::fuzz_extract_text as fuzz_docx_text;
 #[doc(hidden)]
@@ -76,6 +78,30 @@ pub fn extract_xlsx_csv_from_reader<R: Read + Seek, W: Write>(
 ) -> Result<Extraction<()>> {
     let mut package = OoxmlPackage::new(reader)?;
     xlsx::write_csv(&mut package, options, writer)
+}
+
+pub fn list_xlsx_sheets(path: impl AsRef<Path>) -> Result<Extraction<Vec<XlsxSheet>>> {
+    let file = File::open(path)?;
+    list_xlsx_sheets_from_reader(file)
+}
+
+pub fn list_xlsx_sheets_from_reader<R: Read + Seek>(
+    reader: R,
+) -> Result<Extraction<Vec<XlsxSheet>>> {
+    let mut package = OoxmlPackage::new(reader)?;
+    xlsx::list_sheets(&mut package)
+}
+
+pub fn detect_document_type(path: impl AsRef<Path>) -> Result<DocumentType> {
+    let file = File::open(path)?;
+    detect_document_type_from_reader(file)
+}
+
+pub fn detect_document_type_from_reader<R: Read>(mut reader: R) -> Result<DocumentType> {
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes)?;
+    let mut package = OoxmlPackage::new(Cursor::new(bytes))?;
+    parsers::detect_document_type(&mut package)
 }
 
 pub fn read_info(path: impl AsRef<Path>) -> Result<Extraction<DocumentInfo>> {

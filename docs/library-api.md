@@ -151,6 +151,29 @@ fn main() -> oxdoc_core::Result<()> {
 
 The reader APIs return the same `Extraction<T>` and `OxdocError` values as the path helpers. `read_info_from_reader` requires a display file name because no filesystem path is available for deriving `DocumentInfo.file`.
 
+### Document type and sheets
+
+```rust
+use oxdoc_core::{detect_document_type, list_xlsx_sheets, DocumentType};
+
+fn main() -> oxdoc_core::Result<()> {
+    match detect_document_type("renamed-package.bin")? {
+        DocumentType::Docx => println!("word document"),
+        DocumentType::Pptx => println!("presentation"),
+        DocumentType::Xlsx => {
+            for sheet in list_xlsx_sheets("renamed-package.bin")?.value {
+                println!("{}: {}", sheet.index, sheet.name);
+            }
+        }
+        DocumentType::Unknown => println!("unknown OOXML package"),
+    }
+
+    Ok(())
+}
+```
+
+`detect_document_type` inspects `[Content_Types].xml`, so it works even when a package has no useful filename extension. `list_xlsx_sheets` reports visible sheets with 1-based indices without opening worksheet data.
+
 ## Core Types
 
 ### `Extraction<T>`

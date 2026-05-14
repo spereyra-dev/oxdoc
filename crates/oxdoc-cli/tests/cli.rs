@@ -1,7 +1,7 @@
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
@@ -103,6 +103,20 @@ fn extracts_pptx_text_as_json() {
 }
 
 #[test]
+fn extracts_docx_text_from_content_types_when_extension_is_wrong() {
+    let docx = fixtures::build_package("docx/basic", "fixture.bin");
+
+    let output = oxdoc(["extract", "text", docx.to_str().unwrap()]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("docx_basic_text.txt").trim_end()
+    );
+}
+
+#[test]
 fn extracts_application_generated_pptx_text_to_stdout() {
     let pptx = fixtures::fixture_file("pptx/python-pptx-basic.pptx");
 
@@ -195,6 +209,85 @@ fn extracts_csv_by_visible_sheet_index() {
     assert!(output.status.success());
     assert!(stderr(&output).is_empty());
     assert_eq!(stdout(&output), "second\n");
+}
+
+#[test]
+fn lists_visible_sheets() {
+    let xlsx = create_ooxml(
+        "list-sheets.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Hidden" sheetId="1" state="hidden" r:id="rId1"/><sheet name="Ventas Q1" sheetId="2" r:id="rId2"/><sheet name="Resumen" sheetId="3" r:id="rId3"/></sheets></workbook>"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc(["extract", "csv", xlsx.to_str().unwrap(), "--list-sheets"]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(stdout(&output), "1: Ventas Q1\n2: Resumen\n");
+}
+
+#[test]
+fn rejects_list_sheets_with_sheet_selectors() {
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--list-sheets",
+        "--sheet",
+        "Sales Q1",
+    ]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("cannot be used with"));
+}
+
+#[test]
+fn writes_text_and_csv_output_to_file() {
+    let docx = fixtures::build_package("docx/basic", "fixture.docx");
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+    let text_output = unique_path("extract.txt");
+    let csv_output = unique_path("extract.csv");
+
+    let text = oxdoc([
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+        "-o",
+        text_output.to_str().unwrap(),
+    ]);
+    let csv = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Sales Q1",
+        "-o",
+        csv_output.to_str().unwrap(),
+    ]);
+
+    assert!(text.status.success());
+    assert!(stdout(&text).is_empty());
+    assert_eq!(
+        fs::read_to_string(text_output).unwrap().trim_end(),
+        fixtures::read_snapshot("docx_basic_text.txt").trim_end()
+    );
+    assert!(csv.status.success());
+    assert!(stdout(&csv).is_empty());
+    assert_eq!(
+        fs::read_to_string(csv_output).unwrap().trim_end(),
+        fixtures::read_snapshot("xlsx_basic_csv.txt").trim_end()
+    );
 }
 
 #[test]
@@ -366,6 +459,106 @@ fn reports_missing_files() {
 }
 
 #[test]
+fn extracts_multiple_text_files_as_json_array() {
+    let docx = fixtures::build_package("docx/basic", "one.docx");
+    let pptx = fixtures::build_package("pptx/text", "two.pptx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+        pptx.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    let entries = actual.as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["file"], "one.docx");
+    assert_eq!(
+        entries[0]["text"].as_str().unwrap().trim_end(),
+        fixtures::read_snapshot("docx_basic_text.txt").trim_end()
+    );
+    assert_eq!(entries[1]["file"], "two.pptx");
+    assert_eq!(
+        entries[1]["text"].as_str().unwrap().trim_end(),
+        fixtures::read_snapshot("pptx_text.txt").trim_end()
+    );
+}
+
+#[test]
+fn multiple_text_files_continue_after_partial_error() {
+    let docx = fixtures::build_package("docx/basic", "good.docx");
+    let missing = unique_path("missing.docx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        missing.to_str().unwrap(),
+        docx.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("warning[batch/W998]:"));
+    assert!(stderr(&output).contains("skipped after error[E001]"));
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("docx_basic_text.txt").trim_end()
+    );
+}
+
+#[test]
+fn extracts_multiple_csv_files_in_argument_order() {
+    let first = fixtures::build_package("xlsx/basic", "first.xlsx");
+    let second = fixtures::build_package("xlsx/basic", "second.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        first.to_str().unwrap(),
+        second.to_str().unwrap(),
+        "--sheet",
+        "Sales Q1",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let expected = fixtures::read_snapshot("xlsx_basic_csv.txt");
+    assert_eq!(stdout(&output), format!("{expected}{expected}"));
+}
+
+#[test]
+fn reads_text_csv_and_info_from_stdin() {
+    let docx = fixtures::build_package("docx/basic", "stdin.docx");
+    let xlsx = fixtures::build_package("xlsx/basic", "stdin.xlsx");
+    let pptx = fixtures::build_package("pptx/basic", "stdin.pptx");
+
+    let text = oxdoc_with_stdin(["extract", "text", "-"], &fs::read(&docx).unwrap());
+    let csv = oxdoc_with_stdin(
+        ["extract", "csv", "-", "--sheet", "Sales Q1"],
+        &fs::read(&xlsx).unwrap(),
+    );
+    let info = oxdoc_with_stdin(["info", "-", "--format", "json"], &fs::read(&pptx).unwrap());
+
+    assert!(text.status.success());
+    assert_eq!(
+        stdout(&text).trim_end(),
+        fixtures::read_snapshot("docx_basic_text.txt").trim_end()
+    );
+    assert!(csv.status.success());
+    assert_eq!(
+        stdout(&csv).trim_end(),
+        fixtures::read_snapshot("xlsx_basic_csv.txt").trim_end()
+    );
+    assert!(info.status.success());
+    let actual: Value = serde_json::from_str(&stdout(&info)).unwrap();
+    assert_eq!(actual["file"], "<stdin>");
+}
+
+#[test]
 fn rejects_missing_required_file_argument() {
     let output = oxdoc(["extract", "text"]);
 
@@ -373,7 +566,7 @@ fn rejects_missing_required_file_argument() {
     assert!(stdout(&output).is_empty());
     assert!(stderr(&output).contains("the following required arguments were not provided"));
     assert!(stderr(&output).contains("Usage: oxdoc"));
-    assert!(stderr(&output).contains("extract text <FILE>"));
+    assert!(stderr(&output).contains("extract text <FILES>..."));
 }
 
 #[test]
@@ -539,6 +732,22 @@ fn oxdoc<const N: usize>(args: [&str; N]) -> std::process::Output {
         .args(args)
         .output()
         .unwrap()
+}
+
+fn oxdoc_with_stdin<const N: usize>(args: [&str; N], stdin: &[u8]) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_oxdoc"))
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut stdin_pipe = child.stdin.take().unwrap();
+    stdin_pipe.write_all(stdin).unwrap();
+    drop(stdin_pipe);
+
+    child.wait_with_output().unwrap()
 }
 
 fn stdout(output: &std::process::Output) -> String {

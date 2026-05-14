@@ -111,6 +111,20 @@ impl OutputWarning {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentType {
+    Docx,
+    Pptx,
+    Xlsx,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XlsxSheet {
+    pub index: usize,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Extraction<T> {
     pub value: T,
