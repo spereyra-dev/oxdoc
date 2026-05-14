@@ -40,7 +40,7 @@ oxdoc info report.docx --format json
 
 ## Status
 
-The CLI is pre-1.0. Output contracts are documented and tested, but new extraction surfaces may still change before the first stable release.
+The CLI follows semantic versioning from 1.0 onward. Output contracts are documented and tested so shell scripts can depend on them.
 
 ## License
 

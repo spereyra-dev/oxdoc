@@ -4,7 +4,7 @@ DOCX files are OOXML ZIP packages. The primary text content usually lives in `wo
 
 ## Current Behavior
 
-The MVP parser:
+The current parser:
 
 - Reads the main document XML part.
 - Follows main-document relationships for headers, footers, footnotes, endnotes, and comments.
@@ -39,7 +39,7 @@ The MVP parser:
 | Related text parts | The main document body is emitted first, then headers, footers, footnotes, endnotes, and comments are appended in `word/_rels/document.xml.rels` relationship order. Missing related parts are skipped with a warning. |
 | Text boxes and drawings | Visible text is emitted when it appears in `*:t` text nodes in parsed DOCX parts. Layout and drawing geometry are not interpreted. |
 
-These rules are intentionally stable for scripts. Breaking changes to this contract should be called out before a 1.0 release.
+These rules are intentionally stable for scripts. Breaking changes to this contract should be called out in release notes.
 
 ## Example
 

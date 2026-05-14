@@ -13,8 +13,7 @@
 //! # }
 //! ```
 //!
-//! The public API is pre-1.0 and may change while the project hardens parser
-//! behavior and streaming boundaries.
+//! The public API follows semantic versioning from 1.0 onward.
 
 mod error;
 pub mod models;

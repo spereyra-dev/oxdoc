@@ -32,7 +32,7 @@ OOXML files such as `.docx`, `.xlsx`, and `.pptx` are ZIP containers with XML pa
 
 ## Why Relationships Matter
 
-Office parts usually follow conventional paths, but robust OOXML tools should read relationships instead of assuming all paths. `oxdoc` follows the root office document relationship and workbook sheet relationships in the MVP.
+Office parts usually follow conventional paths, but robust OOXML tools should read relationships instead of assuming all paths. `oxdoc` follows the root office document relationship and workbook sheet relationships.
 
 Relationship targets are resolved as package-internal OOXML part paths. External URLs, URI schemes, backslashes, NUL bytes, and `..` segments that escape the package root are hard errors.
 

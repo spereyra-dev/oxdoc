@@ -2,9 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on human-readable release notes. This project has not published a versioned release yet.
+The format is based on human-readable release notes.
 
 ## Unreleased
+
+No unreleased changes yet.
+
+## 1.0.0 - 2026-05-14
 
 ### Added
 

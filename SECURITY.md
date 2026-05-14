@@ -4,7 +4,7 @@
 
 ## Supported Versions
 
-The project is pre-1.0. Security fixes are made on the default branch until versioned releases are established.
+Security fixes are made on the default branch and released as patched versions. After 1.0, supported release lines follow semantic versioning.
 
 ## Reporting a Vulnerability
 

@@ -2,7 +2,7 @@
 
 `oxdoc-core` exposes the reusable Rust API. The CLI is a consumer of this crate.
 
-The API is early and may change before the first stable release.
+From 1.0 onward, public API changes follow semantic versioning.
 
 ## Public Functions
 
