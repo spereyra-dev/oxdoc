@@ -19,9 +19,14 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+flate2 = "1"
 oxdoc-core = { path = "../oxdoc-core", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
+tar = "0.4"
+ureq = "3"
 
 [dev-dependencies]
+tempfile = "3.27.0"
 zip.workspace = true

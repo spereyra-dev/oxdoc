@@ -435,4 +435,29 @@ mod tests {
         assert_eq!(store.lookup(0).unwrap().as_deref(), Some("first"));
         assert_eq!(result.warnings.len(), 1);
     }
+
+    #[test]
+    fn test_disk_store_lookup_out_of_bounds() {
+        use super::DiskSharedStringStore;
+        use super::SharedStringLookup;
+        let mut store = DiskSharedStringStore::new().unwrap();
+        assert_eq!(store.lookup(10).unwrap(), None);
+        store.push("hello").unwrap();
+        assert_eq!(store.lookup(0).unwrap().as_deref(), Some("hello"));
+        assert_eq!(store.lookup(1).unwrap(), None);
+    }
+
+    #[test]
+    fn test_general_ref_and_cdata() {
+        let xml = r#"
+            <sst>
+              <si><t>foo &amp; bar <![CDATA[baz]]></t></si>
+            </sst>
+        "#;
+        let mut store =
+            SharedStringStore::parse(Cursor::new(xml.as_bytes()), "xl/sharedStrings.xml")
+                .unwrap()
+                .value;
+        assert_eq!(store.lookup(0).unwrap().unwrap(), "foo & bar baz");
+    }
 }

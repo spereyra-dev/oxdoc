@@ -546,3 +546,33 @@ fn unique_path(name: &str) -> PathBuf {
         .as_nanos();
     std::env::temp_dir().join(format!("oxdoc-cli-{}-{nonce}-{name}", std::process::id()))
 }
+
+#[test]
+fn update_check_only_runs_successfully() {
+    // Just verify the command doesn't crash
+    let output = oxdoc(["update", "--check"]);
+    assert!(output.status.success());
+}
+
+#[test]
+fn update_with_current_version_runs_successfully() {
+    let current = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let output = oxdoc(["update", "--version", &current]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("already up to date"));
+}
+
+#[test]
+fn update_check_only_reports_available_version() {
+    let output = oxdoc(["update", "--check", "--version", "v99.99.99"]);
+    assert!(output.status.success());
+    assert!(stdout(&output).contains("Update available"));
+    assert!(stdout(&output).contains("Run `oxdoc update` to install."));
+}
+
+#[test]
+fn update_with_invalid_version_fails_gracefully() {
+    let output = oxdoc(["update", "--version", "v99.99.99-nonexistent"]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("download failed") || stderr(&output).contains("error[E013]"));
+}

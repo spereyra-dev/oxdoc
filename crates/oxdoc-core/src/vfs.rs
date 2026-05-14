@@ -209,3 +209,86 @@ fn map_zip_entry_error(path: &str, err: ZipError) -> OxdocError {
         err => OxdocError::CorruptedZip(err),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+    use zip::write::{SimpleFileOptions, ZipWriter};
+
+    fn create_zip(content: &[(&str, &[u8])]) -> Cursor<Vec<u8>> {
+        let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+        for (name, data) in content {
+            zip.start_file(*name, SimpleFileOptions::default()).unwrap();
+            use std::io::Write;
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap()
+    }
+
+    #[test]
+    fn test_vfs_contains_any_and_read_to_string() {
+        let cursor = create_zip(&[("file1.txt", b"hello"), ("file2.txt", b"world")]);
+        let mut pkg = OoxmlPackage::new(cursor).unwrap();
+
+        assert!(pkg.contains_any(&["nonexistent.txt", "file2.txt"]));
+        assert!(!pkg.contains_any(&["nonexistent.txt"]));
+
+        assert_eq!(pkg.read_to_string("file1.txt").unwrap(), "hello");
+    }
+
+    #[test]
+    fn test_vfs_limited_reader_empty_buf() {
+        let cursor = create_zip(&[("file1.txt", b"hello")]);
+        let mut pkg = OoxmlPackage::new(cursor).unwrap();
+
+        pkg.with_entry("file1.txt", |reader| {
+            let mut buf = [];
+            assert_eq!(reader.read(&mut buf).unwrap(), 0);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn test_map_zip_entry_error() {
+        assert!(matches!(
+            map_zip_entry_error("test", ZipError::FileNotFound),
+            OxdocError::MissingPart(_)
+        ));
+        assert!(matches!(
+            map_zip_entry_error(
+                "test",
+                ZipError::UnsupportedArchive(ZipError::PASSWORD_REQUIRED)
+            ),
+            OxdocError::UnsupportedEncryptedPart(_)
+        ));
+        assert!(matches!(
+            map_zip_entry_error("test", ZipError::InvalidArchive("bad".into())),
+            OxdocError::CorruptedZip(_)
+        ));
+    }
+
+    #[test]
+    fn test_vfs_contains_and_limits() {
+        let cursor = create_zip(&[("file1.txt", b"hello world")]);
+        let mut pkg = OoxmlPackage::new(cursor).unwrap();
+
+        assert!(pkg.contains("file1.txt"));
+        assert!(!pkg.contains("file2.txt"));
+
+        // Exceed limit
+        let limits = OoxmlLimits {
+            max_part_uncompressed_size: 5,
+            ..Default::default()
+        };
+        let err = pkg
+            .with_entry_limits("file1.txt", limits, |reader| {
+                let mut s = String::new();
+                reader.read_to_string(&mut s)?;
+                Ok(())
+            })
+            .unwrap_err();
+        assert!(matches!(err, OxdocError::PartTooLarge { .. }));
+    }
+}
