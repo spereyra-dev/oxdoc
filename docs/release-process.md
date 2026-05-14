@@ -40,7 +40,7 @@ make scripts-test
 
 The installer supports these maintainer/test overrides:
 
-- `OXDOC_VERSION`, for example `v0.1.0` or `0.1.0`.
+- `OXDOC_VERSION`, for example `v1.0.0` or `1.0.0`.
 - `OXDOC_TARGET`, for explicit target asset selection.
 - `OXDOC_INSTALL_DIR`, for destination directory.
 - `OXDOC_REPO`, for forks.
@@ -55,7 +55,7 @@ formula output here. After a GitHub Release is public:
 2. Render the formula:
 
    ```bash
-   scripts/render-homebrew-formula.sh v0.1.0 <source-tarball-sha256> > Formula/oxdoc.rb
+   scripts/render-homebrew-formula.sh v1.0.0 <source-tarball-sha256> > Formula/oxdoc.rb
    ```
 
 3. Copy or commit `Formula/oxdoc.rb` into `spereyra-dev/homebrew-tap`.
@@ -67,7 +67,7 @@ the project has enough release volume to maintain them.
 
 ## Crates.io Publishing
 
-The intended crates.io plan is to publish both crates once the pre-1.0 API and CLI contracts are ready for external consumers:
+The intended crates.io plan is to publish both crates once the 1.0 API and CLI contracts are ready for external consumers:
 
 - Publish `oxdoc-core` first because it is the library crate.
 - Publish `oxdoc-cli` second because it depends on the matching `oxdoc-core` version.
@@ -89,7 +89,7 @@ Both crates must keep:
 - A crate-local `README.md`.
 - Package include lists that avoid publishing workspace-only integration fixtures.
 - Version numbers aligned when the CLI depends on a new core API.
-- Release notes that call out breaking API or CLI behavior before 1.0.
+- Release notes that call out breaking API or CLI behavior.
 
 ## Binary Artifacts
 

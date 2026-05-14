@@ -31,7 +31,7 @@ fn main() -> oxdoc_core::Result<()> {
 
 ## Status
 
-The crate is pre-1.0. API names and behavior may still change while `oxdoc` hardens parser coverage, memory boundaries, and embedding contracts.
+The crate follows semantic versioning from 1.0 onward. Public API changes that break callers should ship in a new major version.
 
 ## License
 

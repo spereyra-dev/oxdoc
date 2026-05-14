@@ -17,10 +17,10 @@ This roadmap is intentionally practical: `oxdoc` should become a reliable, fast,
 - Run formatting, linting, and tests in CI for every PR.
 - Track dependency updates with Dependabot.
 
-## Phase 1: MVP Hardening
+## Phase 1: 1.0 Hardening
 
 - Improve DOCX extraction beyond the main document body. Headers, footers, footnotes, endnotes, comments, hyperlink visible text, and deterministic related-part ordering are implemented; section-aware ordering remains future work.
-- Improve XLSX CSV extraction for sparse dimensions, date/number formatting, and larger workbooks. Visible sheet selection by name or 1-based index, booleans, errors, cached formula values, and bounded shared-string storage are implemented in the MVP path.
+- Improve XLSX CSV extraction for sparse dimensions, date/number formatting, and larger workbooks. Visible sheet selection by name or 1-based index, booleans, errors, cached formula values, and bounded shared-string storage are implemented in the current path.
 - Add PPTX text extraction for slide text boxes and speaker notes.
 - Expand metadata coverage across DOCX, XLSX, and PPTX.
 - Keep warnings structured and actionable.
@@ -48,10 +48,10 @@ This roadmap is intentionally practical: `oxdoc` should become a reliable, fast,
 
 ## Phase 5: Release Engineering
 
-- Publish versioned binaries for Linux, macOS, and Windows.
-- Publish static Linux builds for `x86_64-unknown-linux-musl`.
+- Publish versioned binaries for Linux, macOS, and Windows. Implemented through the GitHub Release workflow.
+- Publish static Linux builds for `x86_64-unknown-linux-musl`. Implemented through the GitHub Release workflow.
 - Add signed checksums to GitHub Releases.
-- Decide whether and when to publish crates to crates.io.
+- Publish `oxdoc-core` and `oxdoc-cli` to crates.io for 1.0.
 
 ## Non-Goals
 

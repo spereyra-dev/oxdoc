@@ -4,7 +4,7 @@ XLSX files are OOXML ZIP packages. `oxdoc` reads `xl/workbook.xml`, resolves the
 
 ## Current Behavior
 
-The MVP parser:
+The current parser:
 
 - Selects the first visible sheet by default.
 - Can select a sheet by visible workbook name with `--sheet`.

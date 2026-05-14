@@ -2,7 +2,7 @@
 
 `oxdoc` is a fast OOXML extractor for `.docx`, `.xlsx`, and document metadata. It opens the ZIP-based Office container, reads only the XML parts that matter, and emits plain text, CSV, or JSON without rendering layout.
 
-The project is designed for shell pipelines, CI jobs, serverless functions, and future embedding through a stable Rust library API.
+The project is designed for shell pipelines, CI jobs, serverless functions, and embedding through a stable Rust library API.
 
 Public documentation URL: [spereyra-dev.github.io/oxdoc](https://spereyra-dev.github.io/oxdoc/).
 
@@ -25,9 +25,9 @@ Public documentation URL: [spereyra-dev.github.io/oxdoc](https://spereyra-dev.gi
 
 ## Current Status
 
-`oxdoc` is pre-1.0. The current implementation is an MVP foundation with the crate split, CLI contract, parser structure, and OSS project scaffolding in place.
+`oxdoc` is ready for a 1.0 release. The crate split, CLI contract, parser structure, release workflow, installer, and documentation are in place.
 
-Expect some API and CLI details to change before the first tagged release.
+From 1.0 onward, public CLI and Rust API changes follow semantic versioning.
 
 ## Quick Example
 

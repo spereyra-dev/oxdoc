@@ -4,7 +4,7 @@ PPTX files are OOXML ZIP packages. `oxdoc` reads `ppt/presentation.xml`, follows
 
 ## Current Behavior
 
-The MVP parser:
+The current parser:
 
 - Resolves the presentation part through `_rels/.rels` when present.
 - Preserves slide order from `p:sldIdLst`.

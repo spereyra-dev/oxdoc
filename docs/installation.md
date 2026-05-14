@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/spereyra-dev/oxdoc/main/install.sh 
 Install a specific release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/spereyra-dev/oxdoc/main/install.sh | OXDOC_VERSION=v0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/spereyra-dev/oxdoc/main/install.sh | OXDOC_VERSION=v1.0.0 sh
 ```
 
 Choose a different install directory:
@@ -64,7 +64,7 @@ brew install oxdoc
 Maintainers can render the formula for the tap after publishing a release:
 
 ```bash
-scripts/render-homebrew-formula.sh v0.1.0 <source-tarball-sha256> > Formula/oxdoc.rb
+scripts/render-homebrew-formula.sh v1.0.0 <source-tarball-sha256> > Formula/oxdoc.rb
 ```
 
 The formula builds from the tagged source with Cargo, which is the usual

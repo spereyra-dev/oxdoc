@@ -2,24 +2,23 @@
 
 Fast OOXML extraction without rendering.
 
-`oxdoc` is a Rust workspace for extracting plain text, CSV, and metadata from Office Open XML containers such as `.docx`, `.xlsx`, and, over time, `.pptx`. It is built for automation: shell pipelines, CI jobs, serverless functions, ingestion systems, and future embedding through a stable Rust API.
+`oxdoc` is a Rust workspace for extracting plain text, CSV, and metadata from Office Open XML containers such as `.docx`, `.xlsx`, and `.pptx`. It is built for automation: shell pipelines, CI jobs, serverless functions, ingestion systems, and embedding through a stable Rust API.
 
 `oxdoc` is not a document renderer. It does not preserve layout, calculate pagination, generate PDFs, or implement the full OOXML specification. It reads the ZIP-based Office container, targets the XML parts that matter, and emits useful structured output.
 
 ## Status
 
-`oxdoc` is pre-1.0 and under active development. The current codebase implements the first MVP slice:
+`oxdoc` is ready for a 1.0 release. The CLI and Rust API now have documented contracts for:
 
-- DOCX text extraction from the main document part.
+- DOCX text extraction from the supported document parts.
 - DOCX logical text semantics for paragraph breaks, table cell and row separation, tabs, line breaks, and deleted revision text handling.
 - PPTX text extraction from slide text boxes and speaker notes.
 - XLSX worksheet-to-CSV extraction.
-- Metadata extraction from `docProps/core.xml` and `docProps/app.xml`.
+- XLSX visible sheet listing and sheet selection by name or index.
+- Metadata extraction from core, app, and custom document properties.
 - A reusable `oxdoc-core` crate and a CLI-facing `oxdoc-cli` crate.
 - Typed errors plus recoverable warnings.
-- OSS project scaffolding and Docsify documentation.
-
-APIs and CLI behavior may still change before the first tagged release.
+- Stdin, batch extraction, file output, release binaries, and checksum-verified installs.
 
 ## Documentation
 
@@ -59,6 +58,12 @@ Install the latest macOS/Linux release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/spereyra-dev/oxdoc/main/install.sh | sh
+```
+
+Install with Cargo:
+
+```bash
+cargo install oxdoc-cli
 ```
 
 Or build the workspace from source:
@@ -228,12 +233,11 @@ The command-line application. It owns:
 | Errors | Typed library errors, CLI non-zero hard failures. |
 | Warnings | Recoverable parser warnings with OOXML part paths. |
 
-## Known MVP Limitations
+## Known Limitations
 
 - DOCX section-aware ordering and some advanced revision/comment semantics need hardening.
 - XLSX date and number format interpretation need hardening.
 - PPTX extraction does not render slides, synthesize bullets, or preserve visual layout.
-- The public Rust API is not stable before 1.0.
 
 See [ROADMAP.md](ROADMAP.md) and [docs/roadmap.md](docs/roadmap.md).
 

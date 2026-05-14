@@ -23,5 +23,6 @@
   - [Contributing](contributing.md)
   - [Roadmap](roadmap.md)
   - [Release Process](release-process.md)
+  - [1.0 Launch](launch-publicity.md)
   - [Security](security.md)
   - [FAQ](faq.md)
