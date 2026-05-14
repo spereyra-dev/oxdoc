@@ -253,6 +253,58 @@ fn rejects_list_sheets_with_sheet_selectors() {
 }
 
 #[test]
+fn rejects_list_sheets_with_multiple_inputs() {
+    let first = fixtures::build_package("xlsx/basic", "first.xlsx");
+    let second = fixtures::build_package("xlsx/basic", "second.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        first.to_str().unwrap(),
+        second.to_str().unwrap(),
+        "--list-sheets",
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("--list-sheets supports a single input file"));
+}
+
+#[test]
+fn rejects_text_extraction_from_xlsx_detected_by_content_types() {
+    let xlsx = fixtures::build_package("xlsx/basic", "workbook.bin");
+
+    let output = oxdoc(["extract", "text", xlsx.to_str().unwrap()]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("cannot extract text from an XLSX workbook"));
+}
+
+#[test]
+fn multiple_csv_files_continue_after_partial_error() {
+    let xlsx = fixtures::build_package("xlsx/basic", "good.xlsx");
+    let missing = unique_path("missing.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        missing.to_str().unwrap(),
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Sales Q1",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("warning[batch/W998]:"));
+    assert!(stderr(&output).contains("skipped after error[E001]"));
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("xlsx_basic_csv.txt").trim_end()
+    );
+}
+
+#[test]
 fn writes_text_and_csv_output_to_file() {
     let docx = fixtures::build_package("docx/basic", "fixture.docx");
     let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
