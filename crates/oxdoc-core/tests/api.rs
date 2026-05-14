@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use oxdoc_core::vfs::{OoxmlLimits, OoxmlPackage};
-use oxdoc_core::{OxdocError, XlsxCsvOptions};
+use oxdoc_core::{DocumentType, OxdocError, XlsxCsvOptions};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -356,6 +356,57 @@ fn extracts_application_generated_xlsx_csv_fixture() {
         String::from_utf8(csv).unwrap(),
         fixtures::read_snapshot("xlsx_openpyxl_csv.txt")
     );
+}
+
+#[test]
+fn detects_document_type_from_content_types() {
+    let docx = fixtures::build_package("docx/basic", "renamed.bin");
+    let pptx = fixtures::build_package("pptx/text", "renamed.data");
+    let xlsx = fixtures::build_package("xlsx/basic", "renamed.package");
+    let unknown = create_ooxml("no-content-types.bin", &[]);
+
+    assert_eq!(
+        oxdoc_core::detect_document_type(&docx).unwrap(),
+        DocumentType::Docx
+    );
+    assert_eq!(
+        oxdoc_core::detect_document_type(&pptx).unwrap(),
+        DocumentType::Pptx
+    );
+    assert_eq!(
+        oxdoc_core::detect_document_type(&xlsx).unwrap(),
+        DocumentType::Xlsx
+    );
+    assert_eq!(
+        oxdoc_core::detect_document_type(&unknown).unwrap(),
+        DocumentType::Unknown
+    );
+}
+
+#[test]
+fn lists_visible_xlsx_sheets_without_opening_sheet_data() {
+    let file = create_ooxml(
+        "list-sheets.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Hidden" sheetId="1" state="hidden" r:id="rId1"/><sheet name="Ventas Q1" sheetId="2" r:id="rId2"/><sheet name="Resumen" sheetId="3" r:id="rId3"/></sheets></workbook>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::list_xlsx_sheets(&file).unwrap();
+
+    assert!(extraction.warnings.is_empty());
+    assert_eq!(extraction.value.len(), 2);
+    assert_eq!(extraction.value[0].index, 1);
+    assert_eq!(extraction.value[0].name, "Ventas Q1");
+    assert_eq!(extraction.value[1].index, 2);
+    assert_eq!(extraction.value[1].name, "Resumen");
 }
 
 #[test]

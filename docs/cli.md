@@ -24,21 +24,22 @@ oxdoc --help
 ## Extract DOCX or PPTX Text
 
 ```bash
-oxdoc extract text <FILE> [--format text|json]
+oxdoc extract text <FILES>... [--format text|json] [-o <PATH>]
 ```
 
 Arguments:
 
 | Name | Required | Description |
 | --- | --- | --- |
-| `FILE` | yes | Path to a `.docx` or `.pptx` file. |
+| `FILES` | yes | One or more `.docx` or `.pptx` files, or `-` to read one OOXML package from stdin. |
 
 Options:
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `--format text` | `text` | Emit plain text. |
-| `--format json` | `text` | Emit a JSON object with `file` and `text`. |
+| `--format json` | `text` | Emit a JSON object with `file` and `text`; with multiple files, emit a JSON array. |
+| `--output <PATH>`, `-o <PATH>` | stdout | Write extraction output to a file. |
 
 Example:
 
@@ -67,6 +68,12 @@ Output shape:
 }
 ```
 
+Batch example:
+
+```bash
+oxdoc extract text a.docx b.pptx --format json
+```
+
 Warnings are still written to stderr when JSON output is selected. They are not embedded in the JSON payload.
 
 PPTX extraction preserves presentation slide order, extracts DrawingML text boxes, and includes linked speaker notes after each slide.
@@ -74,22 +81,24 @@ PPTX extraction preserves presentation slide order, extracts DrawingML text boxe
 ## Extract XLSX CSV
 
 ```bash
-oxdoc extract csv <FILE> [--sheet <NAME>|--sheet-index <INDEX>] [--delimiter <CHAR>]
+oxdoc extract csv <FILES>... [--sheet <NAME>|--sheet-index <INDEX>|--list-sheets] [--delimiter <CHAR>] [-o <PATH>]
 ```
 
 Arguments:
 
 | Name | Required | Description |
 | --- | --- | --- |
-| `FILE` | yes | Path to a `.xlsx` file. |
+| `FILES` | yes | One or more `.xlsx` files, or `-` to read one OOXML package from stdin. |
 
 Options:
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--sheet <NAME>` | first visible workbook sheet | Visible workbook sheet name to extract. Mutually exclusive with `--sheet-index`. |
-| `--sheet-index <INDEX>` | first visible workbook sheet | 1-based visible workbook sheet index to extract. Mutually exclusive with `--sheet`. |
+| `--sheet <NAME>` | first visible workbook sheet | Visible workbook sheet name to extract. Mutually exclusive with `--sheet-index` and `--list-sheets`. |
+| `--sheet-index <INDEX>` | first visible workbook sheet | 1-based visible workbook sheet index to extract. Mutually exclusive with `--sheet` and `--list-sheets`. |
+| `--list-sheets` | false | Print visible sheet names with 1-based indices and exit. |
 | `--delimiter <CHAR>` | `,` | Single-byte CSV delimiter. |
+| `--output <PATH>`, `-o <PATH>` | stdout | Write CSV or sheet list output to a file. |
 
 Example:
 
@@ -101,6 +110,12 @@ Index example:
 
 ```bash
 oxdoc extract csv data.xlsx --sheet-index 2
+```
+
+List sheets example:
+
+```bash
+oxdoc extract csv data.xlsx --list-sheets
 ```
 
 Output:
@@ -144,7 +159,7 @@ Arguments:
 
 | Name | Required | Description |
 | --- | --- | --- |
-| `FILE` | yes | Path to a `.docx`, `.xlsx`, or `.pptx` OOXML package. |
+| `FILE` | yes | Path to a `.docx`, `.xlsx`, or `.pptx` OOXML package, or `-` to read from stdin. |
 
 Options:
 

@@ -31,7 +31,10 @@ cargo install --path crates/oxdoc-cli
 ```bash
 oxdoc extract text contract.docx
 oxdoc extract text contract.docx --format json
+oxdoc extract text *.docx -o combined.txt
 oxdoc extract csv workbook.xlsx --sheet-index 1
+oxdoc extract csv workbook.xlsx --list-sheets
+cat contract.docx | oxdoc extract text -
 oxdoc info report.docx --format json
 ```
 

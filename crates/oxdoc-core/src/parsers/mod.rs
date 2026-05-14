@@ -10,7 +10,7 @@ use std::io::Cursor;
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 
-use crate::models::OutputWarning;
+use crate::models::{DocumentType, OutputWarning};
 use crate::vfs::OoxmlPackage;
 use crate::{OxdocError, Result};
 
@@ -42,6 +42,66 @@ pub(crate) fn find_office_document_path<R: std::io::Read + std::io::Seek>(
         Err(OxdocError::MissingPart(_)) => Ok(fallback.to_owned()),
         Err(err) => Err(err),
     }
+}
+
+pub(crate) fn detect_document_type<R: std::io::Read + std::io::Seek>(
+    package: &mut OoxmlPackage<R>,
+) -> Result<DocumentType> {
+    let xml = match package.read_to_string("[Content_Types].xml") {
+        Ok(xml) => xml,
+        Err(OxdocError::MissingPart(_)) => return Ok(DocumentType::Unknown),
+        Err(err) => return Err(err),
+    };
+
+    detect_document_type_from_content_types(&xml, "[Content_Types].xml")
+}
+
+fn detect_document_type_from_content_types(xml: &str, path: &str) -> Result<DocumentType> {
+    let mut reader = Reader::from_reader(Cursor::new(xml.as_bytes()));
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(element)) | Ok(Event::Empty(element))
+                if matches!(
+                    local_name(element.name().as_ref()),
+                    b"Default" | b"Override"
+                ) =>
+            {
+                if let Some(content_type) = attr_value(&element, b"ContentType") {
+                    if content_type
+                        == "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+                    {
+                        return Ok(DocumentType::Docx);
+                    }
+
+                    if content_type
+                        == "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"
+                    {
+                        return Ok(DocumentType::Pptx);
+                    }
+
+                    if content_type
+                        == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+                    {
+                        return Ok(DocumentType::Xlsx);
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(source) => {
+                return Err(OxdocError::MalformedXmlNode {
+                    path: path.to_owned(),
+                    source,
+                });
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(DocumentType::Unknown)
 }
 
 pub(crate) fn parse_relationship_map(

@@ -3,6 +3,7 @@ use std::io::{BufRead, BufReader, Cursor, Read, Seek, Write};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
+use crate::models::XlsxSheet;
 use crate::models::{Extraction, OutputWarning, XlsxCsvOptions};
 use crate::parsers::xlsx_shared_strings::{
     DEFAULT_SHARED_STRING_MEMORY_LIMIT, SharedStringLookup, SharedStringStore,
@@ -41,6 +42,26 @@ pub(crate) fn write_csv<R: Read + Seek, W: Write>(
         DEFAULT_SHARED_STRING_MEMORY_LIMIT,
         &mut writer,
     )
+}
+
+pub(crate) fn list_sheets<R: Read + Seek>(
+    package: &mut OoxmlPackage<R>,
+) -> Result<Extraction<Vec<XlsxSheet>>> {
+    let workbook_path = crate::parsers::find_office_document_path(package, "xl/workbook.xml")?;
+    let workbook_xml = package.read_to_string(&workbook_path)?;
+    let workbook = parse_workbook_sheets(&workbook_xml, &workbook_path)?;
+    let sheets = workbook
+        .value
+        .into_iter()
+        .filter(|sheet| sheet.visible)
+        .enumerate()
+        .map(|(index, sheet)| XlsxSheet {
+            index: index + 1,
+            name: sheet.name,
+        })
+        .collect();
+
+    Ok(Extraction::with_warnings(sheets, workbook.warnings))
 }
 
 fn write_csv_with_shared_string_memory_limit<R: Read + Seek, W: Write>(
