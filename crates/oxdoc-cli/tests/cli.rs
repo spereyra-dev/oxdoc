@@ -333,11 +333,18 @@ fn prints_info_as_json_and_text() {
     assert!(json.status.success());
     assert!(stderr(&json).is_empty());
     let actual_stdout = stdout(&json);
-    let expected_snapshot = fixtures::read_snapshot("pptx_basic_info.json");
     let actual: Value = serde_json::from_str(&actual_stdout).unwrap();
+    let expected_snapshot = fixtures::read_snapshot("pptx_basic_info.json");
     let expected: Value = serde_json::from_str(&expected_snapshot).unwrap();
-    assert_eq!(actual, expected);
-    assert_eq!(actual_stdout.trim_end(), expected_snapshot.trim_end());
+    assert_eq!(actual["oxdoc_version"], env!("CARGO_PKG_VERSION"));
+    let actual_without_version = actual
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter(|(key, _)| key.as_str() != "oxdoc_version")
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<serde_json::Map<String, Value>>();
+    assert_eq!(Value::Object(actual_without_version), expected);
 
     assert!(text.status.success());
     assert!(stderr(&text).is_empty());
@@ -404,6 +411,24 @@ fn fixture_provenance_notes_are_present() {
         assert!(note.contains("Redistribution:"), "{provenance}");
         assert!(note.contains("Purpose:"), "{provenance}");
     }
+}
+
+#[test]
+fn suppresses_warnings_with_quiet_flag() {
+    let docx = create_ooxml(
+        "quiet-warning.docx",
+        &[(
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="cp" xmlns:dc="dc"><dc:creator>Ada</dc:creator><"#,
+        )],
+    );
+
+    let output = oxdoc(["-q", "info", docx.to_str().unwrap(), "--format", "json"]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual["author"], "Ada");
 }
 
 #[test]

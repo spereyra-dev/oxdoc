@@ -14,6 +14,8 @@ mod update;
     about = "Fast OOXML text, CSV, and metadata extractor"
 )]
 struct Cli {
+    #[arg(long, short, global = true)]
+    quiet: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -91,7 +93,7 @@ fn run() -> Result<(), CliError> {
         Command::Extract { command } => match command {
             ExtractCommand::Text { file, format } => {
                 let result = extract_text(&file)?;
-                emit_warnings(&result.warnings);
+                emit_warnings(&result.warnings, cli.quiet);
                 match format {
                     TextFormat::Text => {
                         print!("{}", result.value);
@@ -124,15 +126,19 @@ fn run() -> Result<(), CliError> {
                     &mut stdout,
                 )?;
                 stdout.flush()?;
-                emit_warnings(&result.warnings);
+                emit_warnings(&result.warnings, cli.quiet);
             }
         },
         Command::Info { file, format } => {
             let result = oxdoc_core::read_info(&file)?;
-            emit_warnings(&result.warnings);
+            emit_warnings(&result.warnings, cli.quiet);
             match format {
                 InfoFormat::Json => {
-                    serde_json::to_writer_pretty(io::stdout().lock(), &result.value)?;
+                    let payload = InfoPayload {
+                        oxdoc_version: env!("CARGO_PKG_VERSION"),
+                        info: &result.value,
+                    };
+                    serde_json::to_writer_pretty(io::stdout().lock(), &payload)?;
                     println!();
                 }
                 InfoFormat::Text => print_info(&result.value),
@@ -238,9 +244,20 @@ struct TextPayload {
     text: String,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct InfoPayload<'a> {
+    oxdoc_version: &'static str,
+    #[serde(flatten)]
+    info: &'a DocumentInfo,
+}
+
 fn parse_delimiter(value: &str) -> Result<u8, CliError> {
     if value == "\\t" {
         return Ok(b'\t');
+    }
+
+    if value == "\\n" {
+        return Ok(b'\n');
     }
 
     let bytes = value.as_bytes();
@@ -260,7 +277,11 @@ fn display_file_name(path: &std::path::Path) -> String {
         .to_owned()
 }
 
-fn emit_warnings(warnings: &[OutputWarning]) {
+fn emit_warnings(warnings: &[OutputWarning], quiet: bool) {
+    if quiet {
+        return;
+    }
+
     for warning in warnings {
         eprintln!(
             "warning[{}/{}]: {}: {}",
@@ -304,7 +325,7 @@ fn print_optional_u64(label: &str, value: Option<u64>) {
 mod tests {
     use std::error::Error;
 
-    use super::CliError;
+    use super::{CliError, parse_delimiter};
 
     #[test]
     fn cli_errors_expose_stable_codes_and_sources() {
@@ -339,5 +360,32 @@ mod tests {
         assert_eq!(parse_delimiter("\\t").unwrap(), b'\t');
         assert_eq!(parse_delimiter(",").unwrap(), b',');
         assert!(parse_delimiter("foo").is_err());
+    }
+
+    #[test]
+    fn parse_delimiter_handles_supported_and_invalid_values() {
+        assert_eq!(parse_delimiter(",").unwrap(), b',');
+        assert_eq!(parse_delimiter("\\t").unwrap(), b'\t');
+        assert_eq!(parse_delimiter("|").unwrap(), b'|');
+        assert_eq!(parse_delimiter(";").unwrap(), b';');
+
+        let empty = parse_delimiter("").unwrap_err();
+        assert_eq!(empty.code(), "E010");
+        assert_eq!(
+            format!("{empty}"),
+            "delimiter must be a single-byte character"
+        );
+
+        let multi_byte = parse_delimiter("ab").unwrap_err();
+        assert_eq!(multi_byte.code(), "E010");
+        assert_eq!(
+            format!("{multi_byte}"),
+            "delimiter must be a single-byte character"
+        );
+    }
+
+    #[test]
+    fn parse_delimiter_supports_newline_escape_sequence() {
+        assert_eq!(parse_delimiter("\\n").unwrap(), b'\n');
     }
 }

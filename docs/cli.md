@@ -7,6 +7,14 @@
 - Hard failures exit with code `1` and print `error[<code>]: <message>` to stderr.
 - Clap usage errors keep their normal exit behavior and are not part of the runtime extraction contract.
 
+## Exit Codes
+
+| Exit Code | Meaning |
+| --- | --- |
+| `0` | Extraction or metadata read succeeded. Recoverable warnings may still be emitted to stderr. |
+| `1` | Hard runtime error. `oxdoc` prints `error[<code>]: <message>` to stderr. |
+| `2` | CLI usage error from Clap, such as missing required arguments or conflicting flags. |
+
 ## Global Help
 
 ```bash
