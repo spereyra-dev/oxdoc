@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v1/oxdoc-all-sheets-manifest.schema.json",
+  "title": "oxdoc all-sheets manifest JSON output",
+  "description": "Schema for the `manifest.json` written by `oxdoc extract csv --all-sheets --output-dir`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["oxdoc_version", "file", "sheets"],
+  "properties": {
+    "oxdoc_version": {
+      "type": "string",
+      "description": "Version of the oxdoc CLI that produced the manifest."
+    },
+    "file": {
+      "type": "string",
+      "description": "Workbook file name derived from the provided input path."
+    },
+    "sheets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/exportedSheet"
+      }
+    }
+  },
+  "$defs": {
+    "exportedSheet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "name", "csv_path", "warnings"],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "csv_path": {
+          "type": "string"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/warning"
+          }
+        },
+        "error": {
+          "$ref": "#/$defs/error"
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "code", "path", "message"],
+      "properties": {
+        "category": { "type": "string" },
+        "code": { "type": "string" },
+        "path": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

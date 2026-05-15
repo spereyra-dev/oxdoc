@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -66,24 +66,37 @@ enum ExtractCommand {
     Csv {
         #[arg(required = true)]
         files: Vec<PathBuf>,
-        #[arg(long, help = "Visible workbook sheet name to extract")]
+        #[arg(
+            long,
+            conflicts_with = "all_sheets",
+            help = "Visible workbook sheet name to extract"
+        )]
         sheet: Option<String>,
         #[arg(
             long,
-            conflicts_with_all = ["sheet", "list_sheets"],
+            conflicts_with_all = ["sheet", "list_sheets", "all_sheets"],
             help = "1-based visible workbook sheet index to extract"
         )]
         sheet_index: Option<usize>,
         #[arg(
             long,
-            conflicts_with_all = ["sheet", "sheet_index"],
+            conflicts_with_all = ["sheet", "sheet_index", "all_sheets", "output_dir"],
             help = "List visible workbook sheets and exit"
         )]
         list_sheets: bool,
+        #[arg(
+            long,
+            conflicts_with_all = ["sheet", "sheet_index", "list_sheets", "output"],
+            requires = "output_dir",
+            help = "Export every visible workbook sheet to separate CSV files"
+        )]
+        all_sheets: bool,
         #[arg(long, default_value = ",")]
         delimiter: String,
         #[arg(long, short)]
         output: Option<PathBuf>,
+        #[arg(long, conflicts_with = "output", requires = "all_sheets")]
+        output_dir: Option<PathBuf>,
     },
 }
 
@@ -138,17 +151,23 @@ fn run() -> Result<(), CliError> {
                 sheet,
                 sheet_index,
                 list_sheets,
+                all_sheets,
                 delimiter,
                 output,
+                output_dir,
             } => {
                 let delimiter = parse_delimiter(&delimiter)?;
                 extract_csv_command(
-                    &files,
-                    sheet.as_deref(),
-                    sheet_index,
-                    list_sheets,
-                    delimiter,
-                    output.as_deref(),
+                    CsvCommandOptions {
+                        files: &files,
+                        sheet_name: sheet.as_deref(),
+                        sheet_index,
+                        list_sheets,
+                        all_sheets,
+                        delimiter,
+                        output: output.as_deref(),
+                        output_dir: output_dir.as_deref(),
+                    },
                     warning_format,
                 )?;
             }
@@ -257,27 +276,50 @@ fn extract_text_command(
     Ok(())
 }
 
-fn extract_csv_command(
-    files: &[PathBuf],
-    sheet_name: Option<&str>,
+struct CsvCommandOptions<'a> {
+    files: &'a [PathBuf],
+    sheet_name: Option<&'a str>,
     sheet_index: Option<usize>,
     list_sheets: bool,
+    all_sheets: bool,
     delimiter: u8,
-    output: Option<&Path>,
+    output: Option<&'a Path>,
+    output_dir: Option<&'a Path>,
+}
+
+fn extract_csv_command(
+    options: CsvCommandOptions<'_>,
     warning_format: WarningFormat,
 ) -> Result<(), CliError> {
-    if list_sheets && files.len() > 1 {
+    if options.list_sheets && options.files.len() > 1 {
         return Err(CliError::InvalidArgument(
             "--list-sheets supports a single input file".to_owned(),
         ));
     }
 
-    let multiple = files.len() > 1;
-    let mut writer = output_writer(output)?;
+    if options.all_sheets {
+        if options.files.len() > 1 {
+            return Err(CliError::InvalidArgument(
+                "--all-sheets supports a single input file".to_owned(),
+            ));
+        }
+        let output_dir = options.output_dir.ok_or_else(|| {
+            CliError::InvalidArgument("--all-sheets requires --output-dir".to_owned())
+        })?;
+        return export_all_sheets(
+            options.files.first().expect("required by clap"),
+            output_dir,
+            options.delimiter,
+            warning_format,
+        );
+    }
+
+    let multiple = options.files.len() > 1;
+    let mut writer = output_writer(options.output)?;
     let mut processed = 0usize;
 
-    for file in files {
-        let result = if list_sheets {
+    for file in options.files {
+        let result = if options.list_sheets {
             match list_xlsx_sheets(file) {
                 Ok(sheets) => {
                     for sheet in &sheets.value {
@@ -291,9 +333,9 @@ fn extract_csv_command(
             extract_csv(
                 file,
                 XlsxCsvOptions {
-                    sheet_name,
-                    sheet_index,
-                    delimiter,
+                    sheet_name: options.sheet_name,
+                    sheet_index: options.sheet_index,
+                    delimiter: options.delimiter,
                 },
                 &mut writer,
             )
@@ -316,6 +358,82 @@ fn extract_csv_command(
     }
 
     writer.flush()?;
+    Ok(())
+}
+
+fn export_all_sheets(
+    file: &Path,
+    output_dir: &Path,
+    delimiter: u8,
+    warning_format: WarningFormat,
+) -> Result<(), CliError> {
+    fs::create_dir_all(output_dir)?;
+    let sheets = list_xlsx_sheets(file)?;
+    emit_warnings(&sheets.warnings, warning_format);
+
+    let mut manifest = AllSheetsManifest {
+        oxdoc_version: env!("CARGO_PKG_VERSION"),
+        file: display_file_name(file),
+        sheets: Vec::new(),
+    };
+    let mut failures = 0usize;
+
+    for sheet in sheets.value {
+        let csv_file_name = csv_file_name_for_sheet(sheet.index, &sheet.name);
+        let csv_path = output_dir.join(&csv_file_name);
+        let mut csv_file = File::create(&csv_path)?;
+        let result = extract_csv(
+            file,
+            XlsxCsvOptions {
+                sheet_name: None,
+                sheet_index: Some(sheet.index),
+                delimiter,
+            },
+            &mut csv_file,
+        );
+
+        match result {
+            Ok(result) => {
+                emit_warnings(&result.warnings, warning_format);
+                manifest.sheets.push(ExportedSheetManifest {
+                    index: sheet.index,
+                    name: sheet.name,
+                    csv_path: csv_file_name,
+                    warnings: result
+                        .warnings
+                        .iter()
+                        .map(ManifestWarning::from_output_warning)
+                        .collect(),
+                    error: None,
+                });
+            }
+            Err(err) => {
+                failures += 1;
+                manifest.sheets.push(ExportedSheetManifest {
+                    index: sheet.index,
+                    name: sheet.name,
+                    csv_path: csv_file_name,
+                    warnings: Vec::new(),
+                    error: Some(ManifestError {
+                        code: err.code(),
+                        message: err.to_string(),
+                    }),
+                });
+            }
+        }
+    }
+
+    let manifest_path = output_dir.join("manifest.json");
+    let mut manifest_file = File::create(manifest_path)?;
+    serde_json::to_writer_pretty(&mut manifest_file, &manifest)?;
+    writeln!(manifest_file)?;
+
+    if failures > 0 {
+        return Err(CliError::InvalidArgument(format!(
+            "{failures} sheet export(s) failed; see manifest.json"
+        )));
+    }
+
     Ok(())
 }
 
@@ -596,6 +714,48 @@ struct WarningPayload<'a> {
     message: &'a str,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct AllSheetsManifest {
+    oxdoc_version: &'static str,
+    file: String,
+    sheets: Vec<ExportedSheetManifest>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ExportedSheetManifest {
+    index: usize,
+    name: String,
+    csv_path: String,
+    warnings: Vec<ManifestWarning>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<ManifestError>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ManifestWarning {
+    category: String,
+    code: String,
+    path: String,
+    message: String,
+}
+
+impl ManifestWarning {
+    fn from_output_warning(warning: &OutputWarning) -> Self {
+        Self {
+            category: warning.category().as_str().to_owned(),
+            code: warning.code().as_str().to_owned(),
+            path: warning.path.clone(),
+            message: warning.message.clone(),
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ManifestError {
+    code: &'static str,
+    message: String,
+}
+
 fn parse_delimiter(value: &str) -> Result<u8, CliError> {
     if value == "\\t" {
         return Ok(b'\t');
@@ -612,6 +772,35 @@ fn parse_delimiter(value: &str) -> Result<u8, CliError> {
         Err(CliError::InvalidArgument(
             "delimiter must be a single-byte character".to_owned(),
         ))
+    }
+}
+
+fn csv_file_name_for_sheet(index: usize, name: &str) -> String {
+    format!("{index:03}-{}.csv", sanitize_sheet_file_stem(name))
+}
+
+fn sanitize_sheet_file_stem(name: &str) -> String {
+    let mut stem = String::new();
+    let mut last_was_dash = false;
+
+    for ch in name.chars().flat_map(char::to_lowercase) {
+        if ch.is_ascii_alphanumeric() {
+            stem.push(ch);
+            last_was_dash = false;
+        } else if !last_was_dash && !stem.is_empty() {
+            stem.push('-');
+            last_was_dash = true;
+        }
+    }
+
+    while stem.ends_with('-') {
+        stem.pop();
+    }
+
+    if stem.is_empty() {
+        "sheet".to_owned()
+    } else {
+        stem
     }
 }
 
@@ -721,7 +910,7 @@ fn print_optional_u64(label: &str, value: Option<u64>) {
 mod tests {
     use std::error::Error;
 
-    use super::{CliError, parse_delimiter};
+    use super::{CliError, csv_file_name_for_sheet, parse_delimiter};
 
     #[test]
     fn cli_errors_expose_stable_codes_and_sources() {
@@ -783,5 +972,12 @@ mod tests {
     #[test]
     fn parse_delimiter_supports_newline_escape_sequence() {
         assert_eq!(parse_delimiter("\\n").unwrap(), b'\n');
+    }
+
+    #[test]
+    fn sheet_csv_file_names_are_deterministic_and_safe() {
+        assert_eq!(csv_file_name_for_sheet(1, "Sales Q1"), "001-sales-q1.csv");
+        assert_eq!(csv_file_name_for_sheet(2, "Ops/Q1 🚀"), "002-ops-q1.csv");
+        assert_eq!(csv_file_name_for_sheet(12, "///"), "012-sheet.csv");
     }
 }

@@ -94,7 +94,7 @@ PPTX extraction preserves presentation slide order, extracts DrawingML text boxe
 ## Extract XLSX CSV
 
 ```bash
-oxdoc extract csv <FILES>... [--sheet <NAME>|--sheet-index <INDEX>|--list-sheets] [--delimiter <CHAR>] [-o <PATH>]
+oxdoc extract csv <FILES>... [--sheet <NAME>|--sheet-index <INDEX>|--list-sheets|--all-sheets --output-dir <DIR>] [--delimiter <CHAR>] [-o <PATH>]
 ```
 
 Arguments:
@@ -110,8 +110,10 @@ Options:
 | `--sheet <NAME>` | first visible workbook sheet | Visible workbook sheet name to extract. Mutually exclusive with `--sheet-index` and `--list-sheets`. |
 | `--sheet-index <INDEX>` | first visible workbook sheet | 1-based visible workbook sheet index to extract. Mutually exclusive with `--sheet` and `--list-sheets`. |
 | `--list-sheets` | false | Print visible sheet names with 1-based indices and exit. |
+| `--all-sheets` | false | Export every visible sheet from a single workbook to separate CSV files. Requires `--output-dir`. Mutually exclusive with `--sheet`, `--sheet-index`, `--list-sheets`, and `--output`. |
 | `--delimiter <CHAR>` | `,` | Single-byte CSV delimiter. |
 | `--output <PATH>`, `-o <PATH>` | stdout | Write CSV or sheet list output to a file. |
+| `--output-dir <PATH>` | none | Directory for `--all-sheets` CSV files and `manifest.json`. |
 
 Example:
 
@@ -129,6 +131,12 @@ List sheets example:
 
 ```bash
 oxdoc extract csv data.xlsx --list-sheets
+```
+
+All visible sheets example:
+
+```bash
+oxdoc extract csv data.xlsx --all-sheets --output-dir exported-sheets
 ```
 
 Output:
@@ -160,6 +168,7 @@ Notes:
 - CSV fields are quoted when they contain the delimiter, quotes, or line breaks.
 - The delimiter must be a single-byte character.
 - Hidden and very hidden sheets are skipped by default and by both sheet selectors.
+- `--all-sheets` skips hidden and very hidden sheets and writes a `manifest.json` file next to the CSV files.
 - Duplicate visible sheet names are rejected; use `--sheet-index` to disambiguate malformed workbooks.
 
 ## Read Metadata

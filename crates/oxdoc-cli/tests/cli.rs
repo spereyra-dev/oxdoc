@@ -638,6 +638,223 @@ fn extracts_multiple_csv_files_in_argument_order() {
 }
 
 #[test]
+fn exports_all_visible_xlsx_sheets_with_manifest() {
+    let workbook = create_ooxml(
+        "all-sheets.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rIdWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Sales Q1" sheetId="1" r:id="rId1"/><sheet name="Ops/Q1 🚀" sheetId="2" r:id="rId2"/><sheet name="Hidden" sheetId="3" state="hidden" r:id="rId3"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="worksheet" Target="worksheets/hidden.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>sales</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet2.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>ops</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/hidden.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>hidden</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let output_dir = unique_path("all-sheets-out");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        workbook.to_str().unwrap(),
+        "--all-sheets",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        fs::read_to_string(output_dir.join("001-sales-q1.csv")).unwrap(),
+        "sales\n"
+    );
+    assert_eq!(
+        fs::read_to_string(output_dir.join("002-ops-q1.csv")).unwrap(),
+        "ops\n"
+    );
+    assert!(!output_dir.join("003-hidden.csv").exists());
+
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(output_dir.join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest["oxdoc_version"], env!("CARGO_PKG_VERSION"));
+    assert!(
+        manifest["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("all-sheets.xlsx")
+    );
+    let sheets = manifest["sheets"].as_array().unwrap();
+    assert_eq!(sheets.len(), 2);
+    assert_eq!(sheets[0]["index"], 1);
+    assert_eq!(sheets[0]["name"], "Sales Q1");
+    assert_eq!(sheets[0]["csv_path"], "001-sales-q1.csv");
+    assert_eq!(sheets[0]["warnings"].as_array().unwrap().len(), 0);
+    assert_eq!(sheets[1]["index"], 2);
+    assert_eq!(sheets[1]["name"], "Ops/Q1 🚀");
+    assert_eq!(sheets[1]["csv_path"], "002-ops-q1.csv");
+}
+
+#[test]
+fn rejects_all_sheets_without_output_dir() {
+    let workbook = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc(["extract", "csv", workbook.to_str().unwrap(), "--all-sheets"]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("required"));
+    assert!(stderr(&output).contains("--output-dir"));
+}
+
+#[test]
+fn all_sheets_manifest_records_sheet_level_errors() {
+    let workbook = create_ooxml(
+        "all-sheets-error.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rIdWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Good" sheetId="1" r:id="rId1"/><sheet name="Missing" sheetId="2" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/missing.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>good</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let output_dir = unique_path("all-sheets-error-out");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        workbook.to_str().unwrap(),
+        "--all-sheets",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("sheet export(s) failed"));
+    assert_eq!(
+        fs::read_to_string(output_dir.join("001-good.csv")).unwrap(),
+        "good\n"
+    );
+
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(output_dir.join("manifest.json")).unwrap())
+            .unwrap();
+    let sheets = manifest["sheets"].as_array().unwrap();
+    assert_eq!(sheets.len(), 2);
+    assert_eq!(sheets[0]["error"], Value::Null);
+    assert_eq!(sheets[1]["index"], 2);
+    assert_eq!(sheets[1]["name"], "Missing");
+    assert_eq!(sheets[1]["error"]["code"], "E003");
+    assert!(
+        sheets[1]["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("missing.xml")
+    );
+}
+
+#[test]
+fn all_sheets_manifest_records_sheet_warnings() {
+    let workbook = create_ooxml(
+        "all-sheets-warning.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rIdWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Warn" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>kept</v></c></row><"#,
+            ),
+        ],
+    );
+    let output_dir = unique_path("all-sheets-warning-out");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        workbook.to_str().unwrap(),
+        "--all-sheets",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert_eq!(
+        fs::read_to_string(output_dir.join("001-warn.csv")).unwrap(),
+        "kept\n"
+    );
+    assert!(stderr(&output).contains("warning[parser/W001]"));
+
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(output_dir.join("manifest.json")).unwrap())
+            .unwrap();
+    let warnings = manifest["sheets"][0]["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0]["category"], "parser");
+    assert_eq!(warnings[0]["code"], "W001");
+    assert_eq!(warnings[0]["path"], "xl/worksheets/sheet1.xml");
+}
+
+#[test]
+fn rejects_all_sheets_with_multiple_input_files() {
+    let first = fixtures::build_package("xlsx/basic", "first.xlsx");
+    let second = fixtures::build_package("xlsx/basic", "second.xlsx");
+    let output_dir = unique_path("all-sheets-multiple-out");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        first.to_str().unwrap(),
+        second.to_str().unwrap(),
+        "--all-sheets",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("--all-sheets supports a single input file"));
+}
+
+#[test]
 fn reads_text_csv_and_info_from_stdin() {
     let docx = fixtures::build_package("docx/basic", "stdin.docx");
     let xlsx = fixtures::build_package("xlsx/basic", "stdin.xlsx");
