@@ -14,6 +14,7 @@ Public documentation URL: [spereyra-dev.github.io/oxdoc](https://spereyra-dev.gi
 - Reads core and app metadata from Office documents.
 - Reports factual audit signals for governance and intake workflows.
 - Emits structured warnings for recoverable parser problems.
+- Provides a minimal Python wrapper for data teams and orchestration workflows.
 - Publishes reproducible peak-memory baselines for representative workloads.
 - Keeps the CLI simple: extracted data goes to stdout, warnings go to stderr.
 
@@ -56,5 +57,6 @@ oxdoc audit report.docx --format json
 - New users should start with [Getting Started](getting-started.md).
 - CLI users should read [CLI Reference](cli.md).
 - Rust users should read [Library API](library-api.md).
+- Python users should read [Python Integration](python-integration.md).
 - Contributors should read [Architecture](architecture.md), [Testing Strategy](testing.md), and [Contributing](contributing.md).
 - Project planning lives in [Roadmap](roadmap.md).

@@ -12,6 +12,7 @@
   - [Audit Signals](audit.md)
   - [JSON Output](json-output.md)
   - [Library API](library-api.md)
+  - [Python Integration](python-integration.md)
 
 - **Design**
   - [Architecture](architecture.md)
