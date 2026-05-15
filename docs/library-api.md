@@ -250,6 +250,8 @@ pub struct XlsxCsvOptions<'a> {
 
 Hidden and very hidden sheets are skipped by selection. Duplicate visible sheet names return an invalid-argument error so callers can retry with `sheet_index`.
 
+`extract_xlsx_csv` uses raw worksheet XML values. Use `extract_xlsx_csv_with_value_mode` or `extract_xlsx_csv_from_reader_with_value_mode` with `XlsxValueMode::Formatted` to apply supported workbook number formats for dates, times, percentages, currency, and decimals with locale-independent output.
+
 Defaults:
 
 ```rust

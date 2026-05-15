@@ -59,6 +59,12 @@ Use a different single-byte delimiter:
 cargo run -p oxdoc-cli -- extract csv data.xlsx --delimiter ";"
 ```
 
+Opt into formatted spreadsheet values:
+
+```bash
+cargo run -p oxdoc-cli -- extract csv data.xlsx --value-mode formatted
+```
+
 ## Read Metadata
 
 ```bash

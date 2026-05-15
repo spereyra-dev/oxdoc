@@ -139,6 +139,12 @@ Export every visible sheet to separate CSV files:
 oxdoc extract csv data.xlsx --all-sheets --output-dir exported-sheets
 ```
 
+Preserve worksheet XML values by default, or opt into deterministic Excel-style formatting for dates, percentages, currency, and decimals:
+
+```bash
+oxdoc extract csv data.xlsx --value-mode formatted
+```
+
 Output:
 
 ```csv
@@ -212,7 +218,7 @@ The reusable library. It owns:
 - ZIP-backed OOXML package access.
 - Relationship discovery.
 - Streaming XML parser state machines.
-- Data models such as `Extraction<T>`, `DocumentInfo`, and `XlsxCsvOptions`.
+- Data models such as `Extraction<T>`, `DocumentInfo`, `XlsxCsvOptions`, and `XlsxValueMode`.
 - Error and warning contracts.
 
 ### `oxdoc-cli`

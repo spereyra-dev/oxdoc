@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use oxdoc_core::vfs::{OoxmlLimits, OoxmlPackage};
-use oxdoc_core::{DocumentType, OxdocError, XlsxCsvOptions};
+use oxdoc_core::{DocumentType, OxdocError, XlsxCsvOptions, XlsxValueMode};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -356,6 +356,47 @@ fn extracts_application_generated_xlsx_csv_fixture() {
         String::from_utf8(csv).unwrap(),
         fixtures::read_snapshot("xlsx_openpyxl_csv.txt")
     );
+}
+
+#[test]
+fn extracts_formatted_xlsx_csv_through_public_api() {
+    let file = create_ooxml(
+        "formatted-api.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<styleSheet><cellXfs><xf numFmtId="14"/><xf numFmtId="10"/></cellXfs></styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1" s="0"><v>44927</v></c><c r="B1" s="1"><v>0.5</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let mut csv = Vec::new();
+
+    let extraction = oxdoc_core::extract_xlsx_csv_with_value_mode(
+        &file,
+        XlsxCsvOptions::default(),
+        XlsxValueMode::Formatted,
+        &mut csv,
+    )
+    .unwrap();
+
+    assert!(extraction.warnings.is_empty());
+    assert_eq!(String::from_utf8(csv).unwrap(), "2023-01-01,50.00%\n");
 }
 
 #[test]

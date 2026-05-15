@@ -27,7 +27,7 @@ use std::path::Path;
 pub use error::{OxdocError, Result};
 pub use models::{
     AuditSignal, DocumentAudit, DocumentInfo, DocumentType, Extraction, OutputWarning,
-    XlsxCsvOptions, XlsxSheet,
+    XlsxCsvOptions, XlsxSheet, XlsxValueMode,
 };
 #[doc(hidden)]
 pub use parsers::docx::fuzz_extract_text as fuzz_docx_text;
@@ -71,13 +71,32 @@ pub fn extract_xlsx_csv<W: Write>(
     extract_xlsx_csv_from_reader(file, options, writer)
 }
 
+pub fn extract_xlsx_csv_with_value_mode<W: Write>(
+    path: impl AsRef<Path>,
+    options: XlsxCsvOptions<'_>,
+    value_mode: XlsxValueMode,
+    writer: W,
+) -> Result<Extraction<()>> {
+    let file = File::open(path)?;
+    extract_xlsx_csv_from_reader_with_value_mode(file, options, value_mode, writer)
+}
+
 pub fn extract_xlsx_csv_from_reader<R: Read + Seek, W: Write>(
     reader: R,
     options: XlsxCsvOptions<'_>,
     writer: W,
 ) -> Result<Extraction<()>> {
+    extract_xlsx_csv_from_reader_with_value_mode(reader, options, XlsxValueMode::Raw, writer)
+}
+
+pub fn extract_xlsx_csv_from_reader_with_value_mode<R: Read + Seek, W: Write>(
+    reader: R,
+    options: XlsxCsvOptions<'_>,
+    value_mode: XlsxValueMode,
+    writer: W,
+) -> Result<Extraction<()>> {
     let mut package = OoxmlPackage::new(reader)?;
-    xlsx::write_csv(&mut package, options, writer)
+    xlsx::write_csv(&mut package, options, value_mode, writer)
 }
 
 pub fn list_xlsx_sheets(path: impl AsRef<Path>) -> Result<Extraction<Vec<XlsxSheet>>> {

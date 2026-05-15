@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Cursor, Read, Seek, Write};
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::models::XlsxSheet;
-use crate::models::{Extraction, OutputWarning, XlsxCsvOptions};
+use crate::models::{Extraction, OutputWarning, XlsxCsvOptions, XlsxValueMode};
 use crate::parsers::xlsx_shared_strings::{
     DEFAULT_SHARED_STRING_MEMORY_LIMIT, SharedStringLookup, SharedStringStore,
 };
@@ -26,19 +27,54 @@ struct WorkbookSheet {
 struct CellState {
     value_type: Option<String>,
     column_index: Option<usize>,
+    style_index: Option<usize>,
     value: String,
     in_value: bool,
     in_inline_text: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DateSystem {
+    Excel1900,
+    Excel1904,
+}
+
+#[derive(Debug, Default)]
+struct XlsxStyles {
+    cell_formats: Vec<CellFormat>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CellFormat {
+    number_format: Option<String>,
+}
+
+struct SheetFormatContext<'a> {
+    value_mode: XlsxValueMode,
+    date_system: DateSystem,
+    styles: &'a XlsxStyles,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FormatKind {
+    Date,
+    Time,
+    DateTime,
+    Percent(usize),
+    Currency(usize),
+    Decimal(usize),
+}
+
 pub(crate) fn write_csv<R: Read + Seek, W: Write>(
     package: &mut OoxmlPackage<R>,
     options: XlsxCsvOptions<'_>,
+    value_mode: XlsxValueMode,
     mut writer: W,
 ) -> Result<Extraction<()>> {
     write_csv_with_shared_string_memory_limit(
         package,
         options,
+        value_mode,
         DEFAULT_SHARED_STRING_MEMORY_LIMIT,
         &mut writer,
     )
@@ -67,12 +103,14 @@ pub(crate) fn list_sheets<R: Read + Seek>(
 fn write_csv_with_shared_string_memory_limit<R: Read + Seek, W: Write>(
     package: &mut OoxmlPackage<R>,
     options: XlsxCsvOptions<'_>,
+    value_mode: XlsxValueMode,
     shared_string_memory_limit: usize,
     writer: &mut W,
 ) -> Result<Extraction<()>> {
     let workbook_path = crate::parsers::find_office_document_path(package, "xl/workbook.xml")?;
     let workbook_xml = package.read_to_string(&workbook_path)?;
     let workbook = parse_workbook_sheets(&workbook_xml, &workbook_path)?;
+    let date_system = parse_workbook_date_system(&workbook_xml);
 
     let workbook_rels_path = rels_path_for(&workbook_path);
     let workbook_rels_xml = package.read_to_string(&workbook_rels_path)?;
@@ -98,13 +136,26 @@ fn write_csv_with_shared_string_memory_limit<R: Read + Seek, W: Write>(
         Extraction::new(SharedStringStore::empty())
     };
 
+    let styles = if value_mode == XlsxValueMode::Formatted && package.contains("xl/styles.xml") {
+        let styles_xml = package.read_to_string("xl/styles.xml")?;
+        parse_styles(&styles_xml, "xl/styles.xml")
+    } else {
+        Extraction::new(XlsxStyles::default())
+    };
+
     let sheet = package.with_entry(&sheet_path, |entry| {
         let reader = BufReader::new(entry);
+        let format_context = SheetFormatContext {
+            value_mode,
+            date_system,
+            styles: &styles.value,
+        };
         write_sheet_csv(
             reader,
             &sheet_path,
             &mut shared_strings.value,
             options.delimiter,
+            &format_context,
             writer,
         )
     })?;
@@ -112,7 +163,10 @@ fn write_csv_with_shared_string_memory_limit<R: Read + Seek, W: Write>(
     Ok(Extraction::with_warnings(
         (),
         merge_warnings(
-            merge_warnings(workbook.warnings, shared_strings.warnings),
+            merge_warnings(
+                merge_warnings(workbook.warnings, shared_strings.warnings),
+                styles.warnings,
+            ),
             sheet.warnings,
         ),
     ))
@@ -200,6 +254,121 @@ fn parse_workbook_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<Workboo
     Ok(Extraction::with_warnings(sheets, warnings))
 }
 
+fn parse_workbook_date_system(xml: &str) -> DateSystem {
+    let mut reader = Reader::from_reader(std::io::Cursor::new(xml.as_bytes()));
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(element)) | Ok(Event::Empty(element))
+                if name_eq(element.name().as_ref(), b"workbookPr") =>
+            {
+                return match attr_value(&element, b"date1904").as_deref() {
+                    Some("1" | "true" | "TRUE") => DateSystem::Excel1904,
+                    _ => DateSystem::Excel1900,
+                };
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    DateSystem::Excel1900
+}
+
+fn parse_styles(xml: &str, path: &str) -> Extraction<XlsxStyles> {
+    let mut reader = Reader::from_reader(std::io::Cursor::new(xml.as_bytes()));
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    let mut warnings = Vec::new();
+    let mut custom_formats = HashMap::new();
+    let mut cell_formats = Vec::new();
+    let mut in_cell_xfs = false;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(element)) => {
+                if name_eq(element.name().as_ref(), b"cellXfs") {
+                    in_cell_xfs = true;
+                } else if in_cell_xfs && name_eq(element.name().as_ref(), b"xf") {
+                    cell_formats.push(cell_format_from_element(&element, &custom_formats));
+                } else if name_eq(element.name().as_ref(), b"numFmt") {
+                    insert_custom_number_format(&element, &mut custom_formats);
+                }
+            }
+            Ok(Event::Empty(element)) => {
+                if name_eq(element.name().as_ref(), b"numFmt") {
+                    insert_custom_number_format(&element, &mut custom_formats);
+                } else if in_cell_xfs && name_eq(element.name().as_ref(), b"xf") {
+                    cell_formats.push(cell_format_from_element(&element, &custom_formats));
+                }
+            }
+            Ok(Event::End(element)) if name_eq(element.name().as_ref(), b"cellXfs") => {
+                in_cell_xfs = false;
+            }
+            Ok(Event::Eof) => break,
+            Err(source) => {
+                warnings.push(OutputWarning::malformed_xml(path, source));
+                break;
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Extraction::with_warnings(XlsxStyles { cell_formats }, warnings)
+}
+
+fn insert_custom_number_format(
+    element: &quick_xml::events::BytesStart<'_>,
+    custom_formats: &mut HashMap<u32, String>,
+) {
+    if let (Some(id), Some(code)) = (
+        attr_value(element, b"numFmtId").and_then(|value| value.parse::<u32>().ok()),
+        attr_value(element, b"formatCode"),
+    ) {
+        custom_formats.insert(id, code);
+    }
+}
+
+fn cell_format_from_element(
+    element: &quick_xml::events::BytesStart<'_>,
+    custom_formats: &HashMap<u32, String>,
+) -> CellFormat {
+    let number_format = attr_value(element, b"numFmtId")
+        .and_then(|value| value.parse::<u32>().ok())
+        .and_then(|id| {
+            custom_formats
+                .get(&id)
+                .cloned()
+                .or_else(|| builtin_format(id))
+        });
+
+    CellFormat { number_format }
+}
+
+fn builtin_format(id: u32) -> Option<String> {
+    match id {
+        1 => Some("0".to_owned()),
+        2 => Some("0.00".to_owned()),
+        3 => Some("#,##0".to_owned()),
+        4 => Some("#,##0.00".to_owned()),
+        5..=8 | 37..=44 => Some("$#,##0.00".to_owned()),
+        9 => Some("0%".to_owned()),
+        10 => Some("0.00%".to_owned()),
+        11 => Some("0.00E+00".to_owned()),
+        12 => Some("# ?/?".to_owned()),
+        13 => Some("# ??/??".to_owned()),
+        14..=17 => Some("m/d/yyyy".to_owned()),
+        18..=20 => Some("h:mm".to_owned()),
+        21 | 22 => Some("m/d/yyyy h:mm".to_owned()),
+        45..=47 => Some("h:mm:ss".to_owned()),
+        _ => None,
+    }
+}
+
 fn is_visible_sheet_state(state: Option<String>) -> bool {
     !state.is_some_and(|state| {
         state.eq_ignore_ascii_case("hidden") || state.eq_ignore_ascii_case("veryHidden")
@@ -211,6 +380,7 @@ fn write_sheet_csv<R: BufRead, W: Write>(
     path: &str,
     shared_strings: &mut impl SharedStringLookup,
     delimiter: u8,
+    format_context: &SheetFormatContext<'_>,
     writer: &mut W,
 ) -> Result<Extraction<()>> {
     let mut reader = Reader::from_reader(source);
@@ -244,7 +414,14 @@ fn write_sheet_csv<R: BufRead, W: Write>(
                     in_row = false;
                 } else if name_eq(element.name().as_ref(), b"c") && in_row {
                     let cell = cell_state_from_element(&element, row.len());
-                    push_cell_value(&mut row, cell, shared_strings, path, &mut warnings)?;
+                    push_cell_value(
+                        &mut row,
+                        cell,
+                        shared_strings,
+                        path,
+                        format_context,
+                        &mut warnings,
+                    )?;
                 }
             }
             Ok(Event::Text(value)) => {
@@ -279,7 +456,14 @@ fn write_sheet_csv<R: BufRead, W: Write>(
 
                 if name_eq(element.name().as_ref(), b"c") {
                     if let Some(cell) = current_cell.take() {
-                        push_cell_value(&mut row, cell, shared_strings, path, &mut warnings)?;
+                        push_cell_value(
+                            &mut row,
+                            cell,
+                            shared_strings,
+                            path,
+                            format_context,
+                            &mut warnings,
+                        )?;
                     }
                 } else if name_eq(element.name().as_ref(), b"row") && in_row {
                     write_csv_row(writer, &row, delimiter)?;
@@ -309,11 +493,18 @@ pub fn fuzz_parse_shared_strings(xml: &[u8]) -> Result<()> {
 pub fn fuzz_parse_sheet(xml: &[u8]) -> Result<()> {
     let mut sink = Vec::new();
     let mut shared_strings = SharedStringStore::empty();
+    let styles = XlsxStyles::default();
+    let format_context = SheetFormatContext {
+        value_mode: XlsxValueMode::Raw,
+        date_system: DateSystem::Excel1900,
+        styles: &styles,
+    };
     let _ = write_sheet_csv(
         Cursor::new(xml),
         "xl/worksheets/sheet1.xml",
         &mut shared_strings,
         b',',
+        &format_context,
         &mut sink,
     )?;
     Ok(())
@@ -324,6 +515,7 @@ fn push_cell_value(
     cell: CellState,
     shared_strings: &mut impl SharedStringLookup,
     path: &str,
+    format_context: &SheetFormatContext<'_>,
     warnings: &mut Vec<OutputWarning>,
 ) -> Result<()> {
     let target_column = cell.column_index.unwrap_or(row.len());
@@ -356,6 +548,9 @@ fn push_cell_value(
             "0" | "false" | "FALSE" => "FALSE".to_owned(),
             _ => cell.value,
         }
+    } else if format_context.value_mode == XlsxValueMode::Formatted {
+        format_cell_value(&cell, format_context.styles, format_context.date_system)
+            .unwrap_or(cell.value)
     } else {
         cell.value
     };
@@ -377,8 +572,213 @@ fn cell_state_from_element(
         value_type: attr_value(element, b"t"),
         column_index: attr_value(element, b"r")
             .and_then(|cell_ref| parse_cell_column(&cell_ref).or(Some(fallback_column))),
+        style_index: attr_value(element, b"s").and_then(|style| style.parse::<usize>().ok()),
         ..CellState::default()
     }
+}
+
+fn format_cell_value(
+    cell: &CellState,
+    styles: &XlsxStyles,
+    date_system: DateSystem,
+) -> Option<String> {
+    if matches!(
+        cell.value_type.as_deref(),
+        Some("s" | "b" | "str" | "inlineStr" | "e")
+    ) {
+        return None;
+    }
+
+    let value = cell.value.trim().parse::<f64>().ok()?;
+    let style_index = cell.style_index?;
+    let format_code = styles
+        .cell_formats
+        .get(style_index)?
+        .number_format
+        .as_deref()?;
+    let kind = classify_number_format(format_code)?;
+
+    match kind {
+        FormatKind::Date => format_excel_datetime(value, date_system, false, true),
+        FormatKind::Time => Some(format_time_fraction(value.fract())),
+        FormatKind::DateTime => format_excel_datetime(value, date_system, true, true),
+        FormatKind::Percent(decimals) => {
+            Some(format!("{}%", format_number(value * 100.0, decimals, true)))
+        }
+        FormatKind::Currency(decimals) => {
+            Some(format!("${}", format_number(value, decimals, true)))
+        }
+        FormatKind::Decimal(decimals) => Some(format_number(value, decimals, true)),
+    }
+}
+
+fn classify_number_format(format_code: &str) -> Option<FormatKind> {
+    let normalized = normalize_number_format(format_code);
+    if normalized.is_empty() || normalized.contains('?') || normalized.contains("e+") {
+        return None;
+    }
+
+    let has_percent = normalized.contains('%');
+    let has_currency = normalized.contains('$');
+    let has_time =
+        normalized.chars().any(|ch| matches!(ch, 'h' | 's')) || normalized.contains("am/pm");
+    let has_year_or_day = normalized.chars().any(|ch| matches!(ch, 'y' | 'd'));
+    let has_date = has_year_or_day || (normalized.chars().any(|ch| ch == 'm') && !has_time);
+
+    if has_date && has_time {
+        Some(FormatKind::DateTime)
+    } else if has_date {
+        Some(FormatKind::Date)
+    } else if has_time {
+        Some(FormatKind::Time)
+    } else if has_percent {
+        Some(FormatKind::Percent(decimal_places(&normalized)))
+    } else if has_currency {
+        Some(FormatKind::Currency(decimal_places(&normalized)))
+    } else if looks_decimal_format(&normalized) {
+        Some(FormatKind::Decimal(decimal_places(&normalized)))
+    } else {
+        None
+    }
+}
+
+fn normalize_number_format(format_code: &str) -> String {
+    let first_section = format_code.split(';').next().unwrap_or(format_code);
+    let mut normalized = String::new();
+    let mut chars = first_section.chars().peekable();
+    let mut in_quote = false;
+    let mut in_bracket = false;
+    let mut bracket_contains_currency = false;
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => in_quote = !in_quote,
+            '[' => {
+                in_bracket = true;
+                bracket_contains_currency = false;
+            }
+            ']' => {
+                if bracket_contains_currency {
+                    normalized.push('$');
+                }
+                in_bracket = false;
+            }
+            '\\' | '_' | '*' => {
+                chars.next();
+            }
+            '$' if in_quote => normalized.push('$'),
+            '$' if in_bracket => bracket_contains_currency = true,
+            _ if in_quote || in_bracket => {}
+            _ => normalized.push(ch.to_ascii_lowercase()),
+        }
+    }
+
+    normalized.replace(',', "")
+}
+
+fn looks_decimal_format(format_code: &str) -> bool {
+    format_code
+        .chars()
+        .all(|ch| matches!(ch, '#' | '0' | '.' | '-' | ' '))
+        && format_code.chars().any(|ch| ch == '0')
+}
+
+fn decimal_places(format_code: &str) -> usize {
+    format_code
+        .split('.')
+        .nth(1)
+        .map(|tail| {
+            tail.chars()
+                .take_while(|ch| matches!(ch, '0' | '#'))
+                .filter(|ch| *ch == '0')
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn format_number(value: f64, decimals: usize, trim_negative_zero: bool) -> String {
+    let mut output = format!("{value:.decimals$}");
+    if trim_negative_zero
+        && output.starts_with("-0")
+        && output.parse::<f64>().unwrap_or(value) == 0.0
+    {
+        output.remove(0);
+    }
+    output
+}
+
+fn format_excel_datetime(
+    serial: f64,
+    date_system: DateSystem,
+    include_time: bool,
+    include_date: bool,
+) -> Option<String> {
+    if !serial.is_finite() {
+        return None;
+    }
+
+    let whole_days = serial.floor() as i64;
+    let fraction = serial - serial.floor();
+    let (year, month, day) = excel_serial_to_date(whole_days, date_system)?;
+    let date = format!("{year:04}-{month:02}-{day:02}");
+
+    if include_date && include_time {
+        Some(format!("{date}T{}", format_time_fraction(fraction)))
+    } else if include_date {
+        Some(date)
+    } else {
+        Some(format_time_fraction(fraction))
+    }
+}
+
+fn excel_serial_to_date(serial_days: i64, date_system: DateSystem) -> Option<(i32, u32, u32)> {
+    match date_system {
+        DateSystem::Excel1904 => civil_from_days(serial_days + days_from_civil(1904, 1, 1)),
+        DateSystem::Excel1900 if serial_days == 60 => Some((1900, 2, 29)),
+        DateSystem::Excel1900 => {
+            let adjusted_days = if serial_days > 60 {
+                serial_days - 1
+            } else {
+                serial_days
+            };
+            civil_from_days(adjusted_days + days_from_civil(1899, 12, 31))
+        }
+    }
+}
+
+fn format_time_fraction(fraction: f64) -> String {
+    let mut seconds = (fraction.rem_euclid(1.0) * 86_400.0).round() as i64;
+    if seconds == 86_400 {
+        seconds = 0;
+    }
+    let hours = seconds / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    let seconds = seconds % 60;
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
+}
+
+fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
+    let year = year - i32::from(month <= 2);
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let yoe = year - era * 400;
+    let month = month as i32;
+    let doy = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day as i32 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    i64::from(era * 146_097 + doe - 719_468)
+}
+
+fn civil_from_days(days: i64) -> Option<(i32, u32, u32)> {
+    let days = days + 719_468;
+    let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
+    let doe = days - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = year + i64::from(month <= 2);
+    Some((i32::try_from(year).ok()?, month as u32, day as u32))
 }
 
 fn parse_cell_column(cell_ref: &str) -> Option<usize> {
@@ -435,9 +835,30 @@ mod tests {
     use std::io::Cursor;
 
     use crate::OxdocError;
+    use crate::models::XlsxValueMode;
     use crate::parsers::xlsx_shared_strings::{SharedStringLookup, SharedStringStore};
 
-    use super::{parse_cell_column, parse_workbook_sheets, select_sheet, write_sheet_csv};
+    use super::{
+        CellFormat, CellState, DateSystem, SheetFormatContext, XlsxStyles, classify_number_format,
+        format_cell_value, format_number, parse_cell_column, parse_styles,
+        parse_workbook_date_system, parse_workbook_sheets, select_sheet, write_sheet_csv,
+    };
+
+    fn raw_context(styles: &XlsxStyles) -> SheetFormatContext<'_> {
+        SheetFormatContext {
+            value_mode: XlsxValueMode::Raw,
+            date_system: DateSystem::Excel1900,
+            styles,
+        }
+    }
+
+    fn formatted_context(styles: &XlsxStyles) -> SheetFormatContext<'_> {
+        SheetFormatContext {
+            value_mode: XlsxValueMode::Formatted,
+            date_system: DateSystem::Excel1900,
+            styles,
+        }
+    }
 
     #[test]
     fn parses_workbook_sheet_relationships() {
@@ -515,6 +936,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            &raw_context(&XlsxStyles::default()),
             &mut output,
         )
         .unwrap();
@@ -546,6 +968,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            &raw_context(&XlsxStyles::default()),
             &mut output,
         )
         .unwrap();
@@ -590,6 +1013,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            &raw_context(&XlsxStyles::default()),
             &mut output,
         )
         .unwrap();
@@ -598,6 +1022,215 @@ mod tests {
             String::from_utf8(output).unwrap(),
             "gamma,\"beta, needs quotes\",alpha\n"
         );
+    }
+
+    #[test]
+    fn formats_xlsx_values_when_requested() {
+        let styles_xml = r#"
+            <styleSheet>
+              <numFmts>
+                <numFmt numFmtId="164" formatCode="yyyy-mm-dd h:mm:ss"/>
+              </numFmts>
+              <cellXfs>
+                <xf numFmtId="0"/>
+                <xf numFmtId="14"/>
+                <xf numFmtId="164"/>
+                <xf numFmtId="10"/>
+                <xf numFmtId="2"/>
+                <xf numFmtId="44"/>
+              </cellXfs>
+            </styleSheet>
+        "#;
+        let styles = parse_styles(styles_xml, "xl/styles.xml").value;
+        let sheet_xml = r#"
+            <worksheet>
+              <sheetData>
+                <row>
+                  <c r="A1" s="0"><v>44927</v></c>
+                  <c r="B1" s="1"><v>44927</v></c>
+                  <c r="C1" s="2"><v>44927.25</v></c>
+                  <c r="D1" s="3"><v>0.12345</v></c>
+                  <c r="E1" s="4"><v>42.5</v></c>
+                  <c r="F1" s="5"><v>9.5</v></c>
+                  <c r="G1" s="4"><f>SUM(E1:E1)</f><v>42.5</v></c>
+                </row>
+              </sheetData>
+            </worksheet>
+        "#;
+        let mut output = Vec::new();
+        let mut shared_strings = SharedStringStore::empty();
+
+        write_sheet_csv(
+            Cursor::new(sheet_xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            b',',
+            &formatted_context(&styles),
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "44927,2023-01-01,2023-01-01T06:00:00,12.35%,42.50,$9.50,42.50\n"
+        );
+    }
+
+    #[test]
+    fn keeps_xlsx_values_raw_by_default() {
+        let styles = XlsxStyles {
+            cell_formats: vec![CellFormat {
+                number_format: Some("m/d/yyyy".to_owned()),
+            }],
+        };
+        let sheet_xml = r#"
+            <worksheet>
+              <sheetData><row><c r="A1" s="0"><v>44927</v></c></row></sheetData>
+            </worksheet>
+        "#;
+        let mut output = Vec::new();
+        let mut shared_strings = SharedStringStore::empty();
+
+        write_sheet_csv(
+            Cursor::new(sheet_xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            b',',
+            &raw_context(&styles),
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(String::from_utf8(output).unwrap(), "44927\n");
+    }
+
+    #[test]
+    fn formats_xlsx_date_system_edge_cases() {
+        let styles = XlsxStyles {
+            cell_formats: vec![CellFormat {
+                number_format: Some("m/d/yyyy".to_owned()),
+            }],
+        };
+        let cell = |value: &str| CellState {
+            value: value.to_owned(),
+            style_index: Some(0),
+            ..CellState::default()
+        };
+
+        assert_eq!(
+            format_cell_value(&cell("0"), &styles, DateSystem::Excel1904).as_deref(),
+            Some("1904-01-01")
+        );
+        assert_eq!(
+            format_cell_value(&cell("60"), &styles, DateSystem::Excel1900).as_deref(),
+            Some("1900-02-29")
+        );
+        assert_eq!(
+            format_cell_value(&cell("61"), &styles, DateSystem::Excel1900).as_deref(),
+            Some("1900-03-01")
+        );
+    }
+
+    #[test]
+    fn parses_xlsx_date_system_and_classifies_formats() {
+        assert_eq!(
+            parse_workbook_date_system(r#"<workbook><workbookPr date1904="1"/></workbook>"#),
+            DateSystem::Excel1904
+        );
+        assert_eq!(
+            parse_workbook_date_system(r#"<workbook><workbookPr/></workbook>"#),
+            DateSystem::Excel1900
+        );
+        assert_eq!(
+            classify_number_format(r#"[$$-409]#,##0.00"#),
+            Some(super::FormatKind::Currency(2))
+        );
+        assert_eq!(
+            classify_number_format("\"$\"#,##0.00"),
+            Some(super::FormatKind::Currency(2))
+        );
+        assert_eq!(
+            classify_number_format(r#"yyyy-mm-dd h:mm"#),
+            Some(super::FormatKind::DateTime)
+        );
+        assert_eq!(
+            classify_number_format("h:mm:ss"),
+            Some(super::FormatKind::Time)
+        );
+    }
+
+    #[test]
+    fn parses_xlsx_styles_with_start_tags_and_warnings() {
+        let styles = parse_styles(
+            r#"
+            <styleSheet>
+              <numFmts><numFmt numFmtId="164" formatCode="yyyy-mm-dd"></numFmt></numFmts>
+              <cellXfs><xf numFmtId="164"></xf><xf numFmtId="3"></xf></cellXfs>
+            </styleSheet>
+            "#,
+            "xl/styles.xml",
+        );
+
+        assert!(styles.warnings.is_empty());
+        assert_eq!(styles.value.cell_formats.len(), 2);
+        assert_eq!(
+            styles.value.cell_formats[0].number_format.as_deref(),
+            Some("yyyy-mm-dd")
+        );
+        assert_eq!(
+            styles.value.cell_formats[1].number_format.as_deref(),
+            Some("#,##0")
+        );
+
+        let malformed = parse_styles("<styleSheet><cellXfs><", "xl/styles.xml");
+        assert_eq!(malformed.warnings.len(), 1);
+    }
+
+    #[test]
+    fn formats_xlsx_values_with_fallback_edges() {
+        let styles = XlsxStyles {
+            cell_formats: vec![
+                CellFormat {
+                    number_format: Some("h:mm:ss".to_owned()),
+                },
+                CellFormat {
+                    number_format: Some("0.00E+00".to_owned()),
+                },
+            ],
+        };
+
+        let time_cell = CellState {
+            value: "0.9999999".to_owned(),
+            style_index: Some(0),
+            ..CellState::default()
+        };
+        assert_eq!(
+            format_cell_value(&time_cell, &styles, DateSystem::Excel1900).as_deref(),
+            Some("00:00:00")
+        );
+
+        let unsupported_cell = CellState {
+            value: "123".to_owned(),
+            style_index: Some(1),
+            ..CellState::default()
+        };
+        assert_eq!(
+            format_cell_value(&unsupported_cell, &styles, DateSystem::Excel1900),
+            None
+        );
+
+        let text_formula_cell = CellState {
+            value_type: Some("str".to_owned()),
+            value: "cached text".to_owned(),
+            style_index: Some(0),
+            ..CellState::default()
+        };
+        assert_eq!(
+            format_cell_value(&text_formula_cell, &styles, DateSystem::Excel1900),
+            None
+        );
+
+        assert_eq!(format_number(-0.0001, 2, true), "0.00");
     }
 
     #[test]
@@ -715,6 +1348,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut empty_shared_strings,
             b',',
+            &raw_context(&XlsxStyles::default()),
             &mut output,
         )
         .unwrap();
@@ -752,6 +1386,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            &raw_context(&XlsxStyles::default()),
             &mut output,
         )
         .unwrap();
@@ -781,6 +1416,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            &raw_context(&XlsxStyles::default()),
             &mut output,
         )
         .unwrap();

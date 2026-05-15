@@ -153,6 +153,49 @@ fn extracts_csv_to_stdout() {
 }
 
 #[test]
+fn extracts_csv_with_formatted_xlsx_values() {
+    let xlsx = create_ooxml(
+        "formatted-values.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<styleSheet><cellXfs><xf numFmtId="0"/><xf numFmtId="14"/><xf numFmtId="10"/><xf numFmtId="2"/><xf numFmtId="44"/></cellXfs></styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1" s="0"><v>44927</v></c><c r="B1" s="1"><v>44927</v></c><c r="C1" s="2"><v>0.25</v></c><c r="D1" s="3"><f>SUM(A1:A1)</f><v>42.5</v></c><c r="E1" s="4"><v>9.5</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Data",
+        "--value-mode",
+        "formatted",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(stdout(&output), "44927,2023-01-01,25.00%,42.50,$9.50\n");
+}
+
+#[test]
 fn extracts_application_generated_xlsx_csv_to_stdout() {
     let xlsx = fixtures::fixture_file("xlsx/openpyxl-basic.xlsx");
 

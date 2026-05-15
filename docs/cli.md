@@ -94,7 +94,7 @@ PPTX extraction preserves presentation slide order, extracts DrawingML text boxe
 ## Extract XLSX CSV
 
 ```bash
-oxdoc extract csv <FILES>... [--sheet <NAME>|--sheet-index <INDEX>|--list-sheets|--all-sheets --output-dir <DIR>] [--delimiter <CHAR>] [-o <PATH>]
+oxdoc extract csv <FILES>... [--sheet <NAME>|--sheet-index <INDEX>|--list-sheets|--all-sheets --output-dir <DIR>] [--delimiter <CHAR>] [--value-mode <MODE>] [-o <PATH>]
 ```
 
 Arguments:
@@ -112,6 +112,7 @@ Options:
 | `--list-sheets` | false | Print visible sheet names with 1-based indices and exit. |
 | `--all-sheets` | false | Export every visible sheet from a single workbook to separate CSV files. Requires `--output-dir`. Mutually exclusive with `--sheet`, `--sheet-index`, `--list-sheets`, and `--output`. |
 | `--delimiter <CHAR>` | `,` | Single-byte CSV delimiter. |
+| `--value-mode <MODE>` | `raw` | Emit worksheet XML values with `raw`, or deterministic formatted values with `formatted` for supported XLSX number formats. |
 | `--output <PATH>`, `-o <PATH>` | stdout | Write CSV or sheet list output to a file. |
 | `--output-dir <PATH>` | none | Directory for `--all-sheets` CSV files and `manifest.json`. |
 
@@ -137,6 +138,12 @@ All visible sheets example:
 
 ```bash
 oxdoc extract csv data.xlsx --all-sheets --output-dir exported-sheets
+```
+
+Formatted value example:
+
+```bash
+oxdoc extract csv data.xlsx --value-mode formatted
 ```
 
 Output:
@@ -170,6 +177,12 @@ Notes:
 - Hidden and very hidden sheets are skipped by default and by both sheet selectors.
 - `--all-sheets` skips hidden and very hidden sheets and writes a `manifest.json` file next to the CSV files.
 - Duplicate visible sheet names are rejected; use `--sheet-index` to disambiguate malformed workbooks.
+
+## XLSX Value Modes
+
+`--value-mode raw` is the default and emits the stored worksheet value exactly as represented in the sheet XML after string and boolean decoding. This keeps existing ingestion jobs stable.
+
+`--value-mode formatted` reads workbook styles when present and formats supported numeric cells in a locale-independent way. Dates use ISO output (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS`), time-only values use `HH:MM:SS`, percentages include `%`, and common decimal and currency formats use the decimal precision declared by the workbook. Unsupported formats fall back to the raw stored value.
 
 ## Read Metadata
 
