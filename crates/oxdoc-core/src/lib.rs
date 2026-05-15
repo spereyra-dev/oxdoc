@@ -27,7 +27,7 @@ use std::path::Path;
 pub use error::{OxdocError, Result};
 pub use models::{
     AuditSignal, DocumentAudit, DocumentInfo, DocumentType, Extraction, OutputWarning,
-    StructuredText, TextBlock, XlsxCsvOptions, XlsxSheet, XlsxValueMode,
+    StructuredText, TextBlock, XlsxCsvOptions, XlsxSheet, XlsxSheetVisibility, XlsxValueMode,
 };
 #[doc(hidden)]
 pub use parsers::docx::fuzz_extract_text as fuzz_docx_text;
@@ -131,8 +131,23 @@ pub fn list_xlsx_sheets(path: impl AsRef<Path>) -> Result<Extraction<Vec<XlsxShe
 pub fn list_xlsx_sheets_from_reader<R: Read + Seek>(
     reader: R,
 ) -> Result<Extraction<Vec<XlsxSheet>>> {
+    list_xlsx_sheets_from_reader_with_hidden(reader, false)
+}
+
+pub fn list_xlsx_sheets_with_hidden(
+    path: impl AsRef<Path>,
+    include_hidden: bool,
+) -> Result<Extraction<Vec<XlsxSheet>>> {
+    let file = File::open(path)?;
+    list_xlsx_sheets_from_reader_with_hidden(file, include_hidden)
+}
+
+pub fn list_xlsx_sheets_from_reader_with_hidden<R: Read + Seek>(
+    reader: R,
+    include_hidden: bool,
+) -> Result<Extraction<Vec<XlsxSheet>>> {
     let mut package = OoxmlPackage::new(reader)?;
-    xlsx::list_sheets(&mut package)
+    xlsx::list_sheets(&mut package, include_hidden)
 }
 
 pub fn detect_document_type(path: impl AsRef<Path>) -> Result<DocumentType> {

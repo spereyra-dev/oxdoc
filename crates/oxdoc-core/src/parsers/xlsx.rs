@@ -4,8 +4,8 @@ use std::io::{BufRead, BufReader, Cursor, Read, Seek, Write};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use crate::models::XlsxSheet;
 use crate::models::{Extraction, OutputWarning, XlsxCsvOptions, XlsxValueMode};
+use crate::models::{XlsxSheet, XlsxSheetVisibility};
 use crate::parsers::xlsx_shared_strings::{
     DEFAULT_SHARED_STRING_MEMORY_LIMIT, SharedStringLookup, SharedStringStore,
 };
@@ -20,7 +20,7 @@ use crate::{OxdocError, Result};
 struct WorkbookSheet {
     name: String,
     relation_id: String,
-    visible: bool,
+    visibility: XlsxSheetVisibility,
 }
 
 #[derive(Debug, Default)]
@@ -82,6 +82,7 @@ pub(crate) fn write_csv<R: Read + Seek, W: Write>(
 
 pub(crate) fn list_sheets<R: Read + Seek>(
     package: &mut OoxmlPackage<R>,
+    include_hidden: bool,
 ) -> Result<Extraction<Vec<XlsxSheet>>> {
     let workbook_path = crate::parsers::find_office_document_path(package, "xl/workbook.xml")?;
     let workbook_xml = package.read_to_string(&workbook_path)?;
@@ -89,11 +90,12 @@ pub(crate) fn list_sheets<R: Read + Seek>(
     let sheets = workbook
         .value
         .into_iter()
-        .filter(|sheet| sheet.visible)
+        .filter(|sheet| include_hidden || sheet.visibility == XlsxSheetVisibility::Visible)
         .enumerate()
         .map(|(index, sheet)| XlsxSheet {
             index: index + 1,
             name: sheet.name,
+            visibility: sheet.visibility,
         })
         .collect();
 
@@ -116,7 +118,12 @@ fn write_csv_with_shared_string_memory_limit<R: Read + Seek, W: Write>(
     let workbook_rels_xml = package.read_to_string(&workbook_rels_path)?;
     let workbook_rels = parse_relationship_map(&workbook_rels_xml, &workbook_rels_path)?;
 
-    let selected_sheet = select_sheet(&workbook.value, options.sheet_name, options.sheet_index)?;
+    let selected_sheet = select_sheet(
+        &workbook.value,
+        options.sheet_name,
+        options.sheet_index,
+        options.include_hidden,
+    )?;
     let target = workbook_rels
         .get(&selected_sheet.relation_id)
         .ok_or_else(|| OxdocError::MissingPart(selected_sheet.relation_id.clone()))?;
@@ -176,6 +183,7 @@ fn select_sheet<'a>(
     sheets: &'a [WorkbookSheet],
     sheet_name: Option<&str>,
     sheet_index: Option<usize>,
+    include_hidden: bool,
 ) -> Result<&'a WorkbookSheet> {
     if sheet_name.is_some() && sheet_index.is_some() {
         return Err(OxdocError::InvalidArgument(
@@ -184,16 +192,22 @@ fn select_sheet<'a>(
     }
 
     if let Some(sheet_name) = sheet_name {
-        let mut matches = sheets
-            .iter()
-            .filter(|sheet| sheet.visible && sheet.name == sheet_name);
+        let mut matches = sheets.iter().filter(|sheet| {
+            (include_hidden || sheet.visibility == XlsxSheetVisibility::Visible)
+                && sheet.name == sheet_name
+        });
         let selected = matches
             .next()
-            .ok_or_else(|| OxdocError::MissingPart(format!("visible sheet named {sheet_name}")))?;
+            .ok_or_else(|| OxdocError::MissingPart(sheet_name_error(sheet_name, include_hidden)))?;
 
         if matches.next().is_some() {
+            let scope = if include_hidden {
+                "workbook"
+            } else {
+                "visible"
+            };
             return Err(OxdocError::InvalidArgument(format!(
-                "multiple visible sheets named {sheet_name}; use sheet index to disambiguate"
+                "multiple {scope} sheets named {sheet_name}; use sheet index to disambiguate"
             )));
         }
 
@@ -209,15 +223,41 @@ fn select_sheet<'a>(
 
         return sheets
             .iter()
-            .filter(|sheet| sheet.visible)
+            .filter(|sheet| include_hidden || sheet.visibility == XlsxSheetVisibility::Visible)
             .nth(sheet_index - 1)
-            .ok_or_else(|| OxdocError::MissingPart(format!("visible sheet index {sheet_index}")));
+            .ok_or_else(|| {
+                OxdocError::MissingPart(sheet_index_error(sheet_index, include_hidden))
+            });
     }
 
     sheets
         .iter()
-        .find(|sheet| sheet.visible)
-        .ok_or_else(|| OxdocError::MissingPart("visible workbook sheets".to_owned()))
+        .find(|sheet| include_hidden || sheet.visibility == XlsxSheetVisibility::Visible)
+        .ok_or_else(|| OxdocError::MissingPart(sheet_scope_error(include_hidden)))
+}
+
+fn sheet_name_error(sheet_name: &str, include_hidden: bool) -> String {
+    if include_hidden {
+        format!("workbook sheet named {sheet_name}")
+    } else {
+        format!("visible sheet named {sheet_name}")
+    }
+}
+
+fn sheet_index_error(sheet_index: usize, include_hidden: bool) -> String {
+    if include_hidden {
+        format!("workbook sheet index {sheet_index}")
+    } else {
+        format!("visible sheet index {sheet_index}")
+    }
+}
+
+fn sheet_scope_error(include_hidden: bool) -> String {
+    if include_hidden {
+        "workbook sheets".to_owned()
+    } else {
+        "visible workbook sheets".to_owned()
+    }
 }
 
 fn parse_workbook_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<WorkbookSheet>>> {
@@ -236,7 +276,7 @@ fn parse_workbook_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<Workboo
                     (Some(name), Some(relation_id)) => sheets.push(WorkbookSheet {
                         name,
                         relation_id,
-                        visible: is_visible_sheet_state(attr_value(&element, b"state")),
+                        visibility: sheet_visibility(attr_value(&element, b"state")),
                     }),
                     _ => warnings.push(OutputWarning::ignored_workbook_sheet(path)),
                 }
@@ -369,10 +409,12 @@ fn builtin_format(id: u32) -> Option<String> {
     }
 }
 
-fn is_visible_sheet_state(state: Option<String>) -> bool {
-    !state.is_some_and(|state| {
-        state.eq_ignore_ascii_case("hidden") || state.eq_ignore_ascii_case("veryHidden")
-    })
+fn sheet_visibility(state: Option<String>) -> XlsxSheetVisibility {
+    match state.as_deref() {
+        Some(state) if state.eq_ignore_ascii_case("hidden") => XlsxSheetVisibility::Hidden,
+        Some(state) if state.eq_ignore_ascii_case("veryHidden") => XlsxSheetVisibility::VeryHidden,
+        _ => XlsxSheetVisibility::Visible,
+    }
 }
 
 fn write_sheet_csv<R: BufRead, W: Write>(
@@ -835,7 +877,7 @@ mod tests {
     use std::io::Cursor;
 
     use crate::OxdocError;
-    use crate::models::XlsxValueMode;
+    use crate::models::{XlsxSheetVisibility, XlsxValueMode};
     use crate::parsers::xlsx_shared_strings::{SharedStringLookup, SharedStringStore};
 
     use super::{
@@ -874,7 +916,7 @@ mod tests {
 
         assert_eq!(result.value[0].name, "Ventas Q1");
         assert_eq!(result.value[0].relation_id, "rId1");
-        assert!(result.value[0].visible);
+        assert_eq!(result.value[0].visibility, XlsxSheetVisibility::Visible);
     }
 
     #[test]
@@ -1252,24 +1294,27 @@ mod tests {
 
         assert_eq!(sheets.value.len(), 1);
         assert_eq!(sheets.warnings.len(), 1);
-        assert_eq!(select_sheet(&sheets.value, None, None).unwrap().name, "B");
+        assert_eq!(
+            select_sheet(&sheets.value, None, None, false).unwrap().name,
+            "B"
+        );
 
-        let err = select_sheet(&sheets.value, Some("missing"), None).unwrap_err();
+        let err = select_sheet(&sheets.value, Some("missing"), None, false).unwrap_err();
         assert!(
             matches!(err, OxdocError::MissingPart(part) if part == "visible sheet named missing")
         );
 
-        let err = select_sheet(&sheets.value, Some("B"), Some(1)).unwrap_err();
+        let err = select_sheet(&sheets.value, Some("B"), Some(1), false).unwrap_err();
         assert!(
             matches!(err, OxdocError::InvalidArgument(message) if message.contains("by name or index"))
         );
 
-        let err = select_sheet(&sheets.value, None, Some(0)).unwrap_err();
+        let err = select_sheet(&sheets.value, None, Some(0), false).unwrap_err();
         assert!(
             matches!(err, OxdocError::InvalidArgument(message) if message.contains("1 or greater"))
         );
 
-        let err = select_sheet(&[], None, None).unwrap_err();
+        let err = select_sheet(&[], None, None, false).unwrap_err();
         assert!(matches!(err, OxdocError::MissingPart(part) if part == "visible workbook sheets"));
     }
 
@@ -1291,25 +1336,62 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            select_sheet(&sheets.value, None, None).unwrap().name,
+            select_sheet(&sheets.value, None, None, false).unwrap().name,
             "Visible A"
         );
         assert_eq!(
-            select_sheet(&sheets.value, None, Some(1)).unwrap().name,
+            select_sheet(&sheets.value, None, Some(1), false)
+                .unwrap()
+                .name,
             "Visible A"
         );
         assert_eq!(
-            select_sheet(&sheets.value, None, Some(2)).unwrap().name,
+            select_sheet(&sheets.value, None, Some(2), false)
+                .unwrap()
+                .name,
             "Visible B"
         );
 
-        let err = select_sheet(&sheets.value, Some("Hidden"), None).unwrap_err();
+        let err = select_sheet(&sheets.value, Some("Hidden"), None, false).unwrap_err();
         assert!(
             matches!(err, OxdocError::MissingPart(part) if part == "visible sheet named Hidden")
         );
 
-        let err = select_sheet(&sheets.value, None, Some(3)).unwrap_err();
+        let err = select_sheet(&sheets.value, None, Some(3), false).unwrap_err();
         assert!(matches!(err, OxdocError::MissingPart(part) if part == "visible sheet index 3"));
+    }
+
+    #[test]
+    fn selects_hidden_workbook_sheets_only_with_explicit_opt_in() {
+        let sheets = parse_workbook_sheets(
+            r#"
+            <workbook xmlns:r="r">
+              <sheets>
+                <sheet name="Hidden" sheetId="1" state="hidden" r:id="rId1"/>
+                <sheet name="Visible" sheetId="2" r:id="rId2"/>
+                <sheet name="Very Hidden" sheetId="3" state="veryHidden" r:id="rId3"/>
+              </sheets>
+            </workbook>
+            "#,
+            "xl/workbook.xml",
+        )
+        .unwrap();
+
+        assert_eq!(
+            select_sheet(&sheets.value, None, Some(1), true)
+                .unwrap()
+                .name,
+            "Hidden"
+        );
+        assert_eq!(
+            select_sheet(&sheets.value, Some("Very Hidden"), None, true)
+                .unwrap()
+                .visibility,
+            XlsxSheetVisibility::VeryHidden
+        );
+
+        let err = select_sheet(&sheets.value, None, Some(4), true).unwrap_err();
+        assert!(matches!(err, OxdocError::MissingPart(part) if part == "workbook sheet index 4"));
     }
 
     #[test]
@@ -1327,9 +1409,37 @@ mod tests {
         )
         .unwrap();
 
-        let err = select_sheet(&sheets.value, Some("Dup"), None).unwrap_err();
+        let err = select_sheet(&sheets.value, Some("Dup"), None, false).unwrap_err();
         assert!(
             matches!(err, OxdocError::InvalidArgument(message) if message.contains("multiple visible sheets named Dup"))
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_names_across_visibility_when_hidden_sheets_are_included() {
+        let sheets = parse_workbook_sheets(
+            r#"
+            <workbook xmlns:r="r">
+              <sheets>
+                <sheet name="Dup" sheetId="1" r:id="rId1"/>
+                <sheet name="Dup" sheetId="2" state="hidden" r:id="rId2"/>
+              </sheets>
+            </workbook>
+            "#,
+            "xl/workbook.xml",
+        )
+        .unwrap();
+
+        assert_eq!(
+            select_sheet(&sheets.value, Some("Dup"), None, false)
+                .unwrap()
+                .visibility,
+            XlsxSheetVisibility::Visible
+        );
+
+        let err = select_sheet(&sheets.value, Some("Dup"), None, true).unwrap_err();
+        assert!(
+            matches!(err, OxdocError::InvalidArgument(message) if message.contains("multiple workbook sheets named Dup"))
         );
     }
 

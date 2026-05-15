@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use oxdoc_core::vfs::{OoxmlLimits, OoxmlPackage};
-use oxdoc_core::{DocumentType, OxdocError, XlsxCsvOptions, XlsxValueMode};
+use oxdoc_core::{DocumentType, OxdocError, XlsxCsvOptions, XlsxSheetVisibility, XlsxValueMode};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -298,6 +298,7 @@ fn extracts_xlsx_csv_through_public_api() {
         XlsxCsvOptions {
             sheet_name: Some("Sales Q1"),
             sheet_index: None,
+            include_hidden: false,
             delimiter: b',',
         },
         &mut csv,
@@ -322,6 +323,7 @@ fn extracts_xlsx_csv_from_read_seek_reader() {
         XlsxCsvOptions {
             sheet_name: Some("Sales Q1"),
             sheet_index: None,
+            include_hidden: false,
             delimiter: b';',
         },
         &mut csv,
@@ -345,6 +347,7 @@ fn extracts_application_generated_xlsx_csv_fixture() {
         XlsxCsvOptions {
             sheet_name: Some("Data"),
             sheet_index: None,
+            include_hidden: false,
             delimiter: b',',
         },
         &mut csv,
@@ -568,8 +571,43 @@ fn lists_visible_xlsx_sheets_without_opening_sheet_data() {
     assert_eq!(extraction.value.len(), 2);
     assert_eq!(extraction.value[0].index, 1);
     assert_eq!(extraction.value[0].name, "Ventas Q1");
+    assert_eq!(extraction.value[0].visibility, XlsxSheetVisibility::Visible);
     assert_eq!(extraction.value[1].index, 2);
     assert_eq!(extraction.value[1].name, "Resumen");
+    assert_eq!(extraction.value[1].visibility, XlsxSheetVisibility::Visible);
+}
+
+#[test]
+fn lists_hidden_xlsx_sheets_with_visibility_when_requested() {
+    let file = create_ooxml(
+        "list-hidden-sheets.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Visible" sheetId="1" r:id="rId1"/><sheet name="Hidden" sheetId="2" state="hidden" r:id="rId2"/><sheet name="Very Hidden" sheetId="3" state="veryHidden" r:id="rId3"/></sheets></workbook>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::list_xlsx_sheets_with_hidden(&file, true).unwrap();
+
+    assert!(extraction.warnings.is_empty());
+    assert_eq!(extraction.value.len(), 3);
+    assert_eq!(extraction.value[0].index, 1);
+    assert_eq!(extraction.value[0].visibility, XlsxSheetVisibility::Visible);
+    assert_eq!(extraction.value[1].index, 2);
+    assert_eq!(extraction.value[1].name, "Hidden");
+    assert_eq!(extraction.value[1].visibility, XlsxSheetVisibility::Hidden);
+    assert_eq!(extraction.value[2].index, 3);
+    assert_eq!(extraction.value[2].name, "Very Hidden");
+    assert_eq!(
+        extraction.value[2].visibility,
+        XlsxSheetVisibility::VeryHidden
+    );
 }
 
 #[test]
@@ -640,6 +678,7 @@ fn escapes_xlsx_sparse_fields_for_comma_and_semicolon_csv() {
         XlsxCsvOptions {
             sheet_name: Some("Escaping"),
             sheet_index: None,
+            include_hidden: false,
             delimiter: b';',
         },
         &mut semicolon_csv,
@@ -686,6 +725,7 @@ fn extracts_xlsx_csv_with_boolean_error_blank_and_empty_row_cells() {
         XlsxCsvOptions {
             sheet_name: Some("Mixed"),
             sheet_index: None,
+            include_hidden: false,
             delimiter: b',',
         },
         &mut csv,
@@ -736,6 +776,7 @@ fn extracts_xlsx_csv_cell_type_edge_cases_as_stable_snapshot() {
         XlsxCsvOptions {
             sheet_name: Some("Types"),
             sheet_index: None,
+            include_hidden: false,
             delimiter: b',',
         },
         &mut csv,
@@ -775,6 +816,7 @@ fn reports_missing_requested_xlsx_sheet() {
         XlsxCsvOptions {
             sheet_name: Some("Missing"),
             sheet_index: None,
+            include_hidden: false,
             delimiter: b',',
         },
         &mut csv,
@@ -822,6 +864,7 @@ fn extracts_xlsx_csv_by_visible_sheet_index() {
         XlsxCsvOptions {
             sheet_name: None,
             sheet_index: Some(2),
+            include_hidden: false,
             delimiter: b',',
         },
         &mut csv,
@@ -829,6 +872,67 @@ fn extracts_xlsx_csv_by_visible_sheet_index() {
     .unwrap();
 
     assert_eq!(String::from_utf8(csv).unwrap(), "second\n");
+}
+
+#[test]
+fn extracts_hidden_xlsx_csv_only_when_explicitly_included() {
+    let file = create_ooxml(
+        "hidden-sheet-index.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Hidden" sheetId="1" state="hidden" r:id="rId1"/><sheet name="Visible" sheetId="2" r:id="rId2"/><sheet name="Very Hidden" sheetId="3" state="veryHidden" r:id="rId3"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/hidden.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/visible.xml"/><Relationship Id="rId3" Type="worksheet" Target="worksheets/very-hidden.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/hidden.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>hidden</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/visible.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>visible</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/very-hidden.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>very hidden</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+
+    let mut default_csv = Vec::new();
+    oxdoc_core::extract_xlsx_csv(
+        &file,
+        XlsxCsvOptions {
+            sheet_name: None,
+            sheet_index: Some(1),
+            include_hidden: false,
+            delimiter: b',',
+        },
+        &mut default_csv,
+    )
+    .unwrap();
+    assert_eq!(String::from_utf8(default_csv).unwrap(), "visible\n");
+
+    let mut hidden_csv = Vec::new();
+    oxdoc_core::extract_xlsx_csv(
+        &file,
+        XlsxCsvOptions {
+            sheet_name: Some("Very Hidden"),
+            sheet_index: None,
+            include_hidden: true,
+            delimiter: b',',
+        },
+        &mut hidden_csv,
+    )
+    .unwrap();
+    assert_eq!(String::from_utf8(hidden_csv).unwrap(), "very hidden\n");
 }
 
 #[test]
@@ -859,6 +963,7 @@ fn reports_invalid_xlsx_sheet_selection_combinations() {
         XlsxCsvOptions {
             sheet_name: Some("Dup"),
             sheet_index: None,
+            include_hidden: false,
             delimiter: b',',
         },
         &mut csv,
@@ -873,6 +978,7 @@ fn reports_invalid_xlsx_sheet_selection_combinations() {
         XlsxCsvOptions {
             sheet_name: Some("Dup"),
             sheet_index: Some(1),
+            include_hidden: false,
             delimiter: b',',
         },
         &mut csv,

@@ -32,6 +32,10 @@
           "type": "integer",
           "minimum": 1
         },
+        "visibility": {
+          "type": "string",
+          "enum": ["visible", "hidden", "veryHidden"]
+        },
         "name": {
           "type": "string"
         },

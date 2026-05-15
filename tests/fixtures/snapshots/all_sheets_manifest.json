@@ -4,12 +4,14 @@
   "sheets": [
     {
       "index": 1,
+      "visibility": "visible",
       "name": "Sales Q1",
       "csv_path": "001-sales-q1.csv",
       "warnings": []
     },
     {
       "index": 2,
+      "visibility": "visible",
       "name": "Ops/Q1 🚀",
       "csv_path": "002-ops-q1.csv",
       "warnings": []

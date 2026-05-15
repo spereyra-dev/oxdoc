@@ -38,6 +38,7 @@ oxdoc extract text *.docx --format jsonl
 oxdoc extract text contrato.docx --format structured-json
 oxdoc extract csv data.xlsx --sheet "Ventas Q1" --delimiter ","
 oxdoc extract csv data.xlsx --sheet-index 2
+oxdoc extract csv data.xlsx --list-sheets --include-hidden
 oxdoc extract csv data.xlsx --all-sheets --output-dir exported-sheets
 oxdoc extract csv data.xlsx --value-mode formatted
 oxdoc info report.docx --format json

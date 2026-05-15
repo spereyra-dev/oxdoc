@@ -482,6 +482,115 @@ fn extracts_csv_by_visible_sheet_index() {
 }
 
 #[test]
+fn extracts_hidden_csv_by_workbook_index_with_include_hidden() {
+    let xlsx = create_ooxml(
+        "hidden-sheet-cli.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Hidden" sheetId="1" state="hidden" r:id="rId1"/><sheet name="Visible" sheetId="2" r:id="rId2"/><sheet name="Very Hidden" sheetId="3" state="veryHidden" r:id="rId3"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/hidden.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/visible.xml"/><Relationship Id="rId3" Type="worksheet" Target="worksheets/very-hidden.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/hidden.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>hidden</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/visible.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>visible</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/very-hidden.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>very hidden</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+
+    let default_output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet-index",
+        "1",
+    ]);
+    assert!(default_output.status.success());
+    assert_eq!(stdout(&default_output), "visible\n");
+
+    let hidden_output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet-index",
+        "1",
+        "--include-hidden",
+    ]);
+    assert!(hidden_output.status.success());
+    assert_eq!(stdout(&hidden_output), "hidden\n");
+
+    let very_hidden_output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Very Hidden",
+        "--include-hidden",
+    ]);
+    assert!(very_hidden_output.status.success());
+    assert_eq!(stdout(&very_hidden_output), "very hidden\n");
+}
+
+#[test]
+fn rejects_duplicate_sheet_names_across_visibility_when_hidden_sheets_are_included() {
+    let xlsx = create_ooxml(
+        "duplicate-hidden-sheets-cli.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Dup" sheetId="1" r:id="rId1"/><sheet name="Dup" sheetId="2" state="hidden" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/visible.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/hidden.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/visible.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>visible</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/hidden.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>hidden</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+
+    let default_output = oxdoc(["extract", "csv", xlsx.to_str().unwrap(), "--sheet", "Dup"]);
+    assert!(default_output.status.success());
+    assert_eq!(stdout(&default_output), "visible\n");
+
+    let included_output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Dup",
+        "--include-hidden",
+    ]);
+    assert_eq!(included_output.status.code(), Some(1));
+    assert!(stderr(&included_output).contains("multiple workbook sheets named Dup"));
+}
+
+#[test]
 fn lists_visible_sheets() {
     let xlsx = create_ooxml(
         "list-sheets.xlsx",
@@ -502,6 +611,38 @@ fn lists_visible_sheets() {
     assert!(output.status.success());
     assert!(stderr(&output).is_empty());
     assert_eq!(stdout(&output), "1: Ventas Q1\n2: Resumen\n");
+}
+
+#[test]
+fn lists_hidden_sheets_with_visibility_when_requested() {
+    let xlsx = create_ooxml(
+        "list-hidden-sheets-cli.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Visible" sheetId="1" r:id="rId1"/><sheet name="Hidden" sheetId="2" state="hidden" r:id="rId2"/><sheet name="Very Hidden" sheetId="3" state="veryHidden" r:id="rId3"/></sheets></workbook>"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--list-sheets",
+        "--include-hidden",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        stdout(&output),
+        "1: Visible (visible)\n2: Hidden (hidden)\n3: Very Hidden (veryHidden)\n"
+    );
 }
 
 #[test]
@@ -975,12 +1116,71 @@ fn exports_all_visible_xlsx_sheets_with_manifest() {
     let sheets = manifest["sheets"].as_array().unwrap();
     assert_eq!(sheets.len(), 2);
     assert_eq!(sheets[0]["index"], 1);
+    assert_eq!(sheets[0]["visibility"], "visible");
     assert_eq!(sheets[0]["name"], "Sales Q1");
     assert_eq!(sheets[0]["csv_path"], "001-sales-q1.csv");
     assert_eq!(sheets[0]["warnings"].as_array().unwrap().len(), 0);
     assert_eq!(sheets[1]["index"], 2);
+    assert_eq!(sheets[1]["visibility"], "visible");
     assert_eq!(sheets[1]["name"], "Ops/Q1 🚀");
     assert_eq!(sheets[1]["csv_path"], "002-ops-q1.csv");
+}
+
+#[test]
+fn exports_all_hidden_xlsx_sheets_when_included() {
+    let workbook = create_ooxml(
+        "all-sheets-hidden.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rIdWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Visible" sheetId="1" r:id="rId1"/><sheet name="Hidden" sheetId="2" state="hidden" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/visible.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/hidden.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/visible.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>visible</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/hidden.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>hidden</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let output_dir = unique_path("all-sheets-hidden-out");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        workbook.to_str().unwrap(),
+        "--all-sheets",
+        "--include-hidden",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert_eq!(
+        fs::read_to_string(output_dir.join("001-visible.csv")).unwrap(),
+        "visible\n"
+    );
+    assert_eq!(
+        fs::read_to_string(output_dir.join("002-hidden.csv")).unwrap(),
+        "hidden\n"
+    );
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(output_dir.join("manifest.json")).unwrap())
+            .unwrap();
+    let sheets = manifest["sheets"].as_array().unwrap();
+    assert_eq!(sheets.len(), 2);
+    assert_eq!(sheets[0]["visibility"], "visible");
+    assert_eq!(sheets[1]["visibility"], "hidden");
 }
 
 #[test]

@@ -9,8 +9,9 @@ The current parser:
 - Selects the first visible sheet by default.
 - Can select a sheet by visible workbook name with `--sheet`.
 - Can select a sheet by 1-based visible workbook order with `--sheet-index`.
-- Rejects duplicate visible sheet names instead of guessing.
-- Skips hidden and very hidden sheets during selection.
+- Can inventory and explicitly extract hidden or very hidden sheets with `--include-hidden`.
+- Rejects duplicate sheet names in the selected visibility scope instead of guessing.
+- Skips hidden and very hidden sheets during selection unless `--include-hidden` is present.
 - Stores `xl/sharedStrings.xml` in memory up to an internal threshold, then spills shared-string data to temporary files.
 - Supports shared string cells (`t="s"`).
 - Supports inline string cells (`t="inlineStr"`).
@@ -45,6 +46,14 @@ oxdoc extract csv data.xlsx --all-sheets --output-dir exported-sheets
 
 This writes one CSV file per visible sheet plus `manifest.json` in the output directory. CSV filenames use the visible sheet index plus a sanitized sheet name, for example `001-sales-q1.csv`.
 
+Inventory hidden sheets:
+
+```bash
+oxdoc extract csv data.xlsx --list-sheets --include-hidden
+```
+
+When `--include-hidden` is present, sheet indices count all workbook sheets and list output includes each sheet visibility.
+
 Format supported Excel cell values:
 
 ```bash
@@ -72,11 +81,17 @@ Multi-byte delimiters are rejected.
 
 Sheet indexes are 1-based and count only visible sheets in workbook order. For example, `--sheet-index 2` extracts the second visible sheet, even if the package contains hidden sheets before it.
 
-`--sheet` and `--sheet-index` are mutually exclusive. If a malformed workbook contains duplicate visible sheet names, name selection fails with a stable error instead of selecting an arbitrary match. Use `--sheet-index` to disambiguate those files.
+With `--include-hidden`, sheet indexes are 1-based and count all workbook sheets in workbook order. This makes hidden extraction explicit and auditable:
 
-Hidden and very hidden sheets are intentionally skipped by selection. A future explicit opt-in may expose hidden-sheet extraction if a workflow needs it.
+```bash
+oxdoc extract csv data.xlsx --sheet-index 3 --include-hidden
+```
 
-`--all-sheets` also skips hidden and very hidden sheets. Its manifest records the visible sheet index, original sheet name, CSV path, recoverable warnings, and any sheet-level export error.
+`--sheet` and `--sheet-index` are mutually exclusive. If a malformed workbook contains duplicate sheet names in the selected visibility scope, name selection fails with a stable error instead of selecting an arbitrary match. Use `--sheet-index` to disambiguate those files.
+
+Hidden and very hidden sheets are intentionally skipped by default. Use `--include-hidden` to list or extract them, including `veryHidden` sheets.
+
+`--all-sheets` also skips hidden and very hidden sheets unless `--include-hidden` is present. Its manifest records the sheet index, visibility, original sheet name, CSV path, recoverable warnings, and any sheet-level export error.
 
 ## Value Modes
 

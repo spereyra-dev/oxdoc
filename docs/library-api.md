@@ -89,6 +89,7 @@ fn main() -> oxdoc_core::Result<()> {
         XlsxCsvOptions {
             sheet_name: Some("Ventas Q1"),
             sheet_index: None,
+            include_hidden: false,
             delimiter: b',',
         },
         &mut output,
@@ -220,7 +221,7 @@ fn main() -> oxdoc_core::Result<()> {
 }
 ```
 
-`detect_document_type` inspects `[Content_Types].xml`, so it works even when a package has no useful filename extension. `list_xlsx_sheets` reports visible sheets with 1-based indices without opening worksheet data.
+`detect_document_type` inspects `[Content_Types].xml`, so it works even when a package has no useful filename extension. `list_xlsx_sheets` reports visible sheets with 1-based indices without opening worksheet data. Use `list_xlsx_sheets_with_hidden(path, true)` when audit or diligence workflows need an inventory that includes `visible`, `hidden`, and `veryHidden` sheet states.
 
 ## Core Types
 
@@ -261,13 +262,14 @@ The current CLI writes these warnings to stderr and keeps them out of JSON outpu
 pub struct XlsxCsvOptions<'a> {
     pub sheet_name: Option<&'a str>,
     pub sheet_index: Option<usize>,
+    pub include_hidden: bool,
     pub delimiter: u8,
 }
 ```
 
-`sheet_name` selects a visible workbook sheet by name. `sheet_index` selects a visible workbook sheet by 1-based workbook order. Set at most one selector; when both are `None`, extraction uses the first visible sheet.
+`sheet_name` selects a workbook sheet by name. `sheet_index` selects a workbook sheet by 1-based order. Set at most one selector; when both are `None`, extraction uses the first visible sheet.
 
-Hidden and very hidden sheets are skipped by selection. Duplicate visible sheet names return an invalid-argument error so callers can retry with `sheet_index`.
+Hidden and very hidden sheets are skipped unless `include_hidden` is `true`. When `include_hidden` is `false`, `sheet_index` counts only visible sheets; when it is `true`, `sheet_index` counts all workbook sheets and can select `hidden` or `veryHidden` sheets. Duplicate sheet names in the selected visibility scope return an invalid-argument error so callers can retry with `sheet_index`.
 
 `extract_xlsx_csv` uses raw worksheet XML values. Use `extract_xlsx_csv_with_value_mode` or `extract_xlsx_csv_from_reader_with_value_mode` with `XlsxValueMode::Formatted` to apply supported workbook number formats for dates, times, percentages, currency, and decimals with locale-independent output.
 
@@ -277,6 +279,7 @@ Defaults:
 XlsxCsvOptions {
     sheet_name: None,
     sheet_index: None,
+    include_hidden: false,
     delimiter: b',',
 }
 ```

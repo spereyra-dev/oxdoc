@@ -129,7 +129,7 @@ PPTX extraction preserves presentation slide order, extracts DrawingML text boxe
 ## Extract XLSX CSV
 
 ```bash
-oxdoc extract csv <FILES>... [--sheet <NAME>|--sheet-index <INDEX>|--list-sheets|--all-sheets --output-dir <DIR>] [--delimiter <CHAR>] [--value-mode <MODE>] [-o <PATH>]
+oxdoc extract csv <FILES>... [--sheet <NAME>|--sheet-index <INDEX>|--list-sheets|--all-sheets --output-dir <DIR>] [--include-hidden] [--delimiter <CHAR>] [--value-mode <MODE>] [-o <PATH>]
 ```
 
 Arguments:
@@ -142,10 +142,11 @@ Options:
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--sheet <NAME>` | first visible workbook sheet | Visible workbook sheet name to extract. Mutually exclusive with `--sheet-index` and `--list-sheets`. |
-| `--sheet-index <INDEX>` | first visible workbook sheet | 1-based visible workbook sheet index to extract. Mutually exclusive with `--sheet` and `--list-sheets`. |
-| `--list-sheets` | false | Print visible sheet names with 1-based indices and exit. |
-| `--all-sheets` | false | Export every visible sheet from a single workbook to separate CSV files. Requires `--output-dir`. Mutually exclusive with `--sheet`, `--sheet-index`, `--list-sheets`, and `--output`. |
+| `--sheet <NAME>` | first visible workbook sheet | Workbook sheet name to extract. Hidden and very hidden sheets require `--include-hidden`. Mutually exclusive with `--sheet-index` and `--list-sheets`. |
+| `--sheet-index <INDEX>` | first visible workbook sheet | 1-based visible sheet index, or 1-based full workbook index with `--include-hidden`. Mutually exclusive with `--sheet` and `--list-sheets`. |
+| `--list-sheets` | false | Print sheet names with 1-based indices and exit. Hidden and very hidden sheets require `--include-hidden`. |
+| `--all-sheets` | false | Export every visible sheet from a single workbook to separate CSV files, or every workbook sheet with `--include-hidden`. Requires `--output-dir`. Mutually exclusive with `--sheet`, `--sheet-index`, `--list-sheets`, and `--output`. |
+| `--include-hidden` | false | Include hidden and very hidden workbook sheets in listing or extraction. |
 | `--delimiter <CHAR>` | `,` | Single-byte CSV delimiter. |
 | `--value-mode <MODE>` | `raw` | Emit worksheet XML values with `raw`, or deterministic formatted values with `formatted` for supported XLSX number formats. |
 | `--output <PATH>`, `-o <PATH>` | stdout | Write CSV or sheet list output to a file. |
@@ -167,6 +168,12 @@ List sheets example:
 
 ```bash
 oxdoc extract csv data.xlsx --list-sheets
+```
+
+Hidden sheet inventory example:
+
+```bash
+oxdoc extract csv data.xlsx --list-sheets --include-hidden
 ```
 
 All visible sheets example:
@@ -209,9 +216,10 @@ Notes:
 - Shared strings, inline strings, booleans, error cells, and cached formula values are supported.
 - CSV fields are quoted when they contain the delimiter, quotes, or line breaks.
 - The delimiter must be a single-byte character.
-- Hidden and very hidden sheets are skipped by default and by both sheet selectors.
-- `--all-sheets` skips hidden and very hidden sheets and writes a `manifest.json` file next to the CSV files.
-- Duplicate visible sheet names are rejected; use `--sheet-index` to disambiguate malformed workbooks.
+- Hidden and very hidden sheets are skipped by default. `--include-hidden` is required to list or extract them.
+- With `--include-hidden`, sheet indices count all workbook sheets and `--list-sheets` prints visibility as `visible`, `hidden`, or `veryHidden`.
+- `--all-sheets` skips hidden and very hidden sheets unless `--include-hidden` is present. It writes a `manifest.json` file next to the CSV files.
+- Duplicate sheet names in the selected visibility scope are rejected; use `--sheet-index` to disambiguate malformed workbooks.
 
 ## XLSX Value Modes
 

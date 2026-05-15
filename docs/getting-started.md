@@ -65,6 +65,12 @@ Select a sheet by 1-based visible workbook order:
 cargo run -p oxdoc-cli -- extract csv data.xlsx --sheet-index 2
 ```
 
+Inventory hidden sheets for audit or diligence workflows:
+
+```bash
+cargo run -p oxdoc-cli -- extract csv data.xlsx --list-sheets --include-hidden
+```
+
 Use a different single-byte delimiter:
 
 ```bash

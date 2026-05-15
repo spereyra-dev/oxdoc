@@ -14,7 +14,7 @@ Fast OOXML extraction without rendering.
 - DOCX logical text semantics for paragraph breaks, table cell and row separation, tabs, line breaks, and deleted revision text handling.
 - PPTX text extraction from slide text boxes and speaker notes.
 - XLSX worksheet-to-CSV extraction.
-- XLSX visible sheet listing and sheet selection by name or index.
+- XLSX sheet listing and sheet selection by name or index, with explicit opt-in for hidden and very hidden sheets.
 - Metadata extraction from core, app, and custom document properties.
 - A reusable `oxdoc-core` crate and a CLI-facing `oxdoc-cli` crate.
 - Typed errors plus recoverable warnings.
@@ -145,6 +145,13 @@ Select by visible sheet order instead:
 oxdoc extract csv data.xlsx --sheet-index 2
 ```
 
+Inventory hidden sheets and explicitly extract by workbook order when needed:
+
+```bash
+oxdoc extract csv data.xlsx --list-sheets --include-hidden
+oxdoc extract csv data.xlsx --sheet-index 1 --include-hidden
+```
+
 Export every visible sheet to separate CSV files:
 
 ```bash
@@ -168,9 +175,10 @@ Notes:
 
 - `--sheet` selects a visible workbook sheet name.
 - `--sheet-index` selects a visible workbook sheet by 1-based workbook order.
+- `--include-hidden` changes sheet listing and selection to include `visible`, `hidden`, and `veryHidden` sheets in workbook order.
 - `--sheet` and `--sheet-index` are mutually exclusive.
-- Hidden and very hidden sheets are skipped by selection.
-- Duplicate visible sheet names are rejected; use `--sheet-index` to disambiguate malformed workbooks.
+- Hidden and very hidden sheets are skipped unless `--include-hidden` is present.
+- Duplicate sheet names in the selected visibility scope are rejected; use `--sheet-index` to disambiguate malformed workbooks.
 - If no selector is provided, the first visible workbook sheet is used.
 - `--delimiter` must be a single-byte character.
 - CSV fields are quoted when needed.
@@ -259,7 +267,7 @@ The command-line application. It owns:
 | --- | --- |
 | DOCX text | Main document text from `<w:t>`, paragraph breaks, tabs, and line breaks. |
 | PPTX text | Slide text boxes and linked speaker notes in presentation order. |
-| XLSX CSV | Workbook relationship lookup, visible sheet name/index selection, shared strings, inline strings, sparse cells, booleans, errors, cached formula values, CSV escaping. |
+| XLSX CSV | Workbook relationship lookup, sheet name/index selection, hidden-sheet opt-in, shared strings, inline strings, sparse cells, booleans, errors, cached formula values, CSV escaping. |
 | Metadata | Core/app properties plus basic macro detection. |
 | Audit | Factual signals for macros, custom properties, suspicious relationships, hidden XLSX sheets, and recoverable parser warnings. |
 | Output | Plain text, CSV, JSON metadata, JSON text extraction. |

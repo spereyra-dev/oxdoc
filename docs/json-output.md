@@ -18,6 +18,8 @@ Machine-readable schemas live under `schemas/v1/` in the repository and are mirr
 
 `oxdoc extract text --format structured-json` emits ordered text blocks with `part_type`, `part_path`, `ordinal`, and `text` so consumers can distinguish body text from related parts such as comments, headers, speaker notes, and slides.
 
+The `--all-sheets` manifest records each exported XLSX sheet with `index`, `visibility`, `name`, `csv_path`, recoverable `warnings`, and an optional `error`. `visibility` is one of `visible`, `hidden`, or `veryHidden`.
+
 The `v1` schemas use JSON Schema draft 2020-12, include stable `$id` values, and set `additionalProperties` to `false`. New output fields are introduced through a new schema version instead of silently widening the current contract.
 
 Within a schema version:
