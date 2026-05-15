@@ -10,8 +10,8 @@ use crate::parsers::xlsx_shared_strings::{
     DEFAULT_SHARED_STRING_MEMORY_LIMIT, SharedStringLookup, SharedStringStore,
 };
 use crate::parsers::{
-    attr_value, decode_xml_reference, decode_xml_text, merge_warnings, name_eq, parent_dir,
-    parse_relationship_map, rels_path_for, resolve_relationship_target,
+    append_decoded_xml_reference, append_decoded_xml_text, attr_value, merge_warnings, name_eq,
+    parent_dir, parse_relationship_map, rels_path_for, resolve_relationship_target,
 };
 use crate::vfs::OoxmlPackage;
 use crate::{OxdocError, Result};
@@ -429,7 +429,7 @@ fn write_sheet_csv<R: BufRead, W: Write>(
     reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
     let mut warnings = Vec::new();
-    let mut row = Vec::new();
+    let mut row = SparseCsvRow::default();
     let mut current_cell: Option<CellState> = None;
     let mut in_row = false;
 
@@ -440,7 +440,7 @@ fn write_sheet_csv<R: BufRead, W: Write>(
                     in_row = true;
                     row.clear();
                 } else if name_eq(element.name().as_ref(), b"c") {
-                    current_cell = Some(cell_state_from_element(&element, row.len()));
+                    current_cell = Some(cell_state_from_element(&element, row.next_column()));
                 } else if let Some(cell) = &mut current_cell {
                     if name_eq(element.name().as_ref(), b"v") {
                         cell.in_value = true;
@@ -455,7 +455,7 @@ fn write_sheet_csv<R: BufRead, W: Write>(
                     writer.write_all(b"\n")?;
                     in_row = false;
                 } else if name_eq(element.name().as_ref(), b"c") && in_row {
-                    let cell = cell_state_from_element(&element, row.len());
+                    let cell = cell_state_from_element(&element, row.next_column());
                     push_cell_value(
                         &mut row,
                         cell,
@@ -470,21 +470,21 @@ fn write_sheet_csv<R: BufRead, W: Write>(
                 if let Some(cell) = &mut current_cell
                     && (cell.in_value || cell.in_inline_text)
                 {
-                    cell.value.push_str(&decode_xml_text(value.as_ref()));
+                    append_decoded_xml_text(value.as_ref(), &mut cell.value);
                 }
             }
             Ok(Event::CData(value)) => {
                 if let Some(cell) = &mut current_cell
                     && (cell.in_value || cell.in_inline_text)
                 {
-                    cell.value.push_str(&decode_xml_text(value.as_ref()));
+                    append_decoded_xml_text(value.as_ref(), &mut cell.value);
                 }
             }
             Ok(Event::GeneralRef(value)) => {
                 if let Some(cell) = &mut current_cell
                     && (cell.in_value || cell.in_inline_text)
                 {
-                    cell.value.push_str(&decode_xml_reference(value.as_ref()));
+                    append_decoded_xml_reference(value.as_ref(), &mut cell.value);
                 }
             }
             Ok(Event::End(element)) => {
@@ -552,18 +552,43 @@ pub fn fuzz_parse_sheet(xml: &[u8]) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Default)]
+struct SparseCsvRow {
+    cells: Vec<(usize, String)>,
+    next_column: usize,
+}
+
+impl SparseCsvRow {
+    fn clear(&mut self) {
+        self.cells.clear();
+        self.next_column = 0;
+    }
+
+    fn next_column(&self) -> usize {
+        self.next_column
+    }
+
+    fn set(&mut self, column: usize, value: String) {
+        self.next_column = self.next_column.max(column.saturating_add(1));
+        match self
+            .cells
+            .binary_search_by_key(&column, |(column, _)| *column)
+        {
+            Ok(index) => self.cells[index].1 = value,
+            Err(index) => self.cells.insert(index, (column, value)),
+        }
+    }
+}
+
 fn push_cell_value(
-    row: &mut Vec<String>,
+    row: &mut SparseCsvRow,
     cell: CellState,
     shared_strings: &mut impl SharedStringLookup,
     path: &str,
     format_context: &SheetFormatContext<'_>,
     warnings: &mut Vec<OutputWarning>,
 ) -> Result<()> {
-    let target_column = cell.column_index.unwrap_or(row.len());
-    while row.len() < target_column {
-        row.push(String::new());
-    }
+    let target_column = cell.column_index.unwrap_or(row.next_column());
 
     let value = if cell.value_type.as_deref() == Some("s") {
         match cell.value.trim().parse::<usize>() {
@@ -597,11 +622,7 @@ fn push_cell_value(
         cell.value
     };
 
-    if row.len() == target_column {
-        row.push(value);
-    } else if let Some(slot) = row.get_mut(target_column) {
-        *slot = value;
-    }
+    row.set(target_column, value);
 
     Ok(())
 }
@@ -838,12 +859,20 @@ fn parse_cell_column(cell_ref: &str) -> Option<usize> {
     saw_letter.then_some(column.saturating_sub(1))
 }
 
-fn write_csv_row<W: Write>(writer: &mut W, row: &[String], delimiter: u8) -> Result<()> {
-    for (index, value) in row.iter().enumerate() {
-        if index > 0 {
+fn write_csv_row<W: Write>(writer: &mut W, row: &SparseCsvRow, delimiter: u8) -> Result<()> {
+    let mut next_column = 0;
+    for (column, value) in &row.cells {
+        while next_column < *column {
+            if next_column > 0 {
+                writer.write_all(&[delimiter])?;
+            }
+            next_column += 1;
+        }
+        if next_column > 0 {
             writer.write_all(&[delimiter])?;
         }
         write_csv_field(writer, value, delimiter)?;
+        next_column = column.saturating_add(1);
     }
     writer.write_all(b"\n")?;
     Ok(())
@@ -984,6 +1013,37 @@ mod tests {
         .unwrap();
 
         assert_eq!(String::from_utf8(output).unwrap(), "id,,\"10,5\"\n,42\n");
+    }
+
+    #[test]
+    fn writes_very_sparse_rows_without_materializing_empty_cells() {
+        let xml = r#"
+            <worksheet>
+              <sheetData>
+                <row r="1">
+                  <c r="A1"><v>left</v></c>
+                  <c r="XFD1"><v>right</v></c>
+                </row>
+              </sheetData>
+            </worksheet>
+        "#;
+        let mut shared_strings = SharedStringStore::empty();
+        let mut output = Vec::new();
+
+        write_sheet_csv(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            b',',
+            &raw_context(&XlsxStyles::default()),
+            &mut output,
+        )
+        .unwrap();
+
+        let csv = String::from_utf8(output).unwrap();
+        assert!(csv.starts_with("left,,"));
+        assert!(csv.ends_with(",right\n"));
+        assert_eq!(csv.bytes().filter(|byte| *byte == b',').count(), 16_383);
     }
 
     #[test]

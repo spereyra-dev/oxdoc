@@ -8,7 +8,7 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::models::{Extraction, OutputWarning};
-use crate::parsers::{decode_xml_reference, decode_xml_text, name_eq};
+use crate::parsers::{append_decoded_xml_reference, append_decoded_xml_text, name_eq};
 use crate::{OxdocError, Result};
 
 pub(crate) const DEFAULT_SHARED_STRING_MEMORY_LIMIT: usize = 8 * 1024 * 1024;
@@ -257,17 +257,17 @@ fn parse_shared_strings<R: BufRead>(
             }
             Ok(Event::Text(value)) if in_text => {
                 if let Some(current) = &mut current_string {
-                    current.push_str(&decode_xml_text(value.as_ref()));
+                    append_decoded_xml_text(value.as_ref(), current);
                 }
             }
             Ok(Event::CData(value)) if in_text => {
                 if let Some(current) = &mut current_string {
-                    current.push_str(&decode_xml_text(value.as_ref()));
+                    append_decoded_xml_text(value.as_ref(), current);
                 }
             }
             Ok(Event::GeneralRef(value)) if in_text => {
                 if let Some(current) = &mut current_string {
-                    current.push_str(&decode_xml_reference(value.as_ref()));
+                    append_decoded_xml_reference(value.as_ref(), current);
                 }
             }
             Ok(Event::End(element)) => {
