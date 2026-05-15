@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use oxdoc_core::{DocumentInfo, DocumentType, OutputWarning, OxdocError, XlsxCsvOptions};
+use oxdoc_core::{
+    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, OutputWarning, OxdocError,
+    XlsxCsvOptions,
+};
 
 mod update;
 
@@ -30,6 +33,11 @@ enum Command {
         command: ExtractCommand,
     },
     Info {
+        file: PathBuf,
+        #[arg(long, value_enum, default_value_t = InfoFormat::Json)]
+        format: InfoFormat,
+    },
+    Audit {
         file: PathBuf,
         #[arg(long, value_enum, default_value_t = InfoFormat::Json)]
         format: InfoFormat,
@@ -158,6 +166,21 @@ fn run() -> Result<(), CliError> {
                     println!();
                 }
                 InfoFormat::Text => print_info(&result.value),
+            }
+        }
+        Command::Audit { file, format } => {
+            let result = read_audit(&file)?;
+            emit_warnings(&result.warnings, warning_format);
+            match format {
+                InfoFormat::Json => {
+                    let payload = AuditPayload {
+                        oxdoc_version: env!("CARGO_PKG_VERSION"),
+                        audit: &result.value,
+                    };
+                    serde_json::to_writer_pretty(io::stdout().lock(), &payload)?;
+                    println!();
+                }
+                InfoFormat::Text => print_audit(&result.value),
             }
         }
         Command::Update { check, version } => {
@@ -334,6 +357,13 @@ fn read_info(file: &Path) -> Result<oxdoc_core::Extraction<DocumentInfo>, CliErr
         .map_err(CliError::Core)
 }
 
+fn read_audit(file: &Path) -> Result<oxdoc_core::Extraction<DocumentAudit>, CliError> {
+    let input = read_input(file)?;
+    input
+        .read_audit(display_file_name(file))
+        .map_err(CliError::Core)
+}
+
 enum Input {
     Path(PathBuf),
     Stdin(Vec<u8>),
@@ -383,6 +413,18 @@ impl Input {
         match self {
             Input::Path(path) => oxdoc_core::read_info(path),
             Input::Stdin(bytes) => oxdoc_core::read_info_from_reader(Cursor::new(bytes), file_name),
+        }
+    }
+
+    fn read_audit(
+        &self,
+        file_name: String,
+    ) -> oxdoc_core::Result<oxdoc_core::Extraction<DocumentAudit>> {
+        match self {
+            Input::Path(path) => oxdoc_core::read_audit(path),
+            Input::Stdin(bytes) => {
+                oxdoc_core::read_audit_from_reader(Cursor::new(bytes), file_name)
+            }
         }
     }
 
@@ -540,6 +582,13 @@ struct InfoPayload<'a> {
 }
 
 #[derive(Debug, serde::Serialize)]
+struct AuditPayload<'a> {
+    oxdoc_version: &'static str,
+    #[serde(flatten)]
+    audit: &'a DocumentAudit,
+}
+
+#[derive(Debug, serde::Serialize)]
 struct WarningPayload<'a> {
     category: &'a str,
     code: &'a str,
@@ -626,6 +675,34 @@ fn print_info(info: &DocumentInfo) {
     print_optional_u64("slide_count", info.slide_count);
     print_optional_u64("worksheet_count", info.worksheet_count);
     print_optional("revision", info.revision.as_deref());
+}
+
+fn print_audit(audit: &DocumentAudit) {
+    println!("file: {}", audit.file);
+    println!("document_type: {}", audit.document_type);
+    println!("has_macros: {}", audit.metadata.has_macros);
+    print_optional("author", audit.metadata.author.as_deref());
+    print_optional(
+        "last_modified_by",
+        audit.metadata.last_modified_by.as_deref(),
+    );
+    print_optional("application", audit.metadata.application.as_deref());
+    print_optional("company", audit.metadata.company.as_deref());
+    print_optional_u64("word_count", audit.metadata.word_count);
+    print_optional_u64("page_count", audit.metadata.page_count);
+    print_optional_u64("slide_count", audit.metadata.slide_count);
+    print_optional_u64("worksheet_count", audit.metadata.worksheet_count);
+    println!("signal_count: {}", audit.signals.len());
+    for signal in &audit.signals {
+        print_audit_signal(signal);
+    }
+}
+
+fn print_audit_signal(signal: &AuditSignal) {
+    println!(
+        "signal: {} {} {}: {}",
+        signal.severity, signal.kind, signal.path, signal.message
+    );
 }
 
 fn print_optional(label: &str, value: Option<&str>) {

@@ -17,8 +17,20 @@ fn representative_extract_text_json_matches_schema() {
 }
 
 #[test]
+fn representative_audit_json_matches_schema() {
+    let schema = read_json_schema("oxdoc-audit.schema.json");
+    let output = serde_json::from_str(&read_snapshot("cli_audit_json.json")).unwrap();
+
+    validate_object(&schema, &output);
+}
+
+#[test]
 fn schemas_have_stable_public_metadata() {
-    for name in ["oxdoc-info.schema.json", "oxdoc-extract-text.schema.json"] {
+    for name in [
+        "oxdoc-info.schema.json",
+        "oxdoc-extract-text.schema.json",
+        "oxdoc-audit.schema.json",
+    ] {
         let schema = read_json_schema(name);
 
         assert_eq!(
@@ -101,6 +113,7 @@ fn assert_json_type(field: &str, value: &Value, expected_type: &str) {
         "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
         "string" => value.is_string(),
         "object" => value.is_object(),
+        "array" => value.is_array(),
         other => panic!("unsupported test schema type {other} for field {field}"),
     };
 

@@ -12,6 +12,7 @@ Public documentation URL: [spereyra-dev.github.io/oxdoc](https://spereyra-dev.gi
 - Extracts PPTX text from slide text boxes and speaker notes.
 - Converts XLSX worksheets to CSV.
 - Reads core and app metadata from Office documents.
+- Reports factual audit signals for governance and intake workflows.
 - Emits structured warnings for recoverable parser problems.
 - Keeps the CLI simple: extracted data goes to stdout, warnings go to stderr.
 
@@ -36,6 +37,7 @@ oxdoc extract text contrato.docx
 oxdoc extract csv data.xlsx --sheet "Ventas Q1" --delimiter ","
 oxdoc extract csv data.xlsx --sheet-index 2
 oxdoc info report.docx --format json
+oxdoc audit report.docx --format json
 ```
 
 ## Crates
