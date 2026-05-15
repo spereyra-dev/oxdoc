@@ -8,7 +8,7 @@ Fast OOXML extraction without rendering.
 
 ## Status
 
-`oxdoc` is ready for a 1.0 release. The CLI and Rust API now have documented contracts for:
+`oxdoc` has a stable 1.x CLI and Rust API contract for:
 
 - DOCX text extraction from the supported document parts.
 - DOCX logical text semantics for paragraph breaks, table cell and row separation, tabs, line breaks, and deleted revision text handling.
@@ -86,6 +86,22 @@ Install the CLI locally from source:
 ```bash
 cargo install --path crates/oxdoc-cli
 ```
+
+## Performance Benchmarks
+
+`oxdoc` keeps parser performance visible through three reproducible workflows:
+
+```bash
+cargo bench -p oxdoc-core
+make memory-baselines
+make competitor-workbench
+```
+
+- Criterion throughput benches cover DOCX text extraction, dense XLSX CSV extraction, and shared-string-heavy XLSX extraction.
+- Peak-memory baselines measure release CLI RSS on synthetic DOCX, PPTX, and XLSX workloads.
+- The competitive workbench compares `oxdoc` with optional local tools such as Apache Tika, `xlsx2csv`, and Mammoth when they are installed.
+
+See [Performance and Memory](docs/performance.md), [Peak Memory Baselines](docs/performance-memory-baselines.md), and [Competitive Workbench](docs/performance-competitors.md).
 
 ## CLI Usage
 
