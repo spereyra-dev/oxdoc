@@ -28,10 +28,10 @@ Status: in progress.
 
 ## Phase 3: Performance and Memory
 
-- Add benchmarks for cold start, throughput, and peak memory.
-- Expand large XLSX scenarios with shared strings, inline strings, sparse rows, and peak-memory probes.
+- Add benchmarks for cold start and additional throughput scenarios.
+- Expand large XLSX scenarios with inline strings and larger real-world peak-memory probes.
 - Add configurable memory and temporary-file policies for high-volume XLSX extraction.
-- Publish baseline benchmark numbers in release notes.
+- Keep peak-memory baseline numbers current in docs and release notes.
 
 ## Phase 4: Public API
 

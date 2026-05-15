@@ -14,6 +14,7 @@ Public documentation URL: [spereyra-dev.github.io/oxdoc](https://spereyra-dev.gi
 - Reads core and app metadata from Office documents.
 - Reports factual audit signals for governance and intake workflows.
 - Emits structured warnings for recoverable parser problems.
+- Publishes reproducible peak-memory baselines for representative workloads.
 - Keeps the CLI simple: extracted data goes to stdout, warnings go to stderr.
 
 ## What It Does Not Do
