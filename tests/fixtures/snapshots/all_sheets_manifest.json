@@ -1,0 +1,18 @@
+{
+  "oxdoc_version": "1.0.0",
+  "file": "all-sheets.xlsx",
+  "sheets": [
+    {
+      "index": 1,
+      "name": "Sales Q1",
+      "csv_path": "001-sales-q1.csv",
+      "warnings": []
+    },
+    {
+      "index": 2,
+      "name": "Ops/Q1 🚀",
+      "csv_path": "002-ops-q1.csv",
+      "warnings": []
+    }
+  ]
+}

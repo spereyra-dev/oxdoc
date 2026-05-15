@@ -35,6 +35,14 @@ Select the second visible sheet:
 oxdoc extract csv data.xlsx --sheet-index 2
 ```
 
+Export every visible sheet:
+
+```bash
+oxdoc extract csv data.xlsx --all-sheets --output-dir exported-sheets
+```
+
+This writes one CSV file per visible sheet plus `manifest.json` in the output directory. CSV filenames use the visible sheet index plus a sanitized sheet name, for example `001-sales-q1.csv`.
+
 Output:
 
 ```csv
@@ -60,6 +68,8 @@ Sheet indexes are 1-based and count only visible sheets in workbook order. For e
 
 Hidden and very hidden sheets are intentionally skipped by selection. A future explicit opt-in may expose hidden-sheet extraction if a workflow needs it.
 
+`--all-sheets` also skips hidden and very hidden sheets. Its manifest records the visible sheet index, original sheet name, CSV path, recoverable warnings, and any sheet-level export error.
+
 ## Memory Notes
 
 Worksheet XML is streamed to the caller-provided writer. Shared strings use a bounded store: values stay in memory up to an internal threshold and spill to temporary files after that. Temporary files are created in the OS temporary directory and are removed when the extraction finishes or errors.
@@ -70,4 +80,3 @@ The memory bound applies to the shared-string table within the documented ZIP in
 
 - Date, time, and number-format interpretation.
 - Configurable large-file memory and temp-file policies.
-- Multiple-sheet export modes.

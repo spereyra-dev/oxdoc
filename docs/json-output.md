@@ -11,6 +11,7 @@ Machine-readable schemas live under `schemas/v1/` in the repository and are mirr
 | `oxdoc info --format json` | [`schemas/v1/oxdoc-info.schema.json`](schemas/v1/oxdoc-info.schema.json) |
 | `oxdoc extract text --format json` | [`schemas/v1/oxdoc-extract-text.schema.json`](schemas/v1/oxdoc-extract-text.schema.json) |
 | `oxdoc audit --format json` | [`schemas/v1/oxdoc-audit.schema.json`](schemas/v1/oxdoc-audit.schema.json) |
+| `oxdoc extract csv --all-sheets --output-dir <DIR>` manifest | [`schemas/v1/oxdoc-all-sheets-manifest.schema.json`](schemas/v1/oxdoc-all-sheets-manifest.schema.json) |
 
 The `v1` schemas use JSON Schema draft 2020-12, include stable `$id` values, and set `additionalProperties` to `false`. New output fields are introduced through a new schema version instead of silently widening the current contract.
 

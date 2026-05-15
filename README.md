@@ -133,6 +133,12 @@ Select by visible sheet order instead:
 oxdoc extract csv data.xlsx --sheet-index 2
 ```
 
+Export every visible sheet to separate CSV files:
+
+```bash
+oxdoc extract csv data.xlsx --all-sheets --output-dir exported-sheets
+```
+
 Output:
 
 ```csv
