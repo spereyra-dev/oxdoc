@@ -1,3 +1,4 @@
+pub(crate) mod audit;
 pub(crate) mod docx;
 pub(crate) mod metadata;
 pub(crate) mod pptx;

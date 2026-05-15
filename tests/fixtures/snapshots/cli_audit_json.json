@@ -1,0 +1,29 @@
+{
+  "oxdoc_version": "1.0.0",
+  "file": "fixture.xlsx",
+  "document_type": "xlsx",
+  "metadata": {
+    "file": "fixture.xlsx",
+    "has_macros": true
+  },
+  "signals": [
+    {
+      "kind": "macros",
+      "severity": "high",
+      "path": "[Content_Types].xml",
+      "message": "VBA macro content is present or declared"
+    },
+    {
+      "kind": "hidden_sheet",
+      "severity": "warning",
+      "path": "xl/workbook.xml",
+      "message": "worksheet 'Hidden' is hidden"
+    },
+    {
+      "kind": "relationship_target",
+      "severity": "warning",
+      "path": "xl/_rels/workbook.xml.rels",
+      "message": "relationship target 'https://example.invalid/audit' is suspicious: external relationship targets are not supported"
+    }
+  ]
+}

@@ -202,3 +202,30 @@ Output shape:
 ```
 
 Optional fields are omitted from JSON when they are unavailable.
+
+## Audit Document Signals
+
+```bash
+oxdoc audit <FILE> [--format json|text]
+```
+
+Arguments:
+
+| Name | Required | Description |
+| --- | --- | --- |
+| `FILE` | yes | Path to a `.docx`, `.xlsx`, or `.pptx` OOXML package, or `-` to read from stdin. |
+
+Options:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--format json` | `json` | Emit structured audit JSON. |
+| `--format text` | `json` | Emit one field or signal per line. |
+
+Example:
+
+```bash
+oxdoc audit workbook.xlsx --format json
+```
+
+Audit signals are factual findings, not a risk score. Current signals include macros, custom properties, hidden XLSX sheets, suspicious relationship targets, and recoverable parser warnings.

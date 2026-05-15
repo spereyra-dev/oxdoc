@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v1/oxdoc-audit.schema.json",
+  "title": "oxdoc audit JSON output",
+  "description": "Schema for `oxdoc audit --format json` output in oxdoc schema version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["oxdoc_version", "file", "document_type", "metadata", "signals"],
+  "properties": {
+    "oxdoc_version": {
+      "type": "string",
+      "description": "Version of the oxdoc CLI that produced the JSON payload."
+    },
+    "file": {
+      "type": "string",
+      "description": "File name derived from the provided input path."
+    },
+    "document_type": {
+      "type": "string",
+      "enum": ["docx", "pptx", "xlsx", "unknown"],
+      "description": "Detected OOXML document type."
+    },
+    "metadata": {
+      "type": "object",
+      "$ref": "#/$defs/documentInfo"
+    },
+    "signals": {
+      "type": "array",
+      "description": "Factual audit findings.",
+      "items": {
+        "$ref": "#/$defs/auditSignal"
+      }
+    }
+  },
+  "$defs": {
+    "documentInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "has_macros"],
+      "properties": {
+        "file": { "type": "string" },
+        "author": { "type": "string" },
+        "last_modified_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "modified_at": { "type": "string", "format": "date-time" },
+        "application": { "type": "string" },
+        "company": { "type": "string" },
+        "custom_properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "has_macros": { "type": "boolean" },
+        "word_count": { "type": "integer", "minimum": 0 },
+        "page_count": { "type": "integer", "minimum": 0 },
+        "slide_count": { "type": "integer", "minimum": 0 },
+        "worksheet_count": { "type": "integer", "minimum": 0 },
+        "revision": { "type": "string" }
+      }
+    },
+    "auditSignal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "severity", "path", "message"],
+      "properties": {
+        "kind": { "type": "string" },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warning", "high"]
+        },
+        "path": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

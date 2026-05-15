@@ -856,6 +856,85 @@ fn keeps_partial_metadata_and_warns_on_malformed_custom_parts() {
 }
 
 #[test]
+fn reads_audit_signals_through_public_api() {
+    let file = create_ooxml(
+        "audit-signals.xlsm",
+        &[
+            (
+                "[Content_Types].xml",
+                r#"<Types><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/vbaProject.bin" ContentType="application/vnd.ms-office.vbaProject"/></Types>"#,
+            ),
+            (
+                "docProps/custom.xml",
+                r#"<Properties xmlns:vt="vt"><property name="Department"><vt:lpwstr>Finance</vt:lpwstr></property></Properties>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Visible" sheetId="1" r:id="rId1"/><sheet name="Hidden" sheetId="2" state="hidden" r:id="rId2"/><sheet name="Very Hidden" sheetId="3" state="veryHidden" r:id="rId3"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rIdExternal" Type="hyperlink" TargetMode="External" Target="https://example.invalid/model"/></Relationships>"#,
+            ),
+            ("xl/vbaProject.bin", "macro bytes"),
+        ],
+    );
+
+    let extraction = oxdoc_core::read_audit(&file).unwrap();
+    let audit = extraction.value;
+
+    assert_eq!(audit.document_type, "xlsx");
+    assert!(audit.metadata.has_macros);
+    assert_eq!(
+        audit
+            .metadata
+            .custom_properties
+            .as_ref()
+            .and_then(|props| props.get("Department"))
+            .map(String::as_str),
+        Some("Finance")
+    );
+    assert_signal(&audit.signals, "macros", "high", "VBA macro");
+    assert_signal(
+        &audit.signals,
+        "custom_properties",
+        "info",
+        "custom document properties",
+    );
+    assert_signal(&audit.signals, "hidden_sheet", "warning", "Hidden");
+    assert_signal(&audit.signals, "hidden_sheet", "warning", "Very Hidden");
+    assert_signal(
+        &audit.signals,
+        "relationship_target",
+        "warning",
+        "https://example.invalid/model",
+    );
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn audit_keeps_recoverable_parser_warnings_as_signals() {
+    let file = create_ooxml(
+        "audit-warning.docx",
+        &[(
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="cp" xmlns:dc="dc"><dc:creator>Ada</dc:creator><"#,
+        )],
+    );
+
+    let extraction = oxdoc_core::read_audit(&file).unwrap();
+
+    assert_eq!(extraction.value.metadata.author.as_deref(), Some("Ada"));
+    assert_eq!(extraction.warnings.len(), 1);
+    assert_signal(
+        &extraction.value.signals,
+        "parser_warning",
+        "warning",
+        "W001",
+    );
+}
+
+#[test]
 fn reports_missing_zip_entry_through_vfs() {
     let file = File::open(create_ooxml("missing-entry.docx", &[])).unwrap();
     let mut package = OoxmlPackage::new(file).unwrap();
@@ -864,6 +943,22 @@ fn reports_missing_zip_entry_through_vfs() {
 
     assert_eq!(err.code().as_str(), "E003");
     assert!(matches!(err, OxdocError::MissingPart(part) if part == "word/document.xml"));
+}
+
+fn assert_signal(
+    signals: &[oxdoc_core::AuditSignal],
+    kind: &str,
+    severity: &str,
+    message_contains: &str,
+) {
+    assert!(
+        signals.iter().any(|signal| {
+            signal.kind == kind
+                && signal.severity == severity
+                && signal.message.contains(message_contains)
+        }),
+        "missing signal kind={kind} severity={severity} containing {message_contains:?}: {signals:#?}"
+    );
 }
 
 #[test]

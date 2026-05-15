@@ -9,6 +9,7 @@
   - [PPTX Text Extraction](formats/pptx.md)
   - [XLSX CSV Extraction](formats/xlsx.md)
   - [Metadata Extraction](formats/metadata.md)
+  - [Audit Signals](audit.md)
   - [JSON Output](json-output.md)
   - [Library API](library-api.md)
 

@@ -26,7 +26,8 @@ use std::path::Path;
 
 pub use error::{OxdocError, Result};
 pub use models::{
-    DocumentInfo, DocumentType, Extraction, OutputWarning, XlsxCsvOptions, XlsxSheet,
+    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, Extraction, OutputWarning,
+    XlsxCsvOptions, XlsxSheet,
 };
 #[doc(hidden)]
 pub use parsers::docx::fuzz_extract_text as fuzz_docx_text;
@@ -121,4 +122,24 @@ pub fn read_info_from_reader<R: Read + Seek>(
 ) -> Result<Extraction<DocumentInfo>> {
     let mut package = OoxmlPackage::new(reader)?;
     metadata::read_info(&mut package, file_name.into())
+}
+
+pub fn read_audit(path: impl AsRef<Path>) -> Result<Extraction<DocumentAudit>> {
+    let path = path.as_ref();
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_owned();
+
+    let file = File::open(path)?;
+    read_audit_from_reader(file, file_name)
+}
+
+pub fn read_audit_from_reader<R: Read + Seek>(
+    reader: R,
+    file_name: impl Into<String>,
+) -> Result<Extraction<DocumentAudit>> {
+    let mut package = OoxmlPackage::new(reader)?;
+    parsers::audit::read_audit(&mut package, file_name.into())
 }

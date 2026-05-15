@@ -116,6 +116,31 @@ Returns:
 Extraction<DocumentInfo>
 ```
 
+### `read_audit`
+
+```rust
+use oxdoc_core::read_audit;
+
+fn main() -> oxdoc_core::Result<()> {
+    let extraction = read_audit("report.docx")?;
+    for signal in extraction.value.signals {
+        println!(
+            "{} {} {}: {}",
+            signal.severity, signal.kind, signal.path, signal.message
+        );
+    }
+    Ok(())
+}
+```
+
+Returns:
+
+```rust
+Extraction<DocumentAudit>
+```
+
+Audit signals are factual findings for intake and governance workflows, such as macros, custom properties, hidden XLSX sheets, suspicious relationship targets, and recoverable parser warnings.
+
 ## `Read + Seek` Entry Points
 
 Embedding applications can pass any `Read + Seek` source, such as `std::fs::File`, `std::io::Cursor<Vec<u8>>`, or a seekable in-memory buffer:
@@ -125,7 +150,7 @@ use std::io::Cursor;
 
 use oxdoc_core::{
     extract_docx_text_from_reader, extract_pptx_text_from_reader, extract_xlsx_csv_from_reader,
-    read_info_from_reader, XlsxCsvOptions,
+    read_audit_from_reader, read_info_from_reader, XlsxCsvOptions,
 };
 
 fn main() -> oxdoc_core::Result<()> {
@@ -145,11 +170,15 @@ fn main() -> oxdoc_core::Result<()> {
     let info = read_info_from_reader(Cursor::new(info_bytes), "deck.pptx")?;
     println!("{:#?}", info.value);
 
+    let audit_bytes = std::fs::read("report.docx")?;
+    let audit = read_audit_from_reader(Cursor::new(audit_bytes), "report.docx")?;
+    println!("{:#?}", audit.value.signals);
+
     Ok(())
 }
 ```
 
-The reader APIs return the same `Extraction<T>` and `OxdocError` values as the path helpers. `read_info_from_reader` requires a display file name because no filesystem path is available for deriving `DocumentInfo.file`.
+The reader APIs return the same `Extraction<T>` and `OxdocError` values as the path helpers. `read_info_from_reader` and `read_audit_from_reader` require a display file name because no filesystem path is available for deriving output file fields.
 
 ### Document type and sheets
 
@@ -248,5 +277,27 @@ pub struct DocumentInfo {
     pub slide_count: Option<u64>,
     pub worksheet_count: Option<u64>,
     pub revision: Option<String>,
+}
+```
+
+### `DocumentAudit`
+
+```rust
+pub struct DocumentAudit {
+    pub file: String,
+    pub document_type: String,
+    pub metadata: DocumentInfo,
+    pub signals: Vec<AuditSignal>,
+}
+```
+
+### `AuditSignal`
+
+```rust
+pub struct AuditSignal {
+    pub kind: String,
+    pub severity: String,
+    pub path: String,
+    pub message: String,
 }
 ```

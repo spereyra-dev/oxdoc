@@ -198,6 +198,38 @@ pub struct DocumentInfo {
     pub revision: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct DocumentAudit {
+    pub file: String,
+    pub document_type: String,
+    pub metadata: DocumentInfo,
+    pub signals: Vec<AuditSignal>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AuditSignal {
+    pub kind: String,
+    pub severity: String,
+    pub path: String,
+    pub message: String,
+}
+
+impl AuditSignal {
+    pub fn new(
+        kind: impl Into<String>,
+        severity: impl Into<String>,
+        path: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind: kind.into(),
+            severity: severity.into(),
+            path: path.into(),
+            message: message.into(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCsvOptions};

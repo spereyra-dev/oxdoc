@@ -93,6 +93,18 @@ impl<R: Read + Seek> OoxmlPackage<R> {
     pub fn contains_any(&mut self, paths: &[&str]) -> bool {
         paths.iter().any(|path| self.contains(path))
     }
+
+    pub fn part_names(&mut self) -> Vec<String> {
+        (0..self.archive.len())
+            .filter_map(|index| {
+                self.archive.by_index(index).ok().and_then(|entry| {
+                    entry
+                        .enclosed_name()
+                        .and_then(|path| path.to_str().map(str::to_owned))
+                })
+            })
+            .collect()
+    }
 }
 
 struct LimitedEntryReader<'a, R: Read + ?Sized> {

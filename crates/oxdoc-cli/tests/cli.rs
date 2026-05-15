@@ -492,6 +492,69 @@ fn prints_info_as_json_and_text() {
 }
 
 #[test]
+fn prints_audit_as_json_and_text() {
+    let workbook = create_ooxml(
+        "audit.xlsm",
+        &[
+            (
+                "[Content_Types].xml",
+                r#"<Types><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/vbaProject.bin" ContentType="application/vnd.ms-office.vbaProject"/></Types>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Visible" sheetId="1" r:id="rId1"/><sheet name="Hidden" sheetId="2" state="hidden" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rLink" Type="hyperlink" TargetMode="External" Target="https://example.invalid/audit"/></Relationships>"#,
+            ),
+            ("xl/vbaProject.bin", "macro bytes"),
+        ],
+    );
+
+    let json = oxdoc(["audit", workbook.to_str().unwrap(), "--format", "json"]);
+    let text = oxdoc(["audit", workbook.to_str().unwrap(), "--format", "text"]);
+
+    assert!(json.status.success());
+    assert!(stderr(&json).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&json)).unwrap();
+    assert_eq!(actual["oxdoc_version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(actual["document_type"], "xlsx");
+    assert_eq!(actual["metadata"]["has_macros"], true);
+    assert_json_signal(&actual, "macros", "high", "VBA macro");
+    assert_json_signal(&actual, "hidden_sheet", "warning", "Hidden");
+    assert_json_signal(
+        &actual,
+        "relationship_target",
+        "warning",
+        "https://example.invalid/audit",
+    );
+
+    assert!(text.status.success());
+    assert!(stderr(&text).is_empty());
+    let text_stdout = stdout(&text);
+    assert!(text_stdout.contains("document_type: xlsx"));
+    assert!(text_stdout.contains("has_macros: true"));
+    assert!(text_stdout.contains("signal: high macros"));
+}
+
+#[test]
+fn reads_audit_from_stdin() {
+    let pptx = fixtures::build_package("pptx/basic", "stdin-audit.pptx");
+
+    let output = oxdoc_with_stdin(
+        ["audit", "-", "--format", "json"],
+        &fs::read(&pptx).unwrap(),
+    );
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual["file"], "<stdin>");
+    assert_eq!(actual["document_type"], "pptx");
+}
+
+#[test]
 fn reports_missing_files() {
     let missing = unique_path("missing.docx");
 
@@ -914,6 +977,20 @@ fn json_warning_lines(output: &std::process::Output) -> Vec<Value> {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
+}
+
+fn assert_json_signal(output: &Value, kind: &str, severity: &str, message_contains: &str) {
+    let signals = output["signals"].as_array().unwrap();
+    assert!(
+        signals.iter().any(|signal| {
+            signal["kind"] == kind
+                && signal["severity"] == severity
+                && signal["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains(message_contains))
+        }),
+        "missing JSON signal kind={kind} severity={severity} containing {message_contains:?}: {signals:#?}"
+    );
 }
 
 fn create_ooxml(name: &str, entries: &[(&str, &str)]) -> PathBuf {

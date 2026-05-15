@@ -10,6 +10,7 @@ Reusable OOXML extraction library for `oxdoc`.
 - Extract PPTX plain text from slide text boxes and speaker notes.
 - Stream XLSX worksheet data to a caller-owned CSV writer.
 - Read core and app metadata from OOXML packages.
+- Read factual audit signals for governance and intake workflows.
 - Use path helpers or `Read + Seek` entry points for embedding.
 - Return stable error codes through `OxdocError`.
 - Return recoverable parser/data warnings alongside successful output.

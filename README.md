@@ -177,6 +177,14 @@ Text output is also available:
 oxdoc info report.docx --format text
 ```
 
+### Audit Document Signals
+
+```bash
+oxdoc audit report.docx --format json
+```
+
+Audit output reports factual document intake signals such as macros, custom properties, suspicious relationship targets, hidden XLSX sheets, and recoverable parser warnings. It does not render, mutate, or assign risk scores to documents.
+
 ## Workspace Layout
 
 ```text
@@ -229,6 +237,7 @@ The command-line application. It owns:
 | PPTX text | Slide text boxes and linked speaker notes in presentation order. |
 | XLSX CSV | Workbook relationship lookup, visible sheet name/index selection, shared strings, inline strings, sparse cells, booleans, errors, cached formula values, CSV escaping. |
 | Metadata | Core/app properties plus basic macro detection. |
+| Audit | Factual signals for macros, custom properties, suspicious relationships, hidden XLSX sheets, and recoverable parser warnings. |
 | Output | Plain text, CSV, JSON metadata, JSON text extraction. |
 | Errors | Typed library errors, CLI non-zero hard failures. |
 | Warnings | Recoverable parser warnings with OOXML part paths. |
