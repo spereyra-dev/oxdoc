@@ -48,6 +48,7 @@ Key documentation pages:
 - [OOXML Model](docs/ooxml-model.md)
 - [Errors and Warnings](docs/errors-and-warnings.md)
 - [Performance and Memory](docs/performance.md)
+- [Peak Memory Baselines](docs/performance-memory-baselines.md)
 - [Testing Strategy](docs/testing.md)
 - [Roadmap](docs/roadmap.md)
 - [Security](docs/security.md)
@@ -329,7 +330,7 @@ The test suite combines parser unit tests, fixture corpus tests, and versioned s
 - Application-generated `.docx`, `.xlsx`, and `.pptx` fixtures with provenance.
 - Snapshot tests for core parser APIs and CLI output.
 - Fuzz targets for XML parser paths.
-- Performance benchmarks for cold start, throughput, and peak memory.
+- Performance benchmarks for throughput and peak memory.
 
 See [docs/testing.md](docs/testing.md).
 

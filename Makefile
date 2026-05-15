@@ -9,7 +9,7 @@ DOCS_PORT ?= 3000
 COVERAGE_THRESHOLD ?= 95
 
 .PHONY: help all ci ci-rust prepare-commit pre-push scripts-test
-.PHONY: fmt fmt-check check clippy lint test doctest coverage coverage-html coverage-lcov audit
+.PHONY: fmt fmt-check check clippy lint test doctest coverage coverage-html coverage-lcov audit memory-baselines
 .PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check install-tools clean clean-coverage
 
 help:
@@ -23,6 +23,7 @@ help:
 	@echo "  make doctest          Run Rust doctests"
 	@echo "  make audit            Check Cargo.lock for RustSec advisories"
 	@echo "  make coverage         Enforce line coverage >= $(COVERAGE_THRESHOLD)%"
+	@echo "  make memory-baselines Generate peak-memory benchmark baselines"
 	@echo "  make coverage-html    Generate HTML coverage report"
 	@echo "  make coverage-lcov    Generate LCOV coverage report"
 	@echo "  make ci-rust          Run the Rust gates used by GitHub Actions"
@@ -67,6 +68,7 @@ doctest:
 
 scripts-test:
 	sh -n install.sh tests/install.sh scripts/render-homebrew-formula.sh tests/homebrew_formula.sh
+	python3 -m py_compile scripts/peak-memory-baselines.py
 	sh tests/install.sh
 	sh tests/homebrew_formula.sh
 
@@ -84,6 +86,9 @@ coverage-lcov:
 	@mkdir -p target/coverage
 	$(CARGO) llvm-cov --workspace --all-features --all-targets --lcov --output-path target/coverage/lcov.info
 	@echo "Coverage report: target/coverage/lcov.info"
+
+memory-baselines:
+	python3 scripts/peak-memory-baselines.py --iterations 3 --output docs/performance-memory-baselines.md
 
 build:
 	$(CARGO) build --workspace --all-features $(TARGET_FLAG)

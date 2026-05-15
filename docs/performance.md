@@ -35,7 +35,7 @@ Shared-string temporary files are created in the OS temporary directory and remo
 
 Default ZIP part guardrails still apply. Large shared-string tables must fit within the configured OOXML part limits and pass compression-ratio checks; bounded memory is not a bypass for suspicious or oversized ZIP input.
 
-## Benchmarking Plan
+## Throughput Benchmarks
 
 The repository now carries an initial reproducible Criterion suite for parser
 throughput. Run it locally with:
@@ -67,20 +67,53 @@ event parsing, and the returned `String` allocation. The XLSX benchmark includes
 ZIP package opening, workbook and workbook relationship parsing, worksheet XML
 event parsing, shared-string lookup, CSV escaping, and writing to a `Vec<u8>`.
 
-### Benchmark Limits
+## Peak Memory Benchmarks
 
-These benchmarks are intended as a stable starting baseline, not a complete
-performance model. They do not yet measure CLI cold start, malformed-input
-latency, or peak resident memory. Criterion reports timing and throughput, but
-it does not report peak memory; use an external profiler or platform tool when
-validating large-file memory behavior.
+Peak-memory baselines are generated with [`scripts/peak-memory-baselines.py`](../scripts/peak-memory-baselines.py). The script builds the release CLI, creates synthetic OOXML files in a temporary directory, runs each extraction under `/usr/bin/time`, and records peak resident set size.
 
-Future benchmarks should cover:
+Run the workflow with:
+
+```bash
+make memory-baselines
+```
+
+For a quicker local smoke run, use one sample:
+
+```bash
+python3 scripts/peak-memory-baselines.py --iterations 1 --output docs/performance-memory-baselines.md
+```
+
+The workflow supports macOS and Linux:
+
+- macOS uses `/usr/bin/time -l` and reports `maximum resident set size` in bytes.
+- Linux uses `/usr/bin/time -v` and reports `Maximum resident set size (kbytes)`.
+- The committed baseline records platform, architecture, Python, Rust, binary path, sample count, fixture size, output size, and peak RSS MiB.
+
+Current cases:
+
+| Case | Covers |
+| --- | --- |
+| `docx-text-256kb` | DOCX text extraction over a synthetic document with 256 KiB extracted text. |
+| `pptx-text-256kb` | PPTX slide text extraction over 256 synthetic slides. |
+| `xlsx-shared-strings-spill` | Shared-string-heavy XLSX extraction past the spill-to-disk threshold. |
+| `xlsx-wide-sparse` | XLSX rows with sparse far-right cells that force row padding. |
+
+Published baseline numbers live in [Peak Memory Baselines](performance-memory-baselines.md).
+
+### Regression Guidance
+
+Use at least three samples (`--iterations 3`) before treating a memory change as a regression. Compare the median `Peak RSS MiB` for the same machine class, OS, Rust version, and fixture sizes.
+
+Investigate changes when a case grows by more than 20% or by more than 8 MiB, whichever is larger. Expected reasons for an increase include larger fixture parameters, new output buffering, higher shared-string memory thresholds, additional workbook metadata retained in memory, or ZIP library behavior changes.
+
+Do not compare macOS and Linux numbers directly; their RSS accounting differs. Treat each platform as its own baseline family.
+
+### Remaining Gaps
+
+These benchmarks are a stable starting baseline, not a complete performance model. Future work should cover:
 
 - CLI cold start.
-- DOCX throughput by input size.
-- XLSX throughput by row count, shared-string count, and very wide rows.
-- Peak memory on large worksheets.
 - Corrupt-input behavior.
+- Larger real-world fixture classes once redistribution rights are clear.
 
 Benchmark results should be tracked in release notes once a baseline exists.
