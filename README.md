@@ -91,6 +91,12 @@ cargo install --path crates/oxdoc-cli
 
 `oxdoc` keeps parser performance visible through three reproducible workflows:
 
+| Workflow | Command | What it tells you |
+| --- | --- | --- |
+| Library throughput | `cargo bench -p oxdoc-core` | In-process parser throughput for DOCX text and XLSX CSV paths. |
+| Peak memory | `make memory-baselines` | Release CLI peak RSS on synthetic DOCX, PPTX, and XLSX workloads. |
+| Competitive workbench | `make competitor-workbench` | Full CLI wall time and peak RSS against optional local extraction tools. |
+
 ```bash
 cargo bench -p oxdoc-core
 make memory-baselines
@@ -100,6 +106,14 @@ make competitor-workbench
 - Criterion throughput benches cover DOCX text extraction, dense XLSX CSV extraction, and shared-string-heavy XLSX extraction.
 - Peak-memory baselines measure release CLI RSS on synthetic DOCX, PPTX, and XLSX workloads.
 - The competitive workbench compares `oxdoc` with optional local tools such as Apache Tika, `xlsx2csv`, and Mammoth when they are installed.
+
+Comparable tools covered by the workbench:
+
+| Tool | Compared cases | Notes |
+| --- | --- | --- |
+| Apache Tika | DOCX and PPTX text extraction | Broad document extraction framework; useful as the general-purpose baseline. |
+| `xlsx2csv` | XLSX dense, sparse, and shared-string CSV extraction | Closest direct XLSX-to-CSV comparison. |
+| Mammoth | DOCX extraction | DOCX-focused converter; output shape differs from plain-text extraction. |
 
 See [Performance and Memory](docs/performance.md), [Peak Memory Baselines](docs/performance-memory-baselines.md), and [Competitive Workbench](docs/performance-competitors.md).
 
