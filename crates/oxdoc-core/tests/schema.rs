@@ -3,7 +3,7 @@ use serde_json::Value;
 #[test]
 fn representative_info_json_matches_schema() {
     let schema = read_json_schema("oxdoc-info.schema.json");
-    let output = serde_json::from_str(&read_snapshot("pptx_basic_info.json")).unwrap();
+    let output = serde_json::from_str(&read_snapshot("cli_info_json.json")).unwrap();
 
     validate_object(&schema, &output);
 }

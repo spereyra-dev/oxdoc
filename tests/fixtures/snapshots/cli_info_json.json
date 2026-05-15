@@ -1,0 +1,13 @@
+{
+  "oxdoc_version": "1.0.0",
+  "file": "fixture.pptx",
+  "author": "Ada",
+  "last_modified_by": "Linus",
+  "created_at": "2024-03-12T10:00:00Z",
+  "modified_at": "2024-03-13T10:00:00Z",
+  "application": "Impress",
+  "company": "Example Corp",
+  "has_macros": false,
+  "slide_count": 1,
+  "revision": "12"
+}

@@ -5,8 +5,12 @@
   "description": "Schema for `oxdoc info --format json` output in oxdoc schema version 1.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["file", "has_macros"],
+  "required": ["oxdoc_version", "file", "has_macros"],
   "properties": {
+    "oxdoc_version": {
+      "type": "string",
+      "description": "Version of the oxdoc CLI that produced the JSON payload."
+    },
     "file": {
       "type": "string",
       "description": "File name derived from the provided input path."
