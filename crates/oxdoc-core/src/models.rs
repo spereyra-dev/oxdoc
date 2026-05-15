@@ -123,6 +123,24 @@ pub enum DocumentType {
 pub struct XlsxSheet {
     pub index: usize,
     pub name: String,
+    pub visibility: XlsxSheetVisibility,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XlsxSheetVisibility {
+    Visible,
+    Hidden,
+    VeryHidden,
+}
+
+impl XlsxSheetVisibility {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Visible => "visible",
+            Self::Hidden => "hidden",
+            Self::VeryHidden => "veryHidden",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -192,6 +210,7 @@ impl<T> Extraction<T> {
 pub struct XlsxCsvOptions<'a> {
     pub sheet_name: Option<&'a str>,
     pub sheet_index: Option<usize>,
+    pub include_hidden: bool,
     pub delimiter: u8,
 }
 
@@ -200,6 +219,7 @@ impl Default for XlsxCsvOptions<'_> {
         Self {
             sheet_name: None,
             sheet_index: None,
+            include_hidden: false,
             delimiter: b',',
         }
     }
@@ -320,6 +340,7 @@ mod tests {
 
         assert_eq!(options.sheet_name, None);
         assert_eq!(options.sheet_index, None);
+        assert!(!options.include_hidden);
         assert_eq!(options.delimiter, b',');
     }
 }

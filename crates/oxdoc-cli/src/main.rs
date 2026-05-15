@@ -81,16 +81,21 @@ enum ExtractCommand {
         #[arg(
             long,
             conflicts_with_all = ["sheet", "sheet_index", "all_sheets", "output_dir"],
-            help = "List visible workbook sheets and exit"
+            help = "List workbook sheets and exit"
         )]
         list_sheets: bool,
         #[arg(
             long,
             conflicts_with_all = ["sheet", "sheet_index", "list_sheets", "output"],
             requires = "output_dir",
-            help = "Export every visible workbook sheet to separate CSV files"
+            help = "Export workbook sheets to separate CSV files"
         )]
         all_sheets: bool,
+        #[arg(
+            long,
+            help = "Include hidden and very hidden workbook sheets in listing or extraction"
+        )]
+        include_hidden: bool,
         #[arg(long, default_value = ",")]
         delimiter: String,
         #[arg(long, value_enum, default_value_t = CliXlsxValueMode::Raw)]
@@ -171,6 +176,7 @@ fn run() -> Result<(), CliError> {
                 sheet_index,
                 list_sheets,
                 all_sheets,
+                include_hidden,
                 delimiter,
                 value_mode,
                 output,
@@ -184,6 +190,7 @@ fn run() -> Result<(), CliError> {
                         sheet_index,
                         list_sheets,
                         all_sheets,
+                        include_hidden,
                         delimiter,
                         value_mode: value_mode.into(),
                         output: output.as_deref(),
@@ -403,6 +410,7 @@ struct CsvCommandOptions<'a> {
     sheet_index: Option<usize>,
     list_sheets: bool,
     all_sheets: bool,
+    include_hidden: bool,
     delimiter: u8,
     value_mode: XlsxValueMode,
     output: Option<&'a Path>,
@@ -433,6 +441,7 @@ fn extract_csv_command(
             output_dir,
             options.delimiter,
             options.value_mode,
+            options.include_hidden,
             warning_format,
         );
     }
@@ -443,10 +452,20 @@ fn extract_csv_command(
 
     for file in options.files {
         let result = if options.list_sheets {
-            match list_xlsx_sheets(file) {
+            match list_xlsx_sheets(file, options.include_hidden) {
                 Ok(sheets) => {
                     for sheet in &sheets.value {
-                        writeln!(writer, "{}: {}", sheet.index, sheet.name)?;
+                        if options.include_hidden {
+                            writeln!(
+                                writer,
+                                "{}: {} ({})",
+                                sheet.index,
+                                sheet.name,
+                                sheet.visibility.as_str()
+                            )?;
+                        } else {
+                            writeln!(writer, "{}: {}", sheet.index, sheet.name)?;
+                        }
                     }
                     Ok(sheets.map(|_| ()))
                 }
@@ -458,6 +477,7 @@ fn extract_csv_command(
                 XlsxCsvOptions {
                     sheet_name: options.sheet_name,
                     sheet_index: options.sheet_index,
+                    include_hidden: options.include_hidden,
                     delimiter: options.delimiter,
                 },
                 options.value_mode,
@@ -490,10 +510,11 @@ fn export_all_sheets(
     output_dir: &Path,
     delimiter: u8,
     value_mode: XlsxValueMode,
+    include_hidden: bool,
     warning_format: WarningFormat,
 ) -> Result<(), CliError> {
     fs::create_dir_all(output_dir)?;
-    let sheets = list_xlsx_sheets(file)?;
+    let sheets = list_xlsx_sheets(file, include_hidden)?;
     emit_warnings(&sheets.warnings, warning_format);
 
     let mut manifest = AllSheetsManifest {
@@ -512,6 +533,7 @@ fn export_all_sheets(
             XlsxCsvOptions {
                 sheet_name: None,
                 sheet_index: Some(sheet.index),
+                include_hidden,
                 delimiter,
             },
             value_mode,
@@ -523,6 +545,7 @@ fn export_all_sheets(
                 emit_warnings(&result.warnings, warning_format);
                 manifest.sheets.push(ExportedSheetManifest {
                     index: sheet.index,
+                    visibility: sheet.visibility.as_str(),
                     name: sheet.name,
                     csv_path: csv_file_name,
                     warnings: result
@@ -537,6 +560,7 @@ fn export_all_sheets(
                 failures += 1;
                 manifest.sheets.push(ExportedSheetManifest {
                     index: sheet.index,
+                    visibility: sheet.visibility.as_str(),
                     name: sheet.name,
                     csv_path: csv_file_name,
                     warnings: Vec::new(),
@@ -590,9 +614,12 @@ fn extract_csv<W: Write>(
 
 fn list_xlsx_sheets(
     file: &Path,
+    include_hidden: bool,
 ) -> Result<oxdoc_core::Extraction<Vec<oxdoc_core::XlsxSheet>>, CliError> {
     let input = read_input(file)?;
-    input.list_xlsx_sheets().map_err(CliError::Core)
+    input
+        .list_xlsx_sheets(include_hidden)
+        .map_err(CliError::Core)
 }
 
 fn read_info(file: &Path) -> Result<oxdoc_core::Extraction<DocumentInfo>, CliError> {
@@ -672,10 +699,14 @@ impl Input {
 
     fn list_xlsx_sheets(
         &self,
+        include_hidden: bool,
     ) -> oxdoc_core::Result<oxdoc_core::Extraction<Vec<oxdoc_core::XlsxSheet>>> {
         match self {
-            Input::Path(path) => oxdoc_core::list_xlsx_sheets(path),
-            Input::Stdin(bytes) => oxdoc_core::list_xlsx_sheets_from_reader(Cursor::new(bytes)),
+            Input::Path(path) => oxdoc_core::list_xlsx_sheets_with_hidden(path, include_hidden),
+            Input::Stdin(bytes) => oxdoc_core::list_xlsx_sheets_from_reader_with_hidden(
+                Cursor::new(bytes),
+                include_hidden,
+            ),
         }
     }
 
@@ -956,6 +987,7 @@ struct AllSheetsManifest {
 #[derive(Debug, serde::Serialize)]
 struct ExportedSheetManifest {
     index: usize,
+    visibility: &'static str,
     name: String,
     csv_path: String,
     warnings: Vec<ManifestWarning>,
