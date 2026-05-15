@@ -37,7 +37,7 @@ JSON warning records include stable machine-readable fields:
 ## Extract DOCX or PPTX Text
 
 ```bash
-oxdoc extract text <FILES>... [--format text|json] [-o <PATH>]
+oxdoc extract text <FILES>... [--format text|json|jsonl|structured-json] [-o <PATH>]
 ```
 
 Arguments:
@@ -53,6 +53,7 @@ Options:
 | `--format text` | `text` | Emit plain text. |
 | `--format json` | `text` | Emit a JSON object with `file` and `text`; with multiple files, emit a JSON array. |
 | `--format jsonl` | `text` | Emit one JSON object per input file, suitable for streaming batch ingestion. |
+| `--format structured-json` | `text` | Emit source-aware text blocks with OOXML part metadata. |
 | `--output <PATH>`, `-o <PATH>` | stdout | Write extraction output to a file. |
 
 Example:
@@ -95,6 +96,31 @@ oxdoc extract text *.docx --format jsonl
 ```
 
 Each JSONL line contains `file`, `document_type`, and either `text` or `error`. Recoverable parser warnings are embedded in the line as `warnings` and can also be emitted to stderr according to the global `--warnings` setting. Per-file extraction failures are represented as error records and later files continue processing.
+
+Structured JSON example:
+
+```bash
+oxdoc extract text contrato.docx --format structured-json
+```
+
+Output shape:
+
+```json
+{
+  "file": "contrato.docx",
+  "document_type": "docx",
+  "blocks": [
+    {
+      "part_type": "main",
+      "part_path": "word/document.xml",
+      "ordinal": 1,
+      "text": "Plain text..."
+    }
+  ]
+}
+```
+
+Plain text output flattens all supported text-bearing parts into a single stream. Structured output keeps each non-empty source part separate. DOCX blocks can come from `main`, `header`, `footer`, `footnotes`, `endnotes`, or `comments`; PPTX blocks can come from `slide` and speaker `notes`.
 
 Warnings are still written to stderr when regular JSON output is selected. They are not embedded in the JSON payload. Use `--warnings json` when a pipeline needs machine-readable warning records.
 

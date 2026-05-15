@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v1/oxdoc-structured-text.schema.json",
+  "title": "oxdoc structured text JSON output",
+  "description": "Schema for `oxdoc extract text --format structured-json` output in oxdoc schema version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["file", "document_type", "blocks"],
+  "properties": {
+    "file": {
+      "type": "string",
+      "description": "File name derived from the provided input path."
+    },
+    "document_type": {
+      "type": "string",
+      "enum": ["docx", "pptx"],
+      "description": "Detected text-bearing OOXML document type."
+    },
+    "blocks": {
+      "type": "array",
+      "description": "Ordered non-empty text blocks with source part metadata.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["part_type", "part_path", "ordinal", "text"],
+        "properties": {
+          "part_type": {
+            "type": "string",
+            "description": "Logical source kind, such as main, header, footer, footnotes, endnotes, comments, slide, or notes."
+          },
+          "part_path": {
+            "type": "string",
+            "description": "OOXML package part path that produced this text block."
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based output order of this block."
+          },
+          "text": {
+            "type": "string",
+            "description": "Extracted text for this source block."
+          }
+        }
+      }
+    }
+  }
+}

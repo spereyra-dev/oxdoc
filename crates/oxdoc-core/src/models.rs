@@ -125,6 +125,36 @@ pub struct XlsxSheet {
     pub name: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct StructuredText {
+    pub document_type: String,
+    pub blocks: Vec<TextBlock>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TextBlock {
+    pub part_type: String,
+    pub part_path: String,
+    pub ordinal: usize,
+    pub text: String,
+}
+
+impl TextBlock {
+    pub fn new(
+        part_type: impl Into<String>,
+        part_path: impl Into<String>,
+        ordinal: usize,
+        text: impl Into<String>,
+    ) -> Self {
+        Self {
+            part_type: part_type.into(),
+            part_path: part_path.into(),
+            ordinal,
+            text: text.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum XlsxValueMode {
     #[default]

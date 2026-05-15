@@ -41,6 +41,12 @@ JSONL output is available for streaming batch ingestion:
 cargo run -p oxdoc-cli -- extract text *.docx --format jsonl
 ```
 
+Structured JSON keeps source-part metadata:
+
+```bash
+cargo run -p oxdoc-cli -- extract text contrato.docx --format structured-json
+```
+
 ## Convert XLSX to CSV
 
 ```bash

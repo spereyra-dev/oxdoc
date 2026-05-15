@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Read, Seek};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use crate::models::{Extraction, OutputWarning};
+use crate::models::{Extraction, OutputWarning, StructuredText, TextBlock};
 use crate::parsers::find_office_document_path;
 use crate::parsers::{
     decode_xml_reference, decode_xml_text, name_eq, parent_dir, parse_relationships, rels_path_for,
@@ -55,6 +55,64 @@ pub(crate) fn extract_text<R: Read + Seek>(
     Ok(Extraction::with_warnings(text, warnings))
 }
 
+pub(crate) fn extract_structured_text<R: Read + Seek>(
+    package: &mut OoxmlPackage<R>,
+) -> Result<Extraction<StructuredText>> {
+    let document_path = find_office_document_path(package, "word/document.xml")?;
+    let document = extract_part_text(package, &document_path)?;
+    let mut blocks = Vec::new();
+    push_text_block(&mut blocks, "main", &document_path, document.value);
+    let mut warnings = document.warnings;
+
+    let relationships_path = rels_path_for(&document_path);
+    let relationships_xml = match package.read_to_string(&relationships_path) {
+        Ok(xml) => xml,
+        Err(OxdocError::MissingPart(_)) => {
+            return Ok(Extraction::with_warnings(
+                StructuredText {
+                    document_type: "docx".to_owned(),
+                    blocks,
+                },
+                warnings,
+            ));
+        }
+        Err(err) => return Err(err),
+    };
+
+    for relationship in parse_relationships(&relationships_xml, &relationships_path)? {
+        let Some(part_type) =
+            related_docx_text_part_type(relationship.relationship_type.as_deref())
+        else {
+            continue;
+        };
+
+        let part_path = resolve_relationship_target(
+            parent_dir(&document_path),
+            &relationship,
+            &relationships_path,
+        )?;
+        match extract_part_text(package, &part_path) {
+            Ok(part) => {
+                push_text_block(&mut blocks, part_type, &part_path, part.value);
+                warnings.extend(part.warnings);
+            }
+            Err(OxdocError::MissingPart(part)) => warnings.push(OutputWarning::new(
+                &relationships_path,
+                format!("skipped related DOCX text part {part}: missing part"),
+            )),
+            Err(err) => return Err(err),
+        }
+    }
+
+    Ok(Extraction::with_warnings(
+        StructuredText {
+            document_type: "docx".to_owned(),
+            blocks,
+        },
+        warnings,
+    ))
+}
+
 fn extract_part_text<R: Read + Seek>(
     package: &mut OoxmlPackage<R>,
     path: &str,
@@ -66,13 +124,31 @@ fn extract_part_text<R: Read + Seek>(
 }
 
 fn is_related_docx_text_part(relationship_type: Option<&str>) -> bool {
-    relationship_type.is_some_and(|kind| {
-        kind.ends_with("/header")
-            || kind.ends_with("/footer")
-            || kind.ends_with("/footnotes")
-            || kind.ends_with("/endnotes")
-            || kind.ends_with("/comments")
-    })
+    related_docx_text_part_type(relationship_type).is_some()
+}
+
+fn related_docx_text_part_type(relationship_type: Option<&str>) -> Option<&'static str> {
+    let kind = relationship_type?;
+    if kind.ends_with("/header") {
+        Some("header")
+    } else if kind.ends_with("/footer") {
+        Some("footer")
+    } else if kind.ends_with("/footnotes") {
+        Some("footnotes")
+    } else if kind.ends_with("/endnotes") {
+        Some("endnotes")
+    } else if kind.ends_with("/comments") {
+        Some("comments")
+    } else {
+        None
+    }
+}
+
+fn push_text_block(blocks: &mut Vec<TextBlock>, part_type: &str, part_path: &str, text: String) {
+    if text.is_empty() {
+        return;
+    }
+    blocks.push(TextBlock::new(part_type, part_path, blocks.len() + 1, text));
 }
 
 fn append_related_text(text: &mut String, related_text: &str) {

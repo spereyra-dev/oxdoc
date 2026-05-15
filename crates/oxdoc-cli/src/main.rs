@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use oxdoc_core::{
     AuditSignal, DocumentAudit, DocumentInfo, DocumentType, OutputWarning, OxdocError,
-    XlsxCsvOptions, XlsxValueMode,
+    StructuredText, XlsxCsvOptions, XlsxValueMode,
 };
 
 mod update;
@@ -107,6 +107,7 @@ enum TextFormat {
     Text,
     Json,
     Jsonl,
+    StructuredJson,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -250,6 +251,7 @@ fn extract_text_command(
     let multiple = files.len() > 1;
     let mut writer = output_writer(output)?;
     let mut payloads = Vec::new();
+    let mut structured_payloads = Vec::new();
     let mut wrote_text = false;
 
     for file in files {
@@ -257,6 +259,21 @@ fn extract_text_command(
             let record = extract_text_jsonl_record(file, warning_format);
             serde_json::to_writer(&mut writer, &record)?;
             writeln!(writer)?;
+            continue;
+        }
+
+        if format == TextFormat::StructuredJson {
+            match extract_structured_text(file) {
+                Ok(result) => {
+                    emit_warnings(&result.warnings, warning_format);
+                    structured_payloads.push(TextStructuredPayload {
+                        file: display_file_name(file),
+                        structured: result.value,
+                    });
+                }
+                Err(err) if multiple => emit_skipped_input_warning(file, &err, warning_format),
+                Err(err) => return Err(err),
+            }
             continue;
         }
 
@@ -275,6 +292,7 @@ fn extract_text_command(
                         file: display_file_name(file),
                         text: result.value,
                     }),
+                    TextFormat::StructuredJson => unreachable!("handled before extraction"),
                     TextFormat::Jsonl => unreachable!("handled before extraction"),
                 }
             }
@@ -294,6 +312,17 @@ fn extract_text_command(
             ));
         }
         writeln!(writer)?;
+    } else if matches!(format, TextFormat::StructuredJson) {
+        if multiple {
+            serde_json::to_writer_pretty(&mut writer, &structured_payloads)?;
+        } else if let Some(payload) = structured_payloads.into_iter().next() {
+            serde_json::to_writer_pretty(&mut writer, &payload)?;
+        } else {
+            return Err(CliError::InvalidArgument(
+                "no input files were processed successfully".to_owned(),
+            ));
+        }
+        writeln!(writer)?;
     } else if format == TextFormat::Jsonl {
         // JSONL is a batch record contract: each input produces either a success
         // or error line, so per-file extraction failures are represented in stdout.
@@ -305,6 +334,21 @@ fn extract_text_command(
 
     writer.flush()?;
     Ok(())
+}
+
+fn extract_structured_text(
+    file: &Path,
+) -> Result<oxdoc_core::Extraction<StructuredText>, CliError> {
+    let input = read_input(file)?;
+    match document_type_for_input(&input, file)? {
+        DocumentType::Pptx => input.extract_pptx_structured_text().map_err(CliError::Core),
+        DocumentType::Docx | DocumentType::Unknown => {
+            input.extract_docx_structured_text().map_err(CliError::Core)
+        }
+        DocumentType::Xlsx => Err(CliError::InvalidArgument(
+            "cannot extract text from an XLSX workbook".to_owned(),
+        )),
+    }
 }
 
 fn extract_text_jsonl_record(file: &Path, warning_format: WarningFormat) -> TextJsonlRecord {
@@ -585,6 +629,28 @@ impl Input {
         }
     }
 
+    fn extract_docx_structured_text(
+        &self,
+    ) -> oxdoc_core::Result<oxdoc_core::Extraction<StructuredText>> {
+        match self {
+            Input::Path(path) => oxdoc_core::extract_docx_structured_text(path),
+            Input::Stdin(bytes) => {
+                oxdoc_core::extract_docx_structured_text_from_reader(Cursor::new(bytes))
+            }
+        }
+    }
+
+    fn extract_pptx_structured_text(
+        &self,
+    ) -> oxdoc_core::Result<oxdoc_core::Extraction<StructuredText>> {
+        match self {
+            Input::Path(path) => oxdoc_core::extract_pptx_structured_text(path),
+            Input::Stdin(bytes) => {
+                oxdoc_core::extract_pptx_structured_text_from_reader(Cursor::new(bytes))
+            }
+        }
+    }
+
     fn extract_xlsx_csv<W: Write>(
         &self,
         options: XlsxCsvOptions<'_>,
@@ -779,6 +845,13 @@ impl From<std::io::Error> for CliError {
 struct TextPayload {
     file: String,
     text: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct TextStructuredPayload {
+    file: String,
+    #[serde(flatten)]
+    structured: StructuredText,
 }
 
 #[derive(Debug, serde::Serialize)]
