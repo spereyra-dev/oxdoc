@@ -1,0 +1,18 @@
+{
+  "file": "contract.docx",
+  "document_type": "docx",
+  "blocks": [
+    {
+      "part_type": "main",
+      "part_path": "word/document.xml",
+      "ordinal": 1,
+      "text": "Plain text\n"
+    },
+    {
+      "part_type": "comments",
+      "part_path": "word/comments.xml",
+      "ordinal": 2,
+      "text": "Reviewer note\n"
+    }
+  ]
+}

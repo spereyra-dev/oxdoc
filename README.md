@@ -118,6 +118,12 @@ For streaming batch ingestion:
 oxdoc extract text *.docx --format jsonl
 ```
 
+For source-aware extraction:
+
+```bash
+oxdoc extract text contrato.docx --format structured-json
+```
+
 Output shape:
 
 ```json

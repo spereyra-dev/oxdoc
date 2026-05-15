@@ -400,6 +400,128 @@ fn extracts_formatted_xlsx_csv_through_public_api() {
 }
 
 #[test]
+fn extracts_docx_structured_text_blocks_with_related_part_sources() {
+    let file = create_ooxml(
+        "structured-docx.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rIdMissing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>"#,
+            ),
+            (
+                "word/header1.xml",
+                r#"<w:hdr xmlns:w="w"><w:p><w:r><w:t>Header</w:t></w:r></w:p><"#,
+            ),
+            ("word/footer1.xml", r#"<w:ftr xmlns:w="w"/>"#),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_docx_structured_text(&file).unwrap();
+
+    assert_eq!(extraction.value.document_type, "docx");
+    assert_eq!(extraction.value.blocks.len(), 2);
+    assert_eq!(extraction.value.blocks[0].part_type, "main");
+    assert_eq!(extraction.value.blocks[0].part_path, "word/document.xml");
+    assert_eq!(extraction.value.blocks[0].ordinal, 1);
+    assert_eq!(extraction.value.blocks[0].text, "Body\n");
+    assert_eq!(extraction.value.blocks[1].part_type, "header");
+    assert_eq!(extraction.value.blocks[1].part_path, "word/header1.xml");
+    assert_eq!(extraction.value.blocks[1].ordinal, 2);
+    assert_eq!(extraction.value.blocks[1].text, "Header\n");
+    assert_eq!(extraction.warnings.len(), 2);
+    assert!(extraction.warnings.iter().any(|warning| {
+        warning.path == "word/header1.xml" && warning.code().as_str() == "W001"
+    }));
+    assert!(extraction.warnings.iter().any(|warning| {
+        warning.path == "word/_rels/document.xml.rels" && warning.message.contains("comments.xml")
+    }));
+}
+
+#[test]
+fn extracts_docx_structured_text_without_relationships_from_reader() {
+    let file = create_ooxml(
+        "structured-docx-no-rels.docx",
+        &[(
+            "word/document.xml",
+            r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Only body</w:t></w:r></w:p></w:body></w:document>"#,
+        )],
+    );
+    let reader = File::open(file).unwrap();
+
+    let extraction = oxdoc_core::extract_docx_structured_text_from_reader(reader).unwrap();
+
+    assert!(extraction.warnings.is_empty());
+    assert_eq!(extraction.value.document_type, "docx");
+    assert_eq!(extraction.value.blocks.len(), 1);
+    assert_eq!(extraction.value.blocks[0].part_type, "main");
+    assert_eq!(extraction.value.blocks[0].text, "Only body\n");
+}
+
+#[test]
+fn extracts_pptx_structured_text_blocks_with_notes_sources() {
+    let file = create_ooxml(
+        "structured-pptx.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:p="p" xmlns:r="r"><p:sldIdLst><p:sldId id="1" r:id="rIdSlide1"/><p:sldId id="2" r:id="rIdSlide2"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rIdSlide1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/><Relationship Id="rIdSlide2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"<p:sld xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Slide 1</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>"#,
+            ),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                r#"<Relationships><Relationship Id="rIdNotes" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide1.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/notesSlides/notesSlide1.xml",
+                r#"<p:notes xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Notes 1</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:notes>"#,
+            ),
+            (
+                "ppt/slides/slide2.xml",
+                r#"<p:sld xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Slide 2</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_pptx_structured_text(&file).unwrap();
+
+    assert_eq!(extraction.value.document_type, "pptx");
+    assert!(extraction.warnings.is_empty());
+    let blocks = extraction.value.blocks;
+    assert_eq!(blocks.len(), 3);
+    assert_eq!(blocks[0].part_type, "slide");
+    assert_eq!(blocks[0].part_path, "ppt/slides/slide1.xml");
+    assert_eq!(blocks[0].ordinal, 1);
+    assert_eq!(blocks[1].part_type, "notes");
+    assert_eq!(blocks[1].part_path, "ppt/notesSlides/notesSlide1.xml");
+    assert_eq!(blocks[1].ordinal, 2);
+    assert_eq!(blocks[2].part_type, "slide");
+    assert_eq!(blocks[2].part_path, "ppt/slides/slide2.xml");
+    assert_eq!(blocks[2].ordinal, 3);
+    assert_eq!(blocks[0].text, "Slide 1\n");
+    assert_eq!(blocks[1].text, "Notes 1\n");
+    assert_eq!(blocks[2].text, "Slide 2\n");
+}
+
+#[test]
 fn detects_document_type_from_content_types() {
     let docx = fixtures::build_package("docx/basic", "renamed.bin");
     let pptx = fixtures::build_package("pptx/text", "renamed.data");

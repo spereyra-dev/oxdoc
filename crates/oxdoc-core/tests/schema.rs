@@ -17,6 +17,14 @@ fn representative_extract_text_json_matches_schema() {
 }
 
 #[test]
+fn representative_structured_text_json_matches_schema() {
+    let schema = read_json_schema("oxdoc-structured-text.schema.json");
+    let output = serde_json::from_str(&read_snapshot("cli_structured_text_json.json")).unwrap();
+
+    validate_object(&schema, &output);
+}
+
+#[test]
 fn representative_audit_json_matches_schema() {
     let schema = read_json_schema("oxdoc-audit.schema.json");
     let output = serde_json::from_str(&read_snapshot("cli_audit_json.json")).unwrap();
@@ -37,6 +45,7 @@ fn schemas_have_stable_public_metadata() {
     for name in [
         "oxdoc-info.schema.json",
         "oxdoc-extract-text.schema.json",
+        "oxdoc-structured-text.schema.json",
         "oxdoc-audit.schema.json",
         "oxdoc-all-sheets-manifest.schema.json",
     ] {

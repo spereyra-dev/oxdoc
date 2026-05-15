@@ -57,6 +57,25 @@ Extraction<String>
 
 The text value includes slide text boxes in presentation order and linked speaker notes after their slide text.
 
+### Structured Text
+
+```rust
+use oxdoc_core::{extract_docx_structured_text, StructuredText};
+
+fn main() -> oxdoc_core::Result<()> {
+    let extraction = extract_docx_structured_text("contract.docx")?;
+    let structured: StructuredText = extraction.value;
+
+    for block in structured.blocks {
+        println!("{} {} {}", block.ordinal, block.part_type, block.part_path);
+    }
+
+    Ok(())
+}
+```
+
+Structured extraction is available through `extract_docx_structured_text`, `extract_docx_structured_text_from_reader`, `extract_pptx_structured_text`, and `extract_pptx_structured_text_from_reader`. It preserves the existing plain text extraction behavior while exposing ordered source blocks for downstream indexing, review, and RAG workflows.
+
 ### `extract_xlsx_csv`
 
 ```rust

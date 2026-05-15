@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader, Cursor, Read, Seek};
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 
-use crate::models::{Extraction, OutputWarning};
+use crate::models::{Extraction, OutputWarning, StructuredText, TextBlock};
 use crate::parsers::{
     decode_xml_reference, decode_xml_text, merge_warnings, name_eq, parent_dir,
     parse_relationship_map, rels_path_for, resolve_relationship_target,
@@ -47,6 +47,51 @@ pub(crate) fn extract_text<R: Read + Seek>(
     }
 
     Ok(Extraction::with_warnings(text, warnings))
+}
+
+pub(crate) fn extract_structured_text<R: Read + Seek>(
+    package: &mut OoxmlPackage<R>,
+) -> Result<Extraction<StructuredText>> {
+    let presentation_path =
+        crate::parsers::find_office_document_path(package, "ppt/presentation.xml")?;
+    let presentation_xml = package.read_to_string(&presentation_path)?;
+    let slide_ids = parse_slide_relation_ids(&presentation_xml, &presentation_path)?;
+
+    let presentation_rels_path = rels_path_for(&presentation_path);
+    let presentation_rels_xml = package.read_to_string(&presentation_rels_path)?;
+    let presentation_rels =
+        parse_relationship_map(&presentation_rels_xml, &presentation_rels_path)?;
+
+    let mut blocks = Vec::new();
+    let mut warnings = slide_ids.warnings;
+
+    for slide_id in slide_ids.value {
+        let relationship = presentation_rels
+            .get(&slide_id)
+            .ok_or_else(|| OxdocError::MissingPart(slide_id.clone()))?;
+        let slide_path = resolve_relationship_target(
+            parent_dir(&presentation_path),
+            relationship,
+            &presentation_rels_path,
+        )?;
+
+        let slide = read_text_part(package, &slide_path)?;
+        push_text_block(&mut blocks, "slide", &slide_path, slide.value);
+        warnings = merge_warnings(warnings, slide.warnings);
+
+        let notes = read_notes_blocks_for_slide(package, &slide_path)?;
+        blocks.extend(notes.value);
+        renumber_blocks(&mut blocks);
+        warnings = merge_warnings(warnings, notes.warnings);
+    }
+
+    Ok(Extraction::with_warnings(
+        StructuredText {
+            document_type: "pptx".to_owned(),
+            blocks,
+        },
+        warnings,
+    ))
 }
 
 fn parse_slide_relation_ids(xml: &str, path: &str) -> Result<Extraction<Vec<String>>> {
@@ -129,6 +174,42 @@ fn read_notes_for_slide<R: Read + Seek>(
     }
 
     Ok(Extraction::with_warnings(text, warnings))
+}
+
+fn read_notes_blocks_for_slide<R: Read + Seek>(
+    package: &mut OoxmlPackage<R>,
+    slide_path: &str,
+) -> Result<Extraction<Vec<TextBlock>>> {
+    let slide_rels_path = rels_path_for(slide_path);
+    let slide_rels_xml = match package.read_to_string(&slide_rels_path) {
+        Ok(xml) => xml,
+        Err(OxdocError::MissingPart(_)) => return Ok(Extraction::new(Vec::new())),
+        Err(err) => return Err(err),
+    };
+    let slide_rels = parse_relationship_map(&slide_rels_xml, &slide_rels_path)?;
+    let mut notes_relationships = slide_rels
+        .iter()
+        .filter(|(_, relationship)| {
+            relationship
+                .relationship_type
+                .as_deref()
+                .is_some_and(|kind| kind.ends_with("/notesSlide"))
+        })
+        .collect::<Vec<_>>();
+    notes_relationships.sort_by(|left, right| left.0.cmp(right.0));
+
+    let mut blocks = Vec::new();
+    let mut warnings = Vec::new();
+
+    for (_, relationship) in notes_relationships {
+        let notes_path =
+            resolve_relationship_target(parent_dir(slide_path), relationship, &slide_rels_path)?;
+        let notes = read_text_part(package, &notes_path)?;
+        push_text_block(&mut blocks, "notes", &notes_path, notes.value);
+        warnings = merge_warnings(warnings, notes.warnings);
+    }
+
+    Ok(Extraction::with_warnings(blocks, warnings))
 }
 
 fn read_text_part<R: Read + Seek>(
@@ -217,6 +298,19 @@ fn append_part_text(text: &mut String, part: &str) {
         text.push('\n');
     }
     text.push_str(part);
+}
+
+fn push_text_block(blocks: &mut Vec<TextBlock>, part_type: &str, part_path: &str, text: String) {
+    if text.is_empty() {
+        return;
+    }
+    blocks.push(TextBlock::new(part_type, part_path, blocks.len() + 1, text));
+}
+
+fn renumber_blocks(blocks: &mut [TextBlock]) {
+    for (index, block) in blocks.iter_mut().enumerate() {
+        block.ordinal = index + 1;
+    }
 }
 
 fn push_text(text: &mut String, value: &str) -> bool {

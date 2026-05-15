@@ -164,6 +164,172 @@ fn extracts_pptx_text_as_json() {
 }
 
 #[test]
+fn extracts_text_as_structured_json() {
+    let docx = create_ooxml(
+        "structured-cli.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+            ),
+            (
+                "word/header1.xml",
+                r#"<w:hdr xmlns:w="w"><w:p><w:r><w:t>Header</w:t></w:r></w:p></w:hdr>"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+        "--format",
+        "structured-json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert!(
+        actual["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("structured-cli.docx")
+    );
+    assert_eq!(actual["document_type"], "docx");
+    assert_eq!(actual["blocks"][0]["part_type"], "main");
+    assert_eq!(actual["blocks"][0]["part_path"], "word/document.xml");
+    assert_eq!(actual["blocks"][0]["ordinal"], 1);
+    assert_eq!(actual["blocks"][0]["text"], "Body\n");
+    assert_eq!(actual["blocks"][1]["part_type"], "header");
+    assert_eq!(actual["blocks"][1]["part_path"], "word/header1.xml");
+    assert_eq!(actual["blocks"][1]["ordinal"], 2);
+    assert_eq!(actual["blocks"][1]["text"], "Header\n");
+}
+
+#[test]
+fn extracts_pptx_text_as_structured_json() {
+    let pptx = fixtures::build_package("pptx/text", "structured-slide.pptx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        pptx.to_str().unwrap(),
+        "--format",
+        "structured-json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual["file"], "structured-slide.pptx");
+    assert_eq!(actual["document_type"], "pptx");
+    assert_eq!(actual["blocks"][0]["part_type"], "slide");
+    assert!(
+        actual["blocks"][0]["part_path"]
+            .as_str()
+            .unwrap()
+            .starts_with("ppt/slides/slide")
+    );
+    assert_eq!(actual["blocks"][0]["ordinal"], 1);
+    assert!(
+        actual["blocks"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Slide")
+    );
+}
+
+#[test]
+fn extracts_structured_json_from_stdin_and_multiple_inputs() {
+    let docx = fixtures::build_package("docx/basic", "structured-stdin.docx");
+    let second = fixtures::build_package("docx/basic", "structured-second.docx");
+    let missing = unique_path("missing-structured.docx");
+
+    let stdin_output = oxdoc_with_stdin(
+        ["extract", "text", "-", "--format", "structured-json"],
+        &fs::read(&docx).unwrap(),
+    );
+    assert!(stdin_output.status.success());
+    let stdin_actual: Value = serde_json::from_str(&stdout(&stdin_output)).unwrap();
+    assert_eq!(stdin_actual["file"], "<stdin>");
+    assert_eq!(stdin_actual["document_type"], "docx");
+    assert_eq!(stdin_actual["blocks"][0]["part_type"], "main");
+
+    let multiple_output = oxdoc([
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+        missing.to_str().unwrap(),
+        second.to_str().unwrap(),
+        "--format",
+        "structured-json",
+    ]);
+    assert!(multiple_output.status.success());
+    assert!(stderr(&multiple_output).contains("warning["));
+    let records: Value = serde_json::from_str(&stdout(&multiple_output)).unwrap();
+    let records = records.as_array().unwrap();
+    assert_eq!(records.len(), 2);
+    assert!(
+        records[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("structured-stdin.docx")
+    );
+    assert!(
+        records[1]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("structured-second.docx")
+    );
+}
+
+#[test]
+fn emits_empty_structured_json_batch_when_no_inputs_succeed() {
+    let missing = unique_path("missing-structured-only.docx");
+    let xlsx = fixtures::build_package("xlsx/basic", "structured-only.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        missing.to_str().unwrap(),
+        xlsx.to_str().unwrap(),
+        "--format",
+        "structured-json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("missing-structured-only.docx"));
+    assert!(stderr(&output).contains("cannot extract text from an XLSX workbook"));
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual.as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn rejects_structured_text_from_xlsx() {
+    let xlsx = fixtures::build_package("xlsx/basic", "structured.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        xlsx.to_str().unwrap(),
+        "--format",
+        "structured-json",
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("cannot extract text from an XLSX workbook"));
+}
+
+#[test]
 fn extracts_docx_text_from_content_types_when_extension_is_wrong() {
     let docx = fixtures::build_package("docx/basic", "fixture.bin");
 
@@ -1191,6 +1357,32 @@ fn includes_structured_warnings_in_jsonl_records() {
     assert_eq!(warnings[0]["category"], "parser");
     assert_eq!(warnings[0]["code"], "W001");
     assert_eq!(warnings[0]["path"], "word/document.xml");
+}
+
+#[test]
+fn emits_jsonl_error_record_for_xlsx_text_extraction() {
+    let xlsx = fixtures::build_package("xlsx/basic", "text-jsonl.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        xlsx.to_str().unwrap(),
+        "--format",
+        "jsonl",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["document_type"], "xlsx");
+    assert_eq!(records[0]["error"]["code"], "E010");
+    assert!(
+        records[0]["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("cannot extract text from an XLSX workbook")
+    );
 }
 
 #[test]

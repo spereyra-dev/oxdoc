@@ -27,7 +27,7 @@ use std::path::Path;
 pub use error::{OxdocError, Result};
 pub use models::{
     AuditSignal, DocumentAudit, DocumentInfo, DocumentType, Extraction, OutputWarning,
-    XlsxCsvOptions, XlsxSheet, XlsxValueMode,
+    StructuredText, TextBlock, XlsxCsvOptions, XlsxSheet, XlsxValueMode,
 };
 #[doc(hidden)]
 pub use parsers::docx::fuzz_extract_text as fuzz_docx_text;
@@ -52,6 +52,18 @@ pub fn extract_docx_text_from_reader<R: Read + Seek>(reader: R) -> Result<Extrac
     docx::extract_text(&mut package)
 }
 
+pub fn extract_docx_structured_text(path: impl AsRef<Path>) -> Result<Extraction<StructuredText>> {
+    let file = File::open(path)?;
+    extract_docx_structured_text_from_reader(file)
+}
+
+pub fn extract_docx_structured_text_from_reader<R: Read + Seek>(
+    reader: R,
+) -> Result<Extraction<StructuredText>> {
+    let mut package = OoxmlPackage::new(reader)?;
+    docx::extract_structured_text(&mut package)
+}
+
 pub fn extract_pptx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {
     let file = File::open(path)?;
     extract_pptx_text_from_reader(file)
@@ -60,6 +72,18 @@ pub fn extract_pptx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {
 pub fn extract_pptx_text_from_reader<R: Read + Seek>(reader: R) -> Result<Extraction<String>> {
     let mut package = OoxmlPackage::new(reader)?;
     pptx::extract_text(&mut package)
+}
+
+pub fn extract_pptx_structured_text(path: impl AsRef<Path>) -> Result<Extraction<StructuredText>> {
+    let file = File::open(path)?;
+    extract_pptx_structured_text_from_reader(file)
+}
+
+pub fn extract_pptx_structured_text_from_reader<R: Read + Seek>(
+    reader: R,
+) -> Result<Extraction<StructuredText>> {
+    let mut package = OoxmlPackage::new(reader)?;
+    pptx::extract_structured_text(&mut package)
 }
 
 pub fn extract_xlsx_csv<W: Write>(
