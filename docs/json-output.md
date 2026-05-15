@@ -90,3 +90,15 @@ Example warning:
 ```text
 warning[parser/W001]: word/document.xml: stopped after malformed XML: ...
 ```
+
+For machine-readable stderr, use:
+
+```bash
+oxdoc --warnings json extract text report.docx --format json
+```
+
+Each warning is emitted as one JSON object per line:
+
+```json
+{"category":"parser","code":"W001","path":"word/document.xml","message":"stopped after malformed XML: ..."}
+```

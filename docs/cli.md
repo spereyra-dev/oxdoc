@@ -3,7 +3,7 @@
 `oxdoc` is designed to be predictable in shell pipelines:
 
 - Extraction output goes to stdout.
-- Recoverable parser warnings go to stderr as `warning[<category>/<code>]: <path>: <message>`.
+- Recoverable parser warnings go to stderr as `warning[<category>/<code>]: <path>: <message>` by default.
 - Hard failures exit with code `1` and print `error[<code>]: <message>` to stderr.
 - Clap usage errors keep their normal exit behavior and are not part of the runtime extraction contract.
 
@@ -19,6 +19,19 @@
 
 ```bash
 oxdoc --help
+```
+
+## Global Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--quiet`, `-q` | false | Suppress recoverable warnings. |
+| `--warnings text\|json\|none` | `text` | Choose warning output format. `json` emits one JSON object per warning to stderr. `none` suppresses warnings. |
+
+JSON warning records include stable machine-readable fields:
+
+```json
+{"category":"parser","code":"W001","path":"word/document.xml","message":"stopped after malformed XML: ..."}
 ```
 
 ## Extract DOCX or PPTX Text
@@ -74,7 +87,7 @@ Batch example:
 oxdoc extract text a.docx b.pptx --format json
 ```
 
-Warnings are still written to stderr when JSON output is selected. They are not embedded in the JSON payload.
+Warnings are still written to stderr when JSON output is selected. They are not embedded in the JSON payload. Use `--warnings json` when a pipeline needs machine-readable warning records.
 
 PPTX extraction preserves presentation slide order, extracts DrawingML text boxes, and includes linked speaker notes after each slide.
 
