@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use oxdoc_core::{
     AuditSignal, DocumentAudit, DocumentInfo, DocumentType, OutputWarning, OxdocError,
-    XlsxCsvOptions,
+    XlsxCsvOptions, XlsxValueMode,
 };
 
 mod update;
@@ -93,6 +93,8 @@ enum ExtractCommand {
         all_sheets: bool,
         #[arg(long, default_value = ",")]
         delimiter: String,
+        #[arg(long, value_enum, default_value_t = CliXlsxValueMode::Raw)]
+        value_mode: CliXlsxValueMode,
         #[arg(long, short)]
         output: Option<PathBuf>,
         #[arg(long, conflicts_with = "output", requires = "all_sheets")]
@@ -117,6 +119,21 @@ enum WarningFormat {
     Text,
     Json,
     None,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum CliXlsxValueMode {
+    Raw,
+    Formatted,
+}
+
+impl From<CliXlsxValueMode> for XlsxValueMode {
+    fn from(value: CliXlsxValueMode) -> Self {
+        match value {
+            CliXlsxValueMode::Raw => XlsxValueMode::Raw,
+            CliXlsxValueMode::Formatted => XlsxValueMode::Formatted,
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -153,6 +170,7 @@ fn run() -> Result<(), CliError> {
                 list_sheets,
                 all_sheets,
                 delimiter,
+                value_mode,
                 output,
                 output_dir,
             } => {
@@ -165,6 +183,7 @@ fn run() -> Result<(), CliError> {
                         list_sheets,
                         all_sheets,
                         delimiter,
+                        value_mode: value_mode.into(),
                         output: output.as_deref(),
                         output_dir: output_dir.as_deref(),
                     },
@@ -283,6 +302,7 @@ struct CsvCommandOptions<'a> {
     list_sheets: bool,
     all_sheets: bool,
     delimiter: u8,
+    value_mode: XlsxValueMode,
     output: Option<&'a Path>,
     output_dir: Option<&'a Path>,
 }
@@ -310,6 +330,7 @@ fn extract_csv_command(
             options.files.first().expect("required by clap"),
             output_dir,
             options.delimiter,
+            options.value_mode,
             warning_format,
         );
     }
@@ -337,6 +358,7 @@ fn extract_csv_command(
                     sheet_index: options.sheet_index,
                     delimiter: options.delimiter,
                 },
+                options.value_mode,
                 &mut writer,
             )
         };
@@ -365,6 +387,7 @@ fn export_all_sheets(
     file: &Path,
     output_dir: &Path,
     delimiter: u8,
+    value_mode: XlsxValueMode,
     warning_format: WarningFormat,
 ) -> Result<(), CliError> {
     fs::create_dir_all(output_dir)?;
@@ -389,6 +412,7 @@ fn export_all_sheets(
                 sheet_index: Some(sheet.index),
                 delimiter,
             },
+            value_mode,
             &mut csv_file,
         );
 
@@ -453,11 +477,12 @@ fn extract_text(file: &Path) -> Result<oxdoc_core::Extraction<String>, CliError>
 fn extract_csv<W: Write>(
     file: &Path,
     options: XlsxCsvOptions<'_>,
+    value_mode: XlsxValueMode,
     writer: W,
 ) -> Result<oxdoc_core::Extraction<()>, CliError> {
     let input = read_input(file)?;
     input
-        .extract_xlsx_csv(options, writer)
+        .extract_xlsx_csv(options, value_mode, writer)
         .map_err(CliError::Core)
 }
 
@@ -505,13 +530,19 @@ impl Input {
     fn extract_xlsx_csv<W: Write>(
         &self,
         options: XlsxCsvOptions<'_>,
+        value_mode: XlsxValueMode,
         writer: W,
     ) -> oxdoc_core::Result<oxdoc_core::Extraction<()>> {
         match self {
-            Input::Path(path) => oxdoc_core::extract_xlsx_csv(path, options, writer),
-            Input::Stdin(bytes) => {
-                oxdoc_core::extract_xlsx_csv_from_reader(Cursor::new(bytes), options, writer)
+            Input::Path(path) => {
+                oxdoc_core::extract_xlsx_csv_with_value_mode(path, options, value_mode, writer)
             }
+            Input::Stdin(bytes) => oxdoc_core::extract_xlsx_csv_from_reader_with_value_mode(
+                Cursor::new(bytes),
+                options,
+                value_mode,
+                writer,
+            ),
         }
     }
 

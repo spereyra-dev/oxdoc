@@ -125,6 +125,13 @@ pub struct XlsxSheet {
     pub name: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum XlsxValueMode {
+    #[default]
+    Raw,
+    Formatted,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Extraction<T> {
     pub value: T,
