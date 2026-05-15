@@ -17,6 +17,8 @@ mod update;
 struct Cli {
     #[arg(long, short, global = true)]
     quiet: bool,
+    #[arg(long, global = true, value_enum, default_value_t = WarningFormat::Text)]
+    warnings: WarningFormat,
     #[command(subcommand)]
     command: Command,
 }
@@ -89,6 +91,13 @@ enum InfoFormat {
     Json,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum WarningFormat {
+    Text,
+    Json,
+    None,
+}
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -101,6 +110,11 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
+    let warning_format = if cli.quiet {
+        WarningFormat::None
+    } else {
+        cli.warnings
+    };
 
     match cli.command {
         Command::Extract { command } => match command {
@@ -109,7 +123,7 @@ fn run() -> Result<(), CliError> {
                 format,
                 output,
             } => {
-                extract_text_command(&files, format, output.as_deref(), cli.quiet)?;
+                extract_text_command(&files, format, output.as_deref(), warning_format)?;
             }
             ExtractCommand::Csv {
                 files,
@@ -127,13 +141,13 @@ fn run() -> Result<(), CliError> {
                     list_sheets,
                     delimiter,
                     output.as_deref(),
-                    cli.quiet,
+                    warning_format,
                 )?;
             }
         },
         Command::Info { file, format } => {
             let result = read_info(&file)?;
-            emit_warnings(&result.warnings, cli.quiet);
+            emit_warnings(&result.warnings, warning_format);
             match format {
                 InfoFormat::Json => {
                     let payload = InfoPayload {
@@ -169,7 +183,7 @@ fn extract_text_command(
     files: &[PathBuf],
     format: TextFormat,
     output: Option<&Path>,
-    quiet: bool,
+    warning_format: WarningFormat,
 ) -> Result<(), CliError> {
     let multiple = files.len() > 1;
     let mut writer = output_writer(output)?;
@@ -179,7 +193,7 @@ fn extract_text_command(
     for file in files {
         match extract_text(file) {
             Ok(result) => {
-                emit_warnings(&result.warnings, quiet);
+                emit_warnings(&result.warnings, warning_format);
                 match format {
                     TextFormat::Text => {
                         if wrote_text {
@@ -194,7 +208,7 @@ fn extract_text_command(
                     }),
                 }
             }
-            Err(err) if multiple => emit_skipped_input_warning(file, &err, quiet),
+            Err(err) if multiple => emit_skipped_input_warning(file, &err, warning_format),
             Err(err) => return Err(err),
         }
     }
@@ -227,7 +241,7 @@ fn extract_csv_command(
     list_sheets: bool,
     delimiter: u8,
     output: Option<&Path>,
-    quiet: bool,
+    warning_format: WarningFormat,
 ) -> Result<(), CliError> {
     if list_sheets && files.len() > 1 {
         return Err(CliError::InvalidArgument(
@@ -265,9 +279,9 @@ fn extract_csv_command(
         match result {
             Ok(result) => {
                 processed += 1;
-                emit_warnings(&result.warnings, quiet);
+                emit_warnings(&result.warnings, warning_format);
             }
-            Err(err) if multiple => emit_skipped_input_warning(file, &err, quiet),
+            Err(err) if multiple => emit_skipped_input_warning(file, &err, warning_format),
             Err(err) => return Err(err),
         }
     }
@@ -443,17 +457,10 @@ fn output_writer(path: Option<&Path>) -> Result<OutputWriter, CliError> {
     }
 }
 
-fn emit_skipped_input_warning(path: &Path, err: &CliError, quiet: bool) {
-    if quiet {
-        return;
-    }
-
-    eprintln!(
-        "warning[batch/W998]: {}: skipped after error[{}]: {}",
-        display_file_name(path),
-        err.code(),
-        err
-    );
+fn emit_skipped_input_warning(path: &Path, err: &CliError, format: WarningFormat) {
+    let path = display_file_name(path);
+    let message = format!("skipped after error[{}]: {}", err.code(), err);
+    emit_warning_parts("batch", "W998", &path, &message, format);
 }
 
 #[derive(Debug)]
@@ -532,6 +539,14 @@ struct InfoPayload<'a> {
     info: &'a DocumentInfo,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct WarningPayload<'a> {
+    category: &'a str,
+    code: &'a str,
+    path: &'a str,
+    message: &'a str,
+}
+
 fn parse_delimiter(value: &str) -> Result<u8, CliError> {
     if value == "\\t" {
         return Ok(b'\t');
@@ -562,19 +577,38 @@ fn display_file_name(path: &std::path::Path) -> String {
         .to_owned()
 }
 
-fn emit_warnings(warnings: &[OutputWarning], quiet: bool) {
-    if quiet {
-        return;
-    }
-
+fn emit_warnings(warnings: &[OutputWarning], format: WarningFormat) {
     for warning in warnings {
-        eprintln!(
-            "warning[{}/{}]: {}: {}",
+        emit_warning_parts(
             warning.category().as_str(),
             warning.code().as_str(),
-            warning.path,
-            warning.message
+            &warning.path,
+            &warning.message,
+            format,
         );
+    }
+}
+
+fn emit_warning_parts(
+    category: &str,
+    code: &str,
+    path: &str,
+    message: &str,
+    format: WarningFormat,
+) {
+    match format {
+        WarningFormat::Text => eprintln!("warning[{category}/{code}]: {path}: {message}"),
+        WarningFormat::Json => {
+            let payload = WarningPayload {
+                category,
+                code,
+                path,
+                message,
+            };
+            let line = serde_json::to_string(&payload).expect("warning payload serializes");
+            eprintln!("{line}");
+        }
+        WarningFormat::None => {}
     }
 }
 

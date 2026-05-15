@@ -771,6 +771,113 @@ fn keeps_json_output_clean_when_warnings_are_emitted() {
     );
 }
 
+#[test]
+fn emits_machine_readable_json_warnings() {
+    let docx = create_ooxml(
+        "malformed-json-warning.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Hello JSON</w:t></w:r></w:p><"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "--warnings",
+        "json",
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(output.status.success());
+    let actual_stdout = stdout(&output);
+    let actual: Value = serde_json::from_str(&actual_stdout).unwrap();
+    assert_eq!(actual["text"], "Hello JSON\n");
+
+    let warnings = json_warning_lines(&output);
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0]["category"], "parser");
+    assert_eq!(warnings[0]["code"], "W001");
+    assert_eq!(warnings[0]["path"], "word/document.xml");
+    assert!(
+        warnings[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("stopped after malformed XML")
+    );
+}
+
+#[test]
+fn emits_machine_readable_batch_skip_warnings() {
+    let docx = fixtures::build_package("docx/basic", "good.docx");
+    let missing = unique_path("missing-json-warning.docx");
+
+    let output = oxdoc([
+        "--warnings",
+        "json",
+        "extract",
+        "text",
+        missing.to_str().unwrap(),
+        docx.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("docx_basic_text.txt").trim_end()
+    );
+
+    let warnings = json_warning_lines(&output);
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0]["category"], "batch");
+    assert_eq!(warnings[0]["code"], "W998");
+    assert!(
+        warnings[0]["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("missing-json-warning.docx")
+    );
+    assert!(
+        warnings[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("skipped after error[E001]")
+    );
+}
+
+#[test]
+fn suppresses_warnings_with_warning_format_none() {
+    let docx = create_ooxml(
+        "none-warning.docx",
+        &[(
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="cp" xmlns:dc="dc"><dc:creator>Ada</dc:creator><"#,
+        )],
+    );
+
+    let output = oxdoc([
+        "--warnings",
+        "none",
+        "info",
+        docx.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual["author"], "Ada");
+}
+
 fn oxdoc<const N: usize>(args: [&str; N]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_oxdoc"))
         .args(args)
@@ -800,6 +907,13 @@ fn stdout(output: &std::process::Output) -> String {
 
 fn stderr(output: &std::process::Output) -> String {
     String::from_utf8(output.stderr.clone()).unwrap()
+}
+
+fn json_warning_lines(output: &std::process::Output) -> Vec<Value> {
+    stderr(output)
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
 }
 
 fn create_ooxml(name: &str, entries: &[(&str, &str)]) -> PathBuf {
