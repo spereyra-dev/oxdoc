@@ -16,6 +16,7 @@ Public documentation URL: [spereyra-dev.github.io/oxdoc](https://spereyra-dev.gi
 - Emits structured warnings for recoverable parser problems.
 - Provides a minimal Python wrapper for data teams and orchestration workflows.
 - Publishes reproducible peak-memory baselines for representative workloads.
+- Provides an optional competitive workbench against local OOXML extraction CLIs.
 - Keeps the CLI simple: extracted data goes to stdout, warnings go to stderr.
 
 ## What It Does Not Do

@@ -9,7 +9,7 @@ DOCS_PORT ?= 3000
 COVERAGE_THRESHOLD ?= 95
 
 .PHONY: help all ci ci-rust prepare-commit pre-push scripts-test
-.PHONY: fmt fmt-check check clippy lint test doctest python-test coverage coverage-html coverage-lcov audit memory-baselines
+.PHONY: fmt fmt-check check clippy lint test doctest python-test coverage coverage-html coverage-lcov audit memory-baselines competitor-workbench
 .PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check install-tools clean clean-coverage
 
 help:
@@ -25,6 +25,7 @@ help:
 	@echo "  make audit            Check Cargo.lock for RustSec advisories"
 	@echo "  make coverage         Enforce line coverage >= $(COVERAGE_THRESHOLD)%"
 	@echo "  make memory-baselines Generate peak-memory benchmark baselines"
+	@echo "  make competitor-workbench Compare oxdoc with optional external extraction CLIs"
 	@echo "  make coverage-html    Generate HTML coverage report"
 	@echo "  make coverage-lcov    Generate LCOV coverage report"
 	@echo "  make ci-rust          Run the Rust gates used by GitHub Actions"
@@ -69,7 +70,7 @@ doctest:
 
 scripts-test:
 	sh -n install.sh tests/install.sh scripts/render-homebrew-formula.sh tests/homebrew_formula.sh
-	python3 -m py_compile scripts/peak-memory-baselines.py
+	python3 -m py_compile scripts/peak-memory-baselines.py scripts/competitor-workbench.py
 	python3 -m py_compile python/src/oxdoc/*.py python/tests/*.py
 	sh tests/install.sh
 	sh tests/homebrew_formula.sh
@@ -94,6 +95,9 @@ coverage-lcov:
 
 memory-baselines:
 	python3 scripts/peak-memory-baselines.py --iterations 3 --output docs/performance-memory-baselines.md
+
+competitor-workbench:
+	python3 scripts/competitor-workbench.py --iterations 3 --output target/competitor-workbench/report.md --csv-output target/competitor-workbench/results.csv
 
 build:
 	$(CARGO) build --workspace --all-features $(TARGET_FLAG)
