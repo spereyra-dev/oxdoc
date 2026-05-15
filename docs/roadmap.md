@@ -38,7 +38,8 @@ Status: in progress.
 - Stabilize `oxdoc-core` APIs for embedding in Rust applications.
 - Document error types, warning behavior, and streaming sinks.
 - Add examples for library consumers.
-- Evaluate optional WASM and FFI boundaries after the Rust API is stable.
+- Maintain the pure-Python CLI wrapper as the first data-team integration path.
+- Evaluate optional WASM, native Python bindings, and FFI boundaries after demand is clear.
 
 ## Phase 5: Release Engineering
 

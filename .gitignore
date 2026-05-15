@@ -2,4 +2,7 @@
 **/*.rs.bk
 *.tmp
 *.temp
-
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/

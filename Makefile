@@ -9,7 +9,7 @@ DOCS_PORT ?= 3000
 COVERAGE_THRESHOLD ?= 95
 
 .PHONY: help all ci ci-rust prepare-commit pre-push scripts-test
-.PHONY: fmt fmt-check check clippy lint test doctest coverage coverage-html coverage-lcov audit memory-baselines
+.PHONY: fmt fmt-check check clippy lint test doctest python-test coverage coverage-html coverage-lcov audit memory-baselines
 .PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check install-tools clean clean-coverage
 
 help:
@@ -20,6 +20,7 @@ help:
 	@echo "  make check            cargo check across workspace"
 	@echo "  make clippy           Run clippy with warnings denied"
 	@echo "  make test             Run all tests"
+	@echo "  make python-test      Run Python wrapper tests"
 	@echo "  make doctest          Run Rust doctests"
 	@echo "  make audit            Check Cargo.lock for RustSec advisories"
 	@echo "  make coverage         Enforce line coverage >= $(COVERAGE_THRESHOLD)%"
@@ -69,8 +70,12 @@ doctest:
 scripts-test:
 	sh -n install.sh tests/install.sh scripts/render-homebrew-formula.sh tests/homebrew_formula.sh
 	python3 -m py_compile scripts/peak-memory-baselines.py
+	python3 -m py_compile python/src/oxdoc/*.py python/tests/*.py
 	sh tests/install.sh
 	sh tests/homebrew_formula.sh
+
+python-test:
+	PYTHONPATH=python/src python3 -m unittest discover -s python/tests
 
 audit:
 	$(CARGO) audit

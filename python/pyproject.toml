@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oxdoc-python"
+version = "0.1.0"
+description = "Thin Python wrapper for the oxdoc Office document extraction CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "oxdoc contributors" }]
+keywords = ["ooxml", "docx", "pptx", "xlsx", "data-ingestion"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Office/Business",
+  "Topic :: Text Processing",
+]
+
+[project.urls]
+Homepage = "https://github.com/spereyra-dev/oxdoc"
+Documentation = "https://spereyra-dev.github.io/oxdoc/"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oxdoc"]
