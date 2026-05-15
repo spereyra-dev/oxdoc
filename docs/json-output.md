@@ -56,6 +56,7 @@ Shape:
 
 ```json
 {
+  "oxdoc_version": "1.0.0",
   "file": "report.docx",
   "author": "Usuario Falso",
   "last_modified_by": "Usuario Falso",
@@ -76,7 +77,7 @@ Shape:
 }
 ```
 
-Fields other than `file` and `has_macros` are optional and omitted when unavailable.
+Fields other than `oxdoc_version`, `file`, and `has_macros` are optional and omitted when unavailable.
 
 `custom_properties` contains values from `docProps/custom.xml`. Values are emitted as strings regardless of the OOXML custom property value type.
 
