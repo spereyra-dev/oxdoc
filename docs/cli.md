@@ -52,6 +52,7 @@ Options:
 | --- | --- | --- |
 | `--format text` | `text` | Emit plain text. |
 | `--format json` | `text` | Emit a JSON object with `file` and `text`; with multiple files, emit a JSON array. |
+| `--format jsonl` | `text` | Emit one JSON object per input file, suitable for streaming batch ingestion. |
 | `--output <PATH>`, `-o <PATH>` | stdout | Write extraction output to a file. |
 
 Example:
@@ -87,7 +88,15 @@ Batch example:
 oxdoc extract text a.docx b.pptx --format json
 ```
 
-Warnings are still written to stderr when JSON output is selected. They are not embedded in the JSON payload. Use `--warnings json` when a pipeline needs machine-readable warning records.
+JSONL batch example:
+
+```bash
+oxdoc extract text *.docx --format jsonl
+```
+
+Each JSONL line contains `file`, `document_type`, and either `text` or `error`. Recoverable parser warnings are embedded in the line as `warnings` and can also be emitted to stderr according to the global `--warnings` setting. Per-file extraction failures are represented as error records and later files continue processing.
+
+Warnings are still written to stderr when regular JSON output is selected. They are not embedded in the JSON payload. Use `--warnings json` when a pipeline needs machine-readable warning records.
 
 PPTX extraction preserves presentation slide order, extracts DrawingML text boxes, and includes linked speaker notes after each slide.
 

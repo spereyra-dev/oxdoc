@@ -13,6 +13,8 @@ Machine-readable schemas live under `schemas/v1/` in the repository and are mirr
 | `oxdoc audit --format json` | [`schemas/v1/oxdoc-audit.schema.json`](schemas/v1/oxdoc-audit.schema.json) |
 | `oxdoc extract csv --all-sheets --output-dir <DIR>` manifest | [`schemas/v1/oxdoc-all-sheets-manifest.schema.json`](schemas/v1/oxdoc-all-sheets-manifest.schema.json) |
 
+`oxdoc extract text --format jsonl` emits newline-delimited records for streaming batch ingestion. Each line is a standalone JSON object with `file`, `document_type`, and either `text` or `error`; successful records may include `warnings`.
+
 The `v1` schemas use JSON Schema draft 2020-12, include stable `$id` values, and set `additionalProperties` to `false`. New output fields are introduced through a new schema version instead of silently widening the current contract.
 
 Within a schema version:
@@ -20,7 +22,7 @@ Within a schema version:
 - Required fields remain required.
 - Optional fields may be omitted when the source document does not provide them.
 - Existing field names and JSON types remain stable.
-- Warnings stay on stderr and are not part of CLI JSON payloads.
+- Warnings stay on stderr for regular JSON payloads. JSONL text extraction also embeds recoverable per-file warnings in the record so batch consumers can index them with the extracted text.
 
 ## DOCX Text JSON
 

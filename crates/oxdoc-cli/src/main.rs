@@ -102,10 +102,11 @@ enum ExtractCommand {
     },
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum TextFormat {
     Text,
     Json,
+    Jsonl,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -252,6 +253,13 @@ fn extract_text_command(
     let mut wrote_text = false;
 
     for file in files {
+        if format == TextFormat::Jsonl {
+            let record = extract_text_jsonl_record(file, warning_format);
+            serde_json::to_writer(&mut writer, &record)?;
+            writeln!(writer)?;
+            continue;
+        }
+
         match extract_text(file) {
             Ok(result) => {
                 emit_warnings(&result.warnings, warning_format);
@@ -267,6 +275,7 @@ fn extract_text_command(
                         file: display_file_name(file),
                         text: result.value,
                     }),
+                    TextFormat::Jsonl => unreachable!("handled before extraction"),
                 }
             }
             Err(err) if multiple => emit_skipped_input_warning(file, &err, warning_format),
@@ -285,6 +294,9 @@ fn extract_text_command(
             ));
         }
         writeln!(writer)?;
+    } else if format == TextFormat::Jsonl {
+        // JSONL is a batch record contract: each input produces either a success
+        // or error line, so per-file extraction failures are represented in stdout.
     } else if !wrote_text {
         return Err(CliError::InvalidArgument(
             "no input files were processed successfully".to_owned(),
@@ -293,6 +305,52 @@ fn extract_text_command(
 
     writer.flush()?;
     Ok(())
+}
+
+fn extract_text_jsonl_record(file: &Path, warning_format: WarningFormat) -> TextJsonlRecord {
+    let file_name = display_file_name(file);
+    let input = match read_input(file) {
+        Ok(input) => input,
+        Err(err) => {
+            return TextJsonlRecord::error(file_name, "unknown", err);
+        }
+    };
+    let document_type = match input.detect_document_type() {
+        Ok(document_type) => document_type_name(document_type),
+        Err(err) => {
+            return TextJsonlRecord::error(file_name, "unknown", CliError::Core(err));
+        }
+    };
+
+    let result = match document_type_for_input(&input, file) {
+        Ok(document_type) => match document_type {
+            DocumentType::Pptx => input.extract_pptx_text(),
+            DocumentType::Docx | DocumentType::Unknown => input.extract_docx_text(),
+            DocumentType::Xlsx => Err(OxdocError::InvalidArgument(
+                "cannot extract text from an XLSX workbook".to_owned(),
+            )),
+        },
+        Err(err) => {
+            return TextJsonlRecord::error(file_name, document_type, err);
+        }
+    };
+
+    match result {
+        Ok(extraction) => {
+            emit_warnings(&extraction.warnings, warning_format);
+            TextJsonlRecord::success(file_name, document_type, extraction)
+        }
+        Err(err) => TextJsonlRecord::error(file_name, document_type, CliError::Core(err)),
+    }
+}
+
+fn document_type_name(document_type: DocumentType) -> &'static str {
+    match document_type {
+        DocumentType::Docx => "docx",
+        DocumentType::Pptx => "pptx",
+        DocumentType::Xlsx => "xlsx",
+        DocumentType::Unknown => "unknown",
+    }
 }
 
 struct CsvCommandOptions<'a> {
@@ -721,6 +779,76 @@ impl From<std::io::Error> for CliError {
 struct TextPayload {
     file: String,
     text: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct TextJsonlRecord {
+    file: String,
+    document_type: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<JsonlError>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<OwnedWarningPayload>,
+}
+
+impl TextJsonlRecord {
+    fn success(
+        file: String,
+        document_type: &'static str,
+        extraction: oxdoc_core::Extraction<String>,
+    ) -> Self {
+        Self {
+            file,
+            document_type,
+            text: Some(extraction.value),
+            error: None,
+            warnings: extraction
+                .warnings
+                .iter()
+                .map(OwnedWarningPayload::from_output_warning)
+                .collect(),
+        }
+    }
+
+    fn error(file: String, document_type: &'static str, error: CliError) -> Self {
+        Self {
+            file,
+            document_type,
+            text: None,
+            error: Some(JsonlError {
+                code: error.code(),
+                message: error.to_string(),
+            }),
+            warnings: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+struct JsonlError {
+    code: &'static str,
+    message: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct OwnedWarningPayload {
+    category: &'static str,
+    code: &'static str,
+    path: String,
+    message: String,
+}
+
+impl OwnedWarningPayload {
+    fn from_output_warning(warning: &OutputWarning) -> Self {
+        Self {
+            category: warning.category().as_str(),
+            code: warning.code().as_str(),
+            path: warning.path.clone(),
+            message: warning.message.clone(),
+        }
+    }
 }
 
 #[derive(Debug, serde::Serialize)]
