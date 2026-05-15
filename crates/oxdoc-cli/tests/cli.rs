@@ -216,6 +216,39 @@ fn extracts_text_as_structured_json() {
 }
 
 #[test]
+fn extracts_pptx_text_as_structured_json() {
+    let pptx = fixtures::build_package("pptx/text", "structured-slide.pptx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        pptx.to_str().unwrap(),
+        "--format",
+        "structured-json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual["file"], "structured-slide.pptx");
+    assert_eq!(actual["document_type"], "pptx");
+    assert_eq!(actual["blocks"][0]["part_type"], "slide");
+    assert!(
+        actual["blocks"][0]["part_path"]
+            .as_str()
+            .unwrap()
+            .starts_with("ppt/slides/slide")
+    );
+    assert_eq!(actual["blocks"][0]["ordinal"], 1);
+    assert!(
+        actual["blocks"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Slide")
+    );
+}
+
+#[test]
 fn extracts_structured_json_from_stdin_and_multiple_inputs() {
     let docx = fixtures::build_package("docx/basic", "structured-stdin.docx");
     let second = fixtures::build_package("docx/basic", "structured-second.docx");
@@ -257,6 +290,27 @@ fn extracts_structured_json_from_stdin_and_multiple_inputs() {
             .unwrap()
             .ends_with("structured-second.docx")
     );
+}
+
+#[test]
+fn emits_empty_structured_json_batch_when_no_inputs_succeed() {
+    let missing = unique_path("missing-structured-only.docx");
+    let xlsx = fixtures::build_package("xlsx/basic", "structured-only.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        missing.to_str().unwrap(),
+        xlsx.to_str().unwrap(),
+        "--format",
+        "structured-json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("missing-structured-only.docx"));
+    assert!(stderr(&output).contains("cannot extract text from an XLSX workbook"));
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual.as_array().unwrap().len(), 0);
 }
 
 #[test]
