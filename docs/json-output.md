@@ -65,7 +65,7 @@ Shape:
 
 ```json
 {
-  "oxdoc_version": "1.0.0",
+  "oxdoc_version": "1.1.0",
   "file": "report.docx",
   "author": "Usuario Falso",
   "last_modified_by": "Usuario Falso",

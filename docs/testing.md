@@ -56,6 +56,31 @@ High-value fuzz targets:
 
 Fuzz failures should become regression tests when possible.
 
+## Performance Workbenches
+
+Parser throughput benchmarks live in `crates/oxdoc-core/benches/throughput.rs`
+and run with:
+
+```bash
+cargo bench -p oxdoc-core
+```
+
+Peak-memory baselines use synthetic fixtures and `/usr/bin/time`:
+
+```bash
+make memory-baselines
+```
+
+The optional competitive workbench compares the release CLI with local tools
+such as Apache Tika, `xlsx2csv`, and Mammoth when they are installed:
+
+```bash
+make competitor-workbench
+```
+
+Competitive results are not part of the merge gate because external tool
+availability and versions vary by machine.
+
 ## CI Checks
 
 Current CI runs:

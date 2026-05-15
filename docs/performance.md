@@ -100,6 +100,24 @@ Current cases:
 
 Published baseline numbers live in [Peak Memory Baselines](performance-memory-baselines.md).
 
+## Competitive Workbench
+
+Use [`scripts/competitor-workbench.py`](../scripts/competitor-workbench.py) when
+you want full CLI comparisons against optional local tools such as Apache Tika,
+`xlsx2csv`, and Mammoth. Unlike the Criterion suite, this workbench includes
+process startup, command-line parsing, ZIP opening, parser work, and output
+writing.
+
+Run it with:
+
+```bash
+make competitor-workbench
+```
+
+The report is written to `target/competitor-workbench/report.md` and raw rows to
+`target/competitor-workbench/results.csv`. See [Competitive Workbench](performance-competitors.md)
+for setup, fixture descriptions, and interpretation guidance.
+
 ### Regression Guidance
 
 Use at least three samples (`--iterations 3`) before treating a memory change as a regression. Compare the median `Peak RSS MiB` for the same machine class, OS, Rust version, and fixture sizes.

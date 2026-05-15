@@ -31,6 +31,7 @@ Status: in progress.
 - Add benchmarks for cold start and additional throughput scenarios.
 - Expand large XLSX scenarios with inline strings and larger real-world peak-memory probes.
 - Add configurable memory and temporary-file policies for high-volume XLSX extraction.
+- Keep the competitive workbench current as comparable OOXML extraction tools change.
 - Keep peak-memory baseline numbers current in docs and release notes.
 
 ## Phase 4: Public API

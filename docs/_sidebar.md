@@ -20,6 +20,7 @@
   - [Errors and Warnings](errors-and-warnings.md)
   - [Performance and Memory](performance.md)
   - [Peak Memory Baselines](performance-memory-baselines.md)
+  - [Competitive Workbench](performance-competitors.md)
   - [Testing Strategy](testing.md)
 
 - **Project**

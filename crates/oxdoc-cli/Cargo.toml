@@ -1,6 +1,6 @@
 [package]
 name = "oxdoc-cli"
-version = "1.0.0"
+version = "1.1.0"
 authors.workspace = true
 description = "Command-line interface for oxdoc"
 edition.workspace = true
@@ -20,7 +20,7 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 flate2 = "1"
-oxdoc-core = { path = "../oxdoc-core", version = "1.0.0" }
+oxdoc-core = { path = "../oxdoc-core", version = "1.1.0" }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"

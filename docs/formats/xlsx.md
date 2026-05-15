@@ -112,7 +112,7 @@ Formula cells use their cached workbook value. If the workbook does not contain 
 
 Worksheet XML is streamed to the caller-provided writer. Shared strings use a bounded store: values stay in memory up to an internal threshold and spill to temporary files after that. Temporary files are created in the OS temporary directory and are removed when the extraction finishes or errors.
 
-The memory bound applies to the shared-string table within the documented ZIP input limits. Memory can still grow with workbook metadata, the largest shared string currently being parsed, the current row width, ZIP library bookkeeping, and the caller's output writer. Very wide rows or sparse cells far to the right can allocate many empty CSV fields before the row is written.
+The memory bound applies to the shared-string table within the documented ZIP input limits. Memory can still grow with workbook metadata, the largest shared string currently being parsed, the current row's populated cells, ZIP library bookkeeping, and the caller's output writer. Sparse cells far to the right are kept sparse until the row is written; the CSV output still contains the required delimiters for missing fields.
 
 ## Planned Improvements
 

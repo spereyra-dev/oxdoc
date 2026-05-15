@@ -11,6 +11,7 @@ installer, Homebrew tap updates, and future crates.io publishing.
 - Version numbers are updated consistently.
 - Release artifacts are built from a clean checkout.
 - `install.sh` and Homebrew formula rendering tests pass.
+- Performance notes are current when the release includes parser, memory, or throughput changes.
 
 ## Versioning
 
@@ -79,6 +80,15 @@ Before publishing, run dry-runs from a clean checkout:
 ```bash
 cargo publish -p oxdoc-core --dry-run
 cargo publish -p oxdoc-cli --dry-run
+```
+
+For performance-focused releases, also run the local benchmark workflows and
+include relevant notes in the changelog:
+
+```bash
+cargo bench -p oxdoc-core --no-run
+make memory-baselines
+make competitor-workbench
 ```
 
 If `oxdoc-core` has not been published yet, the `oxdoc-cli` dry-run may fail registry resolution during verification. In that case, publish `oxdoc-core` first, then rerun the `oxdoc-cli` dry-run before publishing the CLI crate.

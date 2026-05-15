@@ -8,6 +8,20 @@ The format is based on human-readable release notes.
 
 No unreleased changes yet.
 
+## 1.1.0 - 2026-05-15
+
+### Added
+
+- Optional competitive workbench for comparing `oxdoc` with local OOXML extraction CLIs such as Apache Tika, `xlsx2csv`, and Mammoth.
+- Documentation for competitive benchmark setup, fixture cases, and interpretation.
+- Python wrapper package for calling the `oxdoc` CLI from orchestration and data workflows.
+
+### Changed
+
+- Documented XLSX sparse-row memory behavior after sparse CSV row buffering improvements.
+- Reduced XML text decoding allocations across DOCX, PPTX, metadata, XLSX, and shared-string parser paths.
+- Kept XLSX CSV rows sparse until write time to avoid allocating empty strings for far-right cells.
+
 ## 1.0.0 - 2026-05-14
 
 ### Added
