@@ -34,6 +34,7 @@ From 1.0 onward, public CLI and Rust API changes follow semantic versioning.
 
 ```bash
 oxdoc extract text contrato.docx
+oxdoc extract text *.docx --format jsonl
 oxdoc extract csv data.xlsx --sheet "Ventas Q1" --delimiter ","
 oxdoc extract csv data.xlsx --sheet-index 2
 oxdoc extract csv data.xlsx --all-sheets --output-dir exported-sheets

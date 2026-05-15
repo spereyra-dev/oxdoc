@@ -112,6 +112,12 @@ For integrations:
 oxdoc extract text contrato.docx --format json
 ```
 
+For streaming batch ingestion:
+
+```bash
+oxdoc extract text *.docx --format jsonl
+```
+
 Output shape:
 
 ```json

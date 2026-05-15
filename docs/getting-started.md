@@ -35,6 +35,12 @@ JSON text output is available for integrations:
 cargo run -p oxdoc-cli -- extract text contrato.docx --format json
 ```
 
+JSONL output is available for streaming batch ingestion:
+
+```bash
+cargo run -p oxdoc-cli -- extract text *.docx --format jsonl
+```
+
 ## Convert XLSX to CSV
 
 ```bash

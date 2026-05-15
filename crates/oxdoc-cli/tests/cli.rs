@@ -50,6 +50,67 @@ fn extracts_text_as_json() {
 }
 
 #[test]
+fn extracts_text_as_jsonl_with_partial_errors() {
+    let docx = fixtures::build_package("docx/basic", "good-jsonl.docx");
+    let missing = unique_path("missing-jsonl.docx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+        missing.to_str().unwrap(),
+        "--format",
+        "jsonl",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["document_type"], "docx");
+    assert!(
+        records[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("good-jsonl.docx")
+    );
+    assert_eq!(
+        records[0]["text"].as_str().unwrap().trim_end(),
+        fixtures::read_snapshot("docx_basic_text.txt").trim_end()
+    );
+    assert_eq!(records[1]["document_type"], "unknown");
+    assert!(
+        records[1]["error"]["code"]
+            .as_str()
+            .unwrap()
+            .starts_with('E')
+    );
+    assert!(!records[1]["error"]["message"].as_str().unwrap().is_empty());
+}
+
+#[test]
+fn extracts_text_as_jsonl_from_stdin() {
+    let docx = fixtures::build_package("docx/basic", "stdin-jsonl.docx");
+
+    let output = oxdoc_with_stdin(
+        ["extract", "text", "-", "--format", "jsonl"],
+        &fs::read(&docx).unwrap(),
+    );
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["file"], "<stdin>");
+    assert_eq!(records[0]["document_type"], "docx");
+    assert_eq!(
+        records[0]["text"].as_str().unwrap().trim_end(),
+        fixtures::read_snapshot("docx_basic_text.txt").trim_end()
+    );
+}
+
+#[test]
 fn extracts_application_generated_docx_text_to_stdout() {
     let docx = fixtures::fixture_file("docx/python-docx-basic.docx");
 
@@ -1095,6 +1156,44 @@ fn keeps_json_output_clean_when_warnings_are_emitted() {
 }
 
 #[test]
+fn includes_structured_warnings_in_jsonl_records() {
+    let docx = create_ooxml(
+        "malformed-jsonl-warning.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Hello JSONL</w:t></w:r></w:p><"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "--warnings",
+        "none",
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+        "--format",
+        "jsonl",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["text"], "Hello JSONL\n");
+    let warnings = records[0]["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0]["category"], "parser");
+    assert_eq!(warnings[0]["code"], "W001");
+    assert_eq!(warnings[0]["path"], "word/document.xml");
+}
+
+#[test]
 fn emits_machine_readable_json_warnings() {
     let docx = create_ooxml(
         "malformed-json-warning.docx",
@@ -1234,6 +1333,13 @@ fn stderr(output: &std::process::Output) -> String {
 
 fn json_warning_lines(output: &std::process::Output) -> Vec<Value> {
     stderr(output)
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+fn jsonl_lines(output: &std::process::Output) -> Vec<Value> {
+    stdout(output)
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
