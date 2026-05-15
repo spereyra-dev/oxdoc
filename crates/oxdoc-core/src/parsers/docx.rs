@@ -7,8 +7,8 @@ use quick_xml::events::Event;
 use crate::models::{Extraction, OutputWarning, StructuredText, TextBlock};
 use crate::parsers::find_office_document_path;
 use crate::parsers::{
-    decode_xml_reference, decode_xml_text, name_eq, parent_dir, parse_relationships, rels_path_for,
-    resolve_relationship_target,
+    append_decoded_xml_reference, append_decoded_xml_text, name_eq, parent_dir,
+    parse_relationships, rels_path_for, resolve_relationship_target,
 };
 use crate::vfs::OoxmlPackage;
 use crate::{OxdocError, Result};
@@ -172,6 +172,7 @@ fn extract_xml_text<R: BufRead>(source: R, path: &str) -> Result<Extraction<Stri
     let mut deleted_revision_depth = 0usize;
     let mut table_contexts = Vec::new();
     let mut pending_cell_paragraph_separator = false;
+    let mut decoded = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -215,25 +216,19 @@ fn extract_xml_text<R: BufRead>(source: R, path: &str) -> Result<Extraction<Stri
                 }
             }
             Ok(Event::Text(value)) if in_text_node => {
-                push_text(
-                    &mut text,
-                    &decode_xml_text(value.as_ref()),
-                    &mut pending_cell_paragraph_separator,
-                );
+                decoded.clear();
+                append_decoded_xml_text(value.as_ref(), &mut decoded);
+                push_text(&mut text, &decoded, &mut pending_cell_paragraph_separator);
             }
             Ok(Event::CData(value)) if in_text_node => {
-                push_text(
-                    &mut text,
-                    &decode_xml_text(value.as_ref()),
-                    &mut pending_cell_paragraph_separator,
-                );
+                decoded.clear();
+                append_decoded_xml_text(value.as_ref(), &mut decoded);
+                push_text(&mut text, &decoded, &mut pending_cell_paragraph_separator);
             }
             Ok(Event::GeneralRef(value)) if in_text_node => {
-                push_text(
-                    &mut text,
-                    &decode_xml_reference(value.as_ref()),
-                    &mut pending_cell_paragraph_separator,
-                );
+                decoded.clear();
+                append_decoded_xml_reference(value.as_ref(), &mut decoded);
+                push_text(&mut text, &decoded, &mut pending_cell_paragraph_separator);
             }
             Ok(Event::End(element)) => {
                 if name_eq(element.name().as_ref(), b"t") {

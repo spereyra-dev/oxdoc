@@ -296,12 +296,19 @@ pub(crate) fn attr_value(element: &BytesStart<'_>, expected_local: &[u8]) -> Opt
 }
 
 pub(crate) fn decode_xml_text(bytes: &[u8]) -> String {
+    let mut decoded = String::new();
+    append_decoded_xml_text(bytes, &mut decoded);
+    decoded
+}
+
+pub(crate) fn append_decoded_xml_text(bytes: &[u8], decoded: &mut String) {
     let raw = String::from_utf8_lossy(bytes);
     if !raw.contains('&') {
-        return raw.into_owned();
+        decoded.push_str(&raw);
+        return;
     }
 
-    let mut decoded = String::with_capacity(raw.len());
+    decoded.reserve(raw.len());
     let mut chars = raw.chars().peekable();
     while let Some(ch) = chars.next() {
         if ch != '&' {
@@ -348,32 +355,41 @@ pub(crate) fn decode_xml_text(bytes: &[u8]) -> String {
             }
         }
     }
+}
 
+#[cfg(test)]
+pub(crate) fn decode_xml_reference(bytes: &[u8]) -> String {
+    let mut decoded = String::new();
+    append_decoded_xml_reference(bytes, &mut decoded);
     decoded
 }
 
-pub(crate) fn decode_xml_reference(bytes: &[u8]) -> String {
+pub(crate) fn append_decoded_xml_reference(bytes: &[u8], decoded: &mut String) {
     match bytes {
-        b"amp" => "&".to_owned(),
-        b"lt" => "<".to_owned(),
-        b"gt" => ">".to_owned(),
-        b"quot" => "\"".to_owned(),
-        b"apos" => "'".to_owned(),
+        b"amp" => decoded.push('&'),
+        b"lt" => decoded.push('<'),
+        b"gt" => decoded.push('>'),
+        b"quot" => decoded.push('"'),
+        b"apos" => decoded.push('\''),
         _ => {
             let entity = String::from_utf8_lossy(bytes);
             if let Some(hex) = entity.strip_prefix("#x")
                 && let Ok(value) = u32::from_str_radix(hex, 16)
                 && let Some(decoded_char) = char::from_u32(value)
             {
-                return decoded_char.to_string();
+                decoded.push(decoded_char);
+                return;
             }
             if let Some(decimal) = entity.strip_prefix('#')
                 && let Ok(value) = decimal.parse::<u32>()
                 && let Some(decoded_char) = char::from_u32(value)
             {
-                return decoded_char.to_string();
+                decoded.push(decoded_char);
+                return;
             }
-            format!("&{entity};")
+            decoded.push('&');
+            decoded.push_str(&entity);
+            decoded.push(';');
         }
     }
 }

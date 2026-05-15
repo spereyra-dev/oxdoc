@@ -5,8 +5,8 @@ use quick_xml::events::{BytesStart, Event};
 
 use crate::models::{Extraction, OutputWarning, StructuredText, TextBlock};
 use crate::parsers::{
-    decode_xml_reference, decode_xml_text, merge_warnings, name_eq, parent_dir,
-    parse_relationship_map, rels_path_for, resolve_relationship_target,
+    append_decoded_xml_reference, append_decoded_xml_text, decode_xml_text, merge_warnings,
+    name_eq, parent_dir, parse_relationship_map, rels_path_for, resolve_relationship_target,
 };
 use crate::vfs::OoxmlPackage;
 use crate::{OxdocError, Result};
@@ -230,6 +230,7 @@ fn extract_text_part<R: BufRead>(source: R, path: &str) -> Result<Extraction<Str
     let mut warnings = Vec::new();
     let mut in_text_node = false;
     let mut paragraph_has_content = false;
+    let mut decoded = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -258,14 +259,19 @@ fn extract_text_part<R: BufRead>(source: R, path: &str) -> Result<Extraction<Str
                 }
             }
             Ok(Event::Text(value)) if in_text_node => {
-                paragraph_has_content |= push_text(&mut text, &decode_xml_text(value.as_ref()));
+                decoded.clear();
+                append_decoded_xml_text(value.as_ref(), &mut decoded);
+                paragraph_has_content |= push_text(&mut text, &decoded);
             }
             Ok(Event::CData(value)) if in_text_node => {
-                paragraph_has_content |= push_text(&mut text, &decode_xml_text(value.as_ref()));
+                decoded.clear();
+                append_decoded_xml_text(value.as_ref(), &mut decoded);
+                paragraph_has_content |= push_text(&mut text, &decoded);
             }
             Ok(Event::GeneralRef(value)) if in_text_node => {
-                paragraph_has_content |=
-                    push_text(&mut text, &decode_xml_reference(value.as_ref()));
+                decoded.clear();
+                append_decoded_xml_reference(value.as_ref(), &mut decoded);
+                paragraph_has_content |= push_text(&mut text, &decoded);
             }
             Ok(Event::End(element)) => {
                 if name_eq(element.name().as_ref(), b"t") {

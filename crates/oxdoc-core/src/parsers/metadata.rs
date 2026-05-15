@@ -6,7 +6,7 @@ use quick_xml::events::Event;
 
 use crate::Result;
 use crate::models::{DocumentInfo, Extraction, OutputWarning};
-use crate::parsers::{attr_value, decode_xml_reference, decode_xml_text, name_eq};
+use crate::parsers::{append_decoded_xml_reference, append_decoded_xml_text, attr_value, name_eq};
 use crate::vfs::OoxmlPackage;
 
 const MACRO_PARTS: &[&str] = &[
@@ -123,6 +123,7 @@ fn parse_core<R: BufRead>(source: R, path: &str) -> Result<Extraction<CoreProps>
     let mut props = CoreProps::default();
     let mut warnings = Vec::new();
     let mut current_field: Option<Vec<u8>> = None;
+    let mut decoded = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -137,19 +138,23 @@ fn parse_core<R: BufRead>(source: R, path: &str) -> Result<Extraction<CoreProps>
             }
             Ok(Event::Text(value)) => {
                 if let Some(field) = &current_field {
-                    let value = decode_xml_text(value.as_ref());
-                    assign_core_value(&mut props, field, value);
+                    decoded.clear();
+                    append_decoded_xml_text(value.as_ref(), &mut decoded);
+                    assign_core_value(&mut props, field, &decoded);
                 }
             }
             Ok(Event::CData(value)) => {
                 if let Some(field) = &current_field {
-                    let value = decode_xml_text(value.as_ref());
-                    assign_core_value(&mut props, field, value);
+                    decoded.clear();
+                    append_decoded_xml_text(value.as_ref(), &mut decoded);
+                    assign_core_value(&mut props, field, &decoded);
                 }
             }
             Ok(Event::GeneralRef(value)) => {
                 if let Some(field) = &current_field {
-                    assign_core_value(&mut props, field, decode_xml_reference(value.as_ref()));
+                    decoded.clear();
+                    append_decoded_xml_reference(value.as_ref(), &mut decoded);
+                    assign_core_value(&mut props, field, &decoded);
                 }
             }
             Ok(Event::End(element))
@@ -179,6 +184,7 @@ fn parse_app<R: BufRead>(source: R, path: &str) -> Result<Extraction<AppProps>> 
     let mut props = AppProps::default();
     let mut warnings = Vec::new();
     let mut current_field: Option<Vec<u8>> = None;
+    let mut decoded = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -193,19 +199,23 @@ fn parse_app<R: BufRead>(source: R, path: &str) -> Result<Extraction<AppProps>> 
             }
             Ok(Event::Text(value)) => {
                 if let Some(field) = &current_field {
-                    let value = decode_xml_text(value.as_ref());
-                    assign_app_value(&mut props, field, value);
+                    decoded.clear();
+                    append_decoded_xml_text(value.as_ref(), &mut decoded);
+                    assign_app_value(&mut props, field, &decoded);
                 }
             }
             Ok(Event::CData(value)) => {
                 if let Some(field) = &current_field {
-                    let value = decode_xml_text(value.as_ref());
-                    assign_app_value(&mut props, field, value);
+                    decoded.clear();
+                    append_decoded_xml_text(value.as_ref(), &mut decoded);
+                    assign_app_value(&mut props, field, &decoded);
                 }
             }
             Ok(Event::GeneralRef(value)) => {
                 if let Some(field) = &current_field {
-                    assign_app_value(&mut props, field, decode_xml_reference(value.as_ref()));
+                    decoded.clear();
+                    append_decoded_xml_reference(value.as_ref(), &mut decoded);
+                    assign_app_value(&mut props, field, &decoded);
                 }
             }
             Ok(Event::End(element))
@@ -235,6 +245,7 @@ fn parse_custom<R: BufRead>(source: R, path: &str) -> Result<Extraction<CustomPr
     let mut props = CustomProps::default();
     let mut warnings = Vec::new();
     let mut current_property: Option<CustomPropertyValue> = None;
+    let mut decoded = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -264,7 +275,7 @@ fn parse_custom<R: BufRead>(source: R, path: &str) -> Result<Extraction<CustomPr
                 if let Some(property) = &mut current_property
                     && property.value_depth > 0
                 {
-                    property.value.push_str(&decode_xml_text(value.as_ref()));
+                    append_decoded_xml_text(value.as_ref(), &mut property.value);
                     property.saw_value = true;
                 }
             }
@@ -272,7 +283,7 @@ fn parse_custom<R: BufRead>(source: R, path: &str) -> Result<Extraction<CustomPr
                 if let Some(property) = &mut current_property
                     && property.value_depth > 0
                 {
-                    property.value.push_str(&decode_xml_text(value.as_ref()));
+                    append_decoded_xml_text(value.as_ref(), &mut property.value);
                     property.saw_value = true;
                 }
             }
@@ -280,9 +291,9 @@ fn parse_custom<R: BufRead>(source: R, path: &str) -> Result<Extraction<CustomPr
                 if let Some(property) = &mut current_property
                     && property.value_depth > 0
                 {
-                    property
-                        .value
-                        .push_str(&decode_xml_reference(value.as_ref()));
+                    decoded.clear();
+                    append_decoded_xml_reference(value.as_ref(), &mut decoded);
+                    property.value.push_str(&decoded);
                     property.saw_value = true;
                 }
             }
@@ -325,23 +336,23 @@ fn apply_core(info: &mut DocumentInfo, props: CoreProps) {
     info.revision = props.revision;
 }
 
-fn assign_core_value(props: &mut CoreProps, field: &[u8], value: String) {
+fn assign_core_value(props: &mut CoreProps, field: &[u8], value: &str) {
     match crate::parsers::local_name(field) {
-        b"creator" => props.author = Some(append_or_new(props.author.take(), value)),
+        b"creator" => append_option(&mut props.author, value),
         b"lastModifiedBy" => {
-            props.last_modified_by = Some(append_or_new(props.last_modified_by.take(), value));
+            append_option(&mut props.last_modified_by, value);
         }
-        b"created" => props.created_at = Some(append_or_new(props.created_at.take(), value)),
-        b"modified" => props.modified_at = Some(append_or_new(props.modified_at.take(), value)),
-        b"revision" => props.revision = Some(append_or_new(props.revision.take(), value)),
+        b"created" => append_option(&mut props.created_at, value),
+        b"modified" => append_option(&mut props.modified_at, value),
+        b"revision" => append_option(&mut props.revision, value),
         _ => {}
     }
 }
 
-fn assign_app_value(props: &mut AppProps, field: &[u8], value: String) {
+fn assign_app_value(props: &mut AppProps, field: &[u8], value: &str) {
     match crate::parsers::local_name(field) {
-        b"Application" => props.application = Some(append_or_new(props.application.take(), value)),
-        b"Company" => props.company = Some(append_or_new(props.company.take(), value)),
+        b"Application" => append_option(&mut props.application, value),
+        b"Company" => append_option(&mut props.company, value),
         b"Words" => props.word_count = value.parse().ok(),
         b"Pages" => props.page_count = value.parse().ok(),
         b"Slides" => props.slide_count = value.parse().ok(),
@@ -350,13 +361,10 @@ fn assign_app_value(props: &mut AppProps, field: &[u8], value: String) {
     }
 }
 
-fn append_or_new(existing: Option<String>, value: String) -> String {
-    match existing {
-        Some(mut existing) => {
-            existing.push_str(&value);
-            existing
-        }
-        None => value,
+fn append_option(target: &mut Option<String>, value: &str) {
+    match target {
+        Some(existing) => existing.push_str(value),
+        None => *target = Some(value.to_owned()),
     }
 }
 
