@@ -1,5 +1,8 @@
 # Roadmap
 
+The Arrow/Parquet architecture and benchmark spike is documented in
+[XLSX Arrow and Parquet Spike](spikes/xlsx-arrow-parquet.md).
+
 The roadmap is intentionally practical: `oxdoc` should become a reliable, fast, embeddable OOXML extractor before it grows a large feature surface.
 
 ## Phase 0: OSS Baseline
