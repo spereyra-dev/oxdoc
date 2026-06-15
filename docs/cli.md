@@ -227,6 +227,31 @@ Notes:
 
 `--value-mode formatted` reads workbook styles when present and formats supported numeric cells in a locale-independent way. Dates use ISO output (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS`), time-only values use `HH:MM:SS`, percentages include `%`, and common decimal and currency formats use the decimal precision declared by the workbook. Unsupported formats fall back to the raw stored value.
 
+## Extract Typed XLSX Rows
+
+```bash
+oxdoc extract rows <FILE> [--format jsonl] [--sheet <NAME>|--sheet-index <INDEX>] [--include-hidden] [--value-mode <MODE>]
+```
+
+`FILE` is one `.xlsx` workbook or `-` for stdin. Unlike CSV batch extraction,
+this command accepts a single input and emits one JSON object per worksheet row.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--format jsonl` | `jsonl` | Emit newline-delimited row records. |
+| `--sheet <NAME>` | first visible workbook sheet | Select a sheet by name. Mutually exclusive with `--sheet-index`. |
+| `--sheet-index <INDEX>` | first visible workbook sheet | Select by 1-based visible sheet index, or full workbook index with `--include-hidden`. |
+| `--include-hidden` | false | Include hidden and very hidden sheets in index selection. |
+| `--value-mode raw\|formatted` | `raw` | Include deterministic formatted numeric values when available with `formatted`. |
+
+```bash
+oxdoc extract rows data.xlsx --sheet "Sales Q1" --value-mode formatted
+```
+
+Row and column indices in each record are 0-based. Requested `sheet_index`
+values remain 1-based. Sparse cells are omitted, raw numbers remain strings,
+and warnings are emitted to stderr without contaminating the JSONL stream.
+
 ## Read Metadata
 
 ```bash

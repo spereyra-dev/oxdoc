@@ -423,6 +423,208 @@ fn extracts_csv_with_formatted_xlsx_values() {
 }
 
 #[test]
+fn extracts_sparse_typed_xlsx_rows_as_jsonl() {
+    let xlsx = create_ooxml(
+        "typed-rows-cli.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<styleSheet><cellXfs><xf numFmtId="14"/></cellXfs></styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row r="3"><c r="A3"/><c r="C3" t="inlineStr"><is><t>text</t></is></c><c r="D3" t="b"><v>1</v></c><c r="E3" t="e"><v>#N/A</v></c><c r="F3" s="0"><f>TODAY()</f><v>44927</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "extract",
+        "rows",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Data",
+        "--format",
+        "jsonl",
+        "--value-mode",
+        "formatted",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 1);
+    let row = &records[0];
+    assert_eq!(row["schema_version"], 1);
+    assert!(
+        row["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("typed-rows-cli.xlsx")
+    );
+    assert_eq!(row["sheet_name"], "Data");
+    assert_eq!(row["row_index"], 2);
+    let cells = row["cells"].as_array().unwrap();
+    assert_eq!(
+        cells
+            .iter()
+            .map(|cell| cell["column_index"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![0, 2, 3, 4, 5]
+    );
+    assert_eq!(cells[0]["kind"], "blank");
+    assert!(cells[0].get("raw").is_none());
+    assert_eq!(cells[1]["kind"], "string");
+    assert_eq!(cells[1]["raw"], "text");
+    assert_eq!(cells[1]["value"], "text");
+    assert_eq!(cells[2]["kind"], "boolean");
+    assert_eq!(cells[2]["raw"], "1");
+    assert_eq!(cells[2]["value"], true);
+    assert_eq!(cells[3]["kind"], "error");
+    assert_eq!(cells[3]["raw"], "#N/A");
+    assert_eq!(cells[4]["kind"], "number");
+    assert_eq!(cells[4]["raw"], "44927");
+    assert_eq!(cells[4]["formatted"], "2023-01-01");
+    assert_eq!(cells[4]["has_formula"], true);
+}
+
+#[test]
+fn extracts_xlsx_rows_from_stdin() {
+    let xlsx = fixtures::build_package("xlsx/basic", "rows-stdin.xlsx");
+
+    let output = oxdoc_with_stdin(
+        ["extract", "rows", "-", "--sheet", "Sales Q1"],
+        &fs::read(xlsx).unwrap(),
+    );
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let records = jsonl_lines(&output);
+    assert!(!records.is_empty());
+    assert_eq!(records[0]["file"], "<stdin>");
+    assert_eq!(records[0]["sheet_name"], "Sales Q1");
+}
+
+#[test]
+fn extracts_xlsx_rows_by_visible_sheet_index() {
+    let xlsx = create_ooxml(
+        "rows-selector.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Hidden" sheetId="1" state="hidden" r:id="rId1"/><sheet name="First" sheetId="2" r:id="rId2"/><sheet name="Second" sheetId="3" r:id="rId3"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/hidden.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/first.xml"/><Relationship Id="rId3" Type="worksheet" Target="worksheets/second.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/hidden.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>hidden</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/first.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>first</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/second.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>second</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "extract",
+        "rows",
+        xlsx.to_str().unwrap(),
+        "--sheet-index",
+        "2",
+    ]);
+
+    assert!(output.status.success());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["sheet_index"], 2);
+    assert_eq!(records[0]["cells"][0]["raw"], "second");
+
+    let hidden_output = oxdoc([
+        "extract",
+        "rows",
+        xlsx.to_str().unwrap(),
+        "--sheet-index",
+        "1",
+        "--include-hidden",
+    ]);
+
+    assert!(hidden_output.status.success());
+    let hidden_records = jsonl_lines(&hidden_output);
+    assert_eq!(hidden_records[0]["sheet_index"], 1);
+    assert_eq!(hidden_records[0]["cells"][0]["raw"], "hidden");
+}
+
+#[test]
+fn keeps_rows_jsonl_stdout_clean_when_warnings_are_emitted() {
+    let xlsx = create_ooxml(
+        "rows-warning.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>kept</v></c></row><"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc(["extract", "rows", xlsx.to_str().unwrap()]);
+
+    assert!(output.status.success());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["cells"][0]["raw"], "kept");
+    assert!(!stdout(&output).contains("warning["));
+    assert!(stderr(&output).contains("warning[parser/W001]"));
+}
+
+#[test]
+fn rejects_invalid_xlsx_rows_without_stdout_records() {
+    let invalid = unique_path("invalid-rows.xlsx");
+    fs::write(&invalid, b"not an xlsx").unwrap();
+
+    let output = oxdoc(["extract", "rows", invalid.to_str().unwrap()]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("error[E002]"));
+}
+
+#[test]
 fn extracts_application_generated_xlsx_csv_to_stdout() {
     let xlsx = fixtures::fixture_file("xlsx/openpyxl-basic.xlsx");
 

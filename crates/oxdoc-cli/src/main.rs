@@ -6,7 +6,8 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use oxdoc_core::{
     AuditSignal, DocumentAudit, DocumentInfo, DocumentType, OutputWarning, OxdocError,
-    StructuredText, XlsxCsvOptions, XlsxValueMode,
+    StructuredText, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxRow, XlsxRowControl,
+    XlsxSheetOptions, XlsxValueMode,
 };
 
 mod update;
@@ -105,6 +106,23 @@ enum ExtractCommand {
         #[arg(long, conflicts_with = "output", requires = "all_sheets")]
         output_dir: Option<PathBuf>,
     },
+    Rows {
+        file: PathBuf,
+        #[arg(long, value_enum, default_value_t = RowsFormat::Jsonl)]
+        format: RowsFormat,
+        #[arg(long, conflicts_with = "sheet_index")]
+        sheet: Option<String>,
+        #[arg(
+            long,
+            conflicts_with = "sheet",
+            help = "1-based visible workbook sheet index to extract"
+        )]
+        sheet_index: Option<usize>,
+        #[arg(long, help = "Include hidden and very hidden workbook sheets")]
+        include_hidden: bool,
+        #[arg(long, value_enum, default_value_t = CliXlsxValueMode::Raw)]
+        value_mode: CliXlsxValueMode,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -113,6 +131,11 @@ enum TextFormat {
     Json,
     Jsonl,
     StructuredJson,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum RowsFormat {
+    Jsonl,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -196,6 +219,25 @@ fn run() -> Result<(), CliError> {
                         output: output.as_deref(),
                         output_dir: output_dir.as_deref(),
                     },
+                    warning_format,
+                )?;
+            }
+            ExtractCommand::Rows {
+                file,
+                format: RowsFormat::Jsonl,
+                sheet,
+                sheet_index,
+                include_hidden,
+                value_mode,
+            } => {
+                extract_rows_command(
+                    &file,
+                    XlsxSheetOptions {
+                        sheet_name: sheet.as_deref(),
+                        sheet_index,
+                        include_hidden,
+                    },
+                    value_mode.into(),
                     warning_format,
                 )?;
             }
@@ -505,6 +547,45 @@ fn extract_csv_command(
     Ok(())
 }
 
+fn extract_rows_command(
+    file: &Path,
+    options: XlsxSheetOptions<'_>,
+    value_mode: XlsxValueMode,
+    warning_format: WarningFormat,
+) -> Result<(), CliError> {
+    let input = read_input(file)?;
+    let file_name = display_file_name(file);
+    let mut writer = io::stdout().lock();
+    let extraction = input
+        .visit_xlsx_rows(options, value_mode, |row| {
+            let record = RowsJsonlRecord {
+                schema_version: 1,
+                file: &file_name,
+                sheet_name: options.sheet_name,
+                sheet_index: options.sheet_index,
+                row_index: row.row_index,
+                cells: row
+                    .cells
+                    .iter()
+                    .map(RowsJsonlCell::try_from)
+                    .collect::<oxdoc_core::Result<Vec<_>>>()?,
+            };
+            let line = serde_json::to_vec(&record).map_err(|err| {
+                OxdocError::Io(io::Error::other(format!(
+                    "failed to serialize XLSX row: {err}"
+                )))
+            })?;
+            writer.write_all(&line)?;
+            writer.write_all(b"\n")?;
+            Ok(XlsxRowControl::Continue)
+        })
+        .map_err(CliError::Core)?;
+
+    writer.flush()?;
+    emit_warnings(&extraction.warnings, warning_format);
+    Ok(())
+}
+
 fn export_all_sheets(
     file: &Path,
     output_dir: &Path,
@@ -693,6 +774,26 @@ impl Input {
                 options,
                 value_mode,
                 writer,
+            ),
+        }
+    }
+
+    fn visit_xlsx_rows<F>(
+        &self,
+        options: XlsxSheetOptions<'_>,
+        value_mode: XlsxValueMode,
+        visitor: F,
+    ) -> oxdoc_core::Result<oxdoc_core::Extraction<()>>
+    where
+        F: FnMut(&XlsxRow) -> oxdoc_core::Result<XlsxRowControl>,
+    {
+        match self {
+            Input::Path(path) => oxdoc_core::visit_xlsx_rows(path, options, value_mode, visitor),
+            Input::Stdin(bytes) => oxdoc_core::visit_xlsx_rows_from_reader(
+                Cursor::new(bytes),
+                options,
+                value_mode,
+                visitor,
             ),
         }
     }
@@ -895,6 +996,78 @@ struct TextJsonlRecord {
     error: Option<JsonlError>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<OwnedWarningPayload>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct RowsJsonlRecord<'a> {
+    schema_version: u8,
+    file: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sheet_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sheet_index: Option<usize>,
+    row_index: usize,
+    cells: Vec<RowsJsonlCell<'a>>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct RowsJsonlCell<'a> {
+    column_index: usize,
+    kind: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    raw: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<RowsJsonlValue<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    formatted: Option<&'a str>,
+    has_formula: bool,
+}
+
+impl<'a> TryFrom<&'a XlsxCell> for RowsJsonlCell<'a> {
+    type Error = OxdocError;
+
+    fn try_from(cell: &'a XlsxCell) -> Result<Self, Self::Error> {
+        let (kind, raw, value, formatted) = match &cell.value {
+            XlsxCellValue::Blank => ("blank", None, None, None),
+            XlsxCellValue::String { raw, value } => (
+                "string",
+                Some(raw.as_str()),
+                Some(RowsJsonlValue::String(value)),
+                None,
+            ),
+            XlsxCellValue::Boolean { raw, value } => (
+                "boolean",
+                Some(raw.as_str()),
+                value.map(RowsJsonlValue::Boolean),
+                None,
+            ),
+            XlsxCellValue::Number { raw, formatted } => {
+                ("number", Some(raw.as_str()), None, formatted.as_deref())
+            }
+            XlsxCellValue::Error { raw } => ("error", Some(raw.as_str()), None, None),
+            _ => {
+                return Err(OxdocError::InvalidArgument(
+                    "unsupported XLSX cell value for JSONL output".to_owned(),
+                ));
+            }
+        };
+
+        Ok(Self {
+            column_index: cell.column_index,
+            kind,
+            raw,
+            value,
+            formatted,
+            has_formula: cell.has_formula,
+        })
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(untagged)]
+enum RowsJsonlValue<'a> {
+    String(&'a str),
+    Boolean(bool),
 }
 
 impl TextJsonlRecord {

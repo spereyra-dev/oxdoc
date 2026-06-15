@@ -110,6 +110,41 @@ class Oxdoc:
         stdout, stderr, _ = self._run(args)
         return OxdocResult(stdout, warning_lines(stderr))
 
+    def extract_rows(
+        self,
+        path: PathLike,
+        *,
+        sheet: str | None = None,
+        sheet_index: int | None = None,
+        include_hidden: bool = False,
+        value_mode: ValueMode = "raw",
+    ) -> OxdocResult:
+        """Extract one XLSX sheet as typed JSONL row dictionaries."""
+
+        args = [
+            "extract",
+            "rows",
+            str(path),
+            "--format",
+            "jsonl",
+            "--value-mode",
+            value_mode,
+        ]
+        if sheet is not None:
+            args.extend(["--sheet", sheet])
+        if sheet_index is not None:
+            args.extend(["--sheet-index", str(sheet_index)])
+        if include_hidden:
+            args.append("--include-hidden")
+
+        stdout, stderr, command = self._run(args)
+        rows = [
+            self._json(line, command)
+            for line in stdout.splitlines()
+            if line.strip()
+        ]
+        return OxdocResult(rows, warning_lines(stderr))
+
     def list_sheets(self, path: PathLike, *, include_hidden: bool = False) -> OxdocResult:
         """List XLSX sheets as dictionaries with index, name, and optional visibility."""
 

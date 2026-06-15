@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json",
+  "title": "oxdoc XLSX rows JSONL record",
+  "description": "Schema for each JSON object line emitted by `oxdoc extract rows --format jsonl` in oxdoc schema version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "file", "row_index", "cells"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of the XLSX rows JSONL record contract."
+    },
+    "file": {
+      "type": "string",
+      "description": "File name derived from the provided input path, or `<stdin>` for standard input."
+    },
+    "sheet_name": {
+      "type": "string",
+      "description": "Sheet name supplied with `--sheet`, when that selector was used."
+    },
+    "sheet_index": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-based sheet index supplied with `--sheet-index`, when that selector was used."
+    },
+    "row_index": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0-based worksheet row index."
+    },
+    "cells": {
+      "type": "array",
+      "description": "Present worksheet cells in ascending column order; omitted sparse cells are not synthesized.",
+      "items": {
+        "$ref": "#/$defs/cell"
+      }
+    }
+  },
+  "not": {
+    "required": ["sheet_name", "sheet_index"]
+  },
+  "$defs": {
+    "cell": {
+      "oneOf": [
+        { "$ref": "#/$defs/blankCell" },
+        { "$ref": "#/$defs/stringCell" },
+        { "$ref": "#/$defs/booleanCell" },
+        { "$ref": "#/$defs/numberCell" },
+        { "$ref": "#/$defs/errorCell" }
+      ]
+    },
+    "cellBaseProperties": {
+      "column_index": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "0-based worksheet column index."
+      },
+      "has_formula": {
+        "type": "boolean",
+        "description": "Whether the cell contains a formula."
+      }
+    },
+    "blankCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_index", "kind", "has_formula"],
+      "properties": {
+        "column_index": { "$ref": "#/$defs/cellBaseProperties/column_index" },
+        "kind": { "type": "string", "const": "blank" },
+        "has_formula": { "$ref": "#/$defs/cellBaseProperties/has_formula" }
+      }
+    },
+    "stringCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_index", "kind", "raw", "value", "has_formula"],
+      "properties": {
+        "column_index": { "$ref": "#/$defs/cellBaseProperties/column_index" },
+        "kind": { "type": "string", "const": "string" },
+        "raw": { "type": "string" },
+        "value": { "type": "string" },
+        "has_formula": { "$ref": "#/$defs/cellBaseProperties/has_formula" }
+      }
+    },
+    "booleanCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_index", "kind", "raw", "has_formula"],
+      "properties": {
+        "column_index": { "$ref": "#/$defs/cellBaseProperties/column_index" },
+        "kind": { "type": "string", "const": "boolean" },
+        "raw": { "type": "string" },
+        "value": { "type": "boolean" },
+        "has_formula": { "$ref": "#/$defs/cellBaseProperties/has_formula" }
+      }
+    },
+    "numberCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_index", "kind", "raw", "has_formula"],
+      "properties": {
+        "column_index": { "$ref": "#/$defs/cellBaseProperties/column_index" },
+        "kind": { "type": "string", "const": "number" },
+        "raw": {
+          "type": "string",
+          "description": "Stored worksheet number preserved as a JSON string."
+        },
+        "formatted": { "type": "string" },
+        "has_formula": { "$ref": "#/$defs/cellBaseProperties/has_formula" }
+      }
+    },
+    "errorCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_index", "kind", "raw", "has_formula"],
+      "properties": {
+        "column_index": { "$ref": "#/$defs/cellBaseProperties/column_index" },
+        "kind": { "type": "string", "const": "error" },
+        "raw": { "type": "string" },
+        "has_formula": { "$ref": "#/$defs/cellBaseProperties/has_formula" }
+      }
+    }
+  }
+}

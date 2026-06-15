@@ -41,6 +41,49 @@ fn representative_all_sheets_manifest_matches_schema() {
 }
 
 #[test]
+fn representative_xlsx_rows_jsonl_record_matches_schema_shape() {
+    let schema = read_json_schema("oxdoc-xlsx-rows-jsonl.schema.json");
+    let output: Value = serde_json::from_str(
+        r##"{
+            "schema_version": 1,
+            "file": "typed.xlsx",
+            "sheet_name": "Data",
+            "row_index": 2,
+            "cells": [
+                {"column_index": 0, "kind": "blank", "has_formula": false},
+                {"column_index": 2, "kind": "string", "raw": "text", "value": "text", "has_formula": false},
+                {"column_index": 3, "kind": "boolean", "raw": "1", "value": true, "has_formula": false},
+                {"column_index": 4, "kind": "number", "raw": "44927", "formatted": "2023-01-01", "has_formula": true},
+                {"column_index": 5, "kind": "error", "raw": "#N/A", "has_formula": false}
+            ]
+        }"##,
+    )
+    .unwrap();
+
+    validate_object(&schema, &output);
+    assert_eq!(
+        output["schema_version"],
+        schema["properties"]["schema_version"]["const"]
+    );
+    assert!(output["row_index"].as_u64().is_some());
+
+    let variants = schema["$defs"]["cell"]["oneOf"].as_array().unwrap();
+    let cells = output["cells"].as_array().unwrap();
+    assert_eq!(variants.len(), cells.len());
+
+    for cell in cells {
+        let kind = cell["kind"].as_str().unwrap();
+        let definition_name = format!("{kind}Cell");
+        let definition = schema["$defs"].get(&definition_name).unwrap();
+        validate_cell(&schema, definition, cell);
+        assert_eq!(definition["properties"]["kind"]["const"], kind);
+    }
+
+    assert!(output["cells"][3]["raw"].is_string());
+    assert!(output["cells"][3].get("value").is_none());
+}
+
+#[test]
 fn schemas_have_stable_public_metadata() {
     for name in [
         "oxdoc-info.schema.json",
@@ -48,6 +91,7 @@ fn schemas_have_stable_public_metadata() {
         "oxdoc-structured-text.schema.json",
         "oxdoc-audit.schema.json",
         "oxdoc-all-sheets-manifest.schema.json",
+        "oxdoc-xlsx-rows-jsonl.schema.json",
     ] {
         let schema = read_json_schema(name);
 
@@ -139,4 +183,57 @@ fn assert_json_type(field: &str, value: &Value, expected_type: &str) {
         matches,
         "field {field} has value {value:?}, expected {expected_type}"
     );
+}
+
+fn validate_cell(schema: &Value, definition: &Value, cell: &Value) {
+    let cell = cell.as_object().expect("representative cell is an object");
+    let required = definition["required"]
+        .as_array()
+        .expect("cell variant declares required fields");
+    let properties = definition["properties"]
+        .as_object()
+        .expect("cell variant declares properties");
+
+    assert_eq!(
+        definition["additionalProperties"].as_bool(),
+        Some(false),
+        "cell variant is strict"
+    );
+
+    for field in required {
+        let field = field.as_str().unwrap();
+        assert!(
+            cell.contains_key(field),
+            "missing required cell field {field}"
+        );
+    }
+
+    for (field, value) in cell {
+        let property = properties
+            .get(field)
+            .unwrap_or_else(|| panic!("cell field {field} is not declared"));
+        let property = property
+            .get("$ref")
+            .and_then(Value::as_str)
+            .map(|reference| {
+                reference
+                    .strip_prefix("#/$defs/cellBaseProperties/")
+                    .and_then(|name| schema["$defs"]["cellBaseProperties"].get(name))
+                    .unwrap_or_else(|| panic!("unsupported cell property reference {reference}"))
+            })
+            .unwrap_or(property);
+
+        if let Some(expected_type) = property.get("type").and_then(Value::as_str) {
+            assert_json_type(field, value, expected_type);
+        }
+        if let Some(expected) = property.get("const") {
+            assert_eq!(value, expected, "cell field {field} has the wrong constant");
+        }
+        if property.get("minimum").and_then(Value::as_i64) == Some(0) {
+            assert!(
+                value.as_u64().is_some(),
+                "cell field {field} must be a non-negative integer"
+            );
+        }
+    }
 }
