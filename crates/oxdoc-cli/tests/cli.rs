@@ -936,7 +936,7 @@ fn prints_audit_as_json_and_text() {
     assert_json_signal(&actual, "hidden_sheet", "warning", "Hidden");
     assert_json_signal(
         &actual,
-        "relationship_target",
+        "hyperlink",
         "warning",
         "https://example.invalid/audit",
     );

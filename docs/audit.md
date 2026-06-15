@@ -43,7 +43,7 @@ The versioned JSON Schema lives at [`schemas/v1/oxdoc-audit.schema.json`](schema
 
 | Field | Description |
 | --- | --- |
-| `kind` | Stable signal category, such as `macros`, `custom_properties`, `hidden_sheet`, `relationship_target`, or `parser_warning`. |
+| `kind` | Stable signal category, such as `macros`, `hidden_sheet`, `hyperlink`, `embedded_package`, or `parser_warning`. |
 | `severity` | Factual severity bucket. Current values are `info`, `warning`, and `high`. |
 | `path` | OOXML package part related to the signal. |
 | `message` | Human-readable detail. |
@@ -55,7 +55,13 @@ The versioned JSON Schema lives at [`schemas/v1/oxdoc-audit.schema.json`](schema
 | `macros` | `high` | VBA macro content is present or declared. |
 | `custom_properties` | `info` | Custom document properties are present. |
 | `hidden_sheet` | `warning` | An XLSX worksheet is hidden or very hidden. |
-| `relationship_target` | `warning` | A relationship target is external or otherwise suspicious. |
+| `workbook_protection` | `warning` | XLSX workbook protection settings are present. |
+| `hyperlink` | `warning` | An external hyperlink relationship is present. |
+| `external_link` | `warning` | An external workbook or data link relationship is present. |
+| `attached_template` | `warning` | An external attached-template relationship is present. |
+| `ole_object` | `warning` | An internal OLE object relationship is present. |
+| `embedded_package` | `warning` | An internal embedded-package relationship is present. |
+| `relationship_target` | `warning` | An unclassified relationship target is external or otherwise suspicious. |
 | `parser_warning` | `warning` | A recoverable parser warning occurred while collecting audit data. |
 
 Warnings are still emitted to stderr according to the global `--warnings` option. The `signals` array keeps audit findings in stdout for JSON consumers.

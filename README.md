@@ -248,7 +248,7 @@ oxdoc info report.docx --format text
 oxdoc audit report.docx --format json
 ```
 
-Audit output reports factual document intake signals such as macros, custom properties, suspicious relationship targets, hidden XLSX sheets, and recoverable parser warnings. It does not render, mutate, or assign risk scores to documents.
+Audit output reports factual document intake signals such as macros, custom properties, external hyperlinks and templates, embedded packages and OLE objects, workbook protection, hidden XLSX sheets, and recoverable parser warnings. It does not render, mutate, or assign risk scores to documents.
 
 ## Workspace Layout
 

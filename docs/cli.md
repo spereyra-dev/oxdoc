@@ -293,4 +293,4 @@ Example:
 oxdoc audit workbook.xlsx --format json
 ```
 
-Audit signals are factual findings, not a risk score. Current signals include macros, custom properties, hidden XLSX sheets, suspicious relationship targets, and recoverable parser warnings.
+Audit signals are factual findings, not a risk score. Current signals include macros, custom properties, hidden or protected XLSX workbooks, classified external relationships, embedded packages and OLE objects, suspicious relationship targets, and recoverable parser warnings.
