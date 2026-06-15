@@ -29,8 +29,109 @@ struct CellState {
     column_index: Option<usize>,
     style_index: Option<usize>,
     value: String,
+    has_formula: bool,
     in_value: bool,
     in_inline_text: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SheetRow {
+    index: usize,
+    cells: Vec<SheetCell>,
+    next_column: usize,
+}
+
+impl SheetRow {
+    fn new(index: usize) -> Self {
+        Self {
+            index,
+            cells: Vec::new(),
+            next_column: 0,
+        }
+    }
+
+    fn next_column(&self) -> usize {
+        self.next_column
+    }
+
+    fn set(&mut self, cell: SheetCell) {
+        self.next_column = self.next_column.max(cell.column_index.saturating_add(1));
+        match self
+            .cells
+            .binary_search_by_key(&cell.column_index, |cell| cell.column_index)
+        {
+            Ok(index) => self.cells[index] = cell,
+            Err(index) => self.cells.insert(index, cell),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SheetCell {
+    column_index: usize,
+    value: SheetCellValue,
+    has_formula: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SheetCellValue {
+    Blank,
+    String {
+        raw: String,
+        value: String,
+    },
+    Boolean {
+        raw: String,
+        value: Option<bool>,
+    },
+    Number {
+        raw: String,
+        formatted: Option<String>,
+    },
+    Error {
+        raw: String,
+    },
+}
+
+impl SheetCellValue {
+    fn csv_value(&self) -> &str {
+        match self {
+            Self::Blank => "",
+            Self::String { value, .. } | Self::Error { raw: value } => value,
+            Self::Boolean {
+                value: Some(true), ..
+            } => "TRUE",
+            Self::Boolean {
+                value: Some(false), ..
+            } => "FALSE",
+            Self::Boolean {
+                raw, value: None, ..
+            } => raw,
+            Self::Number {
+                formatted: Some(value),
+                ..
+            } => value,
+            Self::Number {
+                raw,
+                formatted: None,
+            } => raw,
+        }
+    }
+}
+
+trait SheetRowSink {
+    fn emit(&mut self, row: &SheetRow) -> Result<()>;
+}
+
+struct CsvRowSink<'a, W> {
+    writer: &'a mut W,
+    delimiter: u8,
+}
+
+impl<W: Write> SheetRowSink for CsvRowSink<'_, W> {
+    fn emit(&mut self, row: &SheetRow) -> Result<()> {
+        write_csv_row(self.writer, row, self.delimiter)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -425,45 +526,67 @@ fn write_sheet_csv<R: BufRead, W: Write>(
     format_context: &SheetFormatContext<'_>,
     writer: &mut W,
 ) -> Result<Extraction<()>> {
+    let mut sink = CsvRowSink { writer, delimiter };
+    parse_sheet_rows(source, path, shared_strings, format_context, &mut sink)
+}
+
+fn parse_sheet_rows<R: BufRead>(
+    source: R,
+    path: &str,
+    shared_strings: &mut impl SharedStringLookup,
+    format_context: &SheetFormatContext<'_>,
+    sink: &mut impl SheetRowSink,
+) -> Result<Extraction<()>> {
     let mut reader = Reader::from_reader(source);
     reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
     let mut warnings = Vec::new();
-    let mut row = SparseCsvRow::default();
+    let mut row: Option<SheetRow> = None;
     let mut current_cell: Option<CellState> = None;
-    let mut in_row = false;
+    let mut next_row_index = 0;
 
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) => {
                 if name_eq(element.name().as_ref(), b"row") {
-                    in_row = true;
-                    row.clear();
+                    let row_index = row_index_from_element(&element, next_row_index);
+                    next_row_index = row_index.saturating_add(1);
+                    row = Some(SheetRow::new(row_index));
                 } else if name_eq(element.name().as_ref(), b"c") {
-                    current_cell = Some(cell_state_from_element(&element, row.next_column()));
+                    let fallback_column = row.as_ref().map_or(0, SheetRow::next_column);
+                    current_cell = Some(cell_state_from_element(&element, fallback_column));
                 } else if let Some(cell) = &mut current_cell {
                     if name_eq(element.name().as_ref(), b"v") {
                         cell.in_value = true;
                     } else if name_eq(element.name().as_ref(), b"t") {
                         cell.in_inline_text = true;
+                    } else if name_eq(element.name().as_ref(), b"f") {
+                        cell.has_formula = true;
                     }
                 }
             }
             Ok(Event::Empty(element)) => {
                 if name_eq(element.name().as_ref(), b"row") {
-                    row.clear();
-                    writer.write_all(b"\n")?;
-                    in_row = false;
-                } else if name_eq(element.name().as_ref(), b"c") && in_row {
+                    let row_index = row_index_from_element(&element, next_row_index);
+                    next_row_index = row_index.saturating_add(1);
+                    sink.emit(&SheetRow::new(row_index))?;
+                    row = None;
+                } else if name_eq(element.name().as_ref(), b"c")
+                    && let Some(row) = &mut row
+                {
                     let cell = cell_state_from_element(&element, row.next_column());
-                    push_cell_value(
-                        &mut row,
+                    push_typed_cell(
+                        row,
                         cell,
                         shared_strings,
                         path,
                         format_context,
                         &mut warnings,
                     )?;
+                } else if name_eq(element.name().as_ref(), b"f")
+                    && let Some(cell) = &mut current_cell
+                {
+                    cell.has_formula = true;
                 }
             }
             Ok(Event::Text(value)) => {
@@ -497,9 +620,9 @@ fn write_sheet_csv<R: BufRead, W: Write>(
                 }
 
                 if name_eq(element.name().as_ref(), b"c") {
-                    if let Some(cell) = current_cell.take() {
-                        push_cell_value(
-                            &mut row,
+                    if let (Some(row), Some(cell)) = (&mut row, current_cell.take()) {
+                        push_typed_cell(
+                            row,
                             cell,
                             shared_strings,
                             path,
@@ -507,9 +630,10 @@ fn write_sheet_csv<R: BufRead, W: Write>(
                             &mut warnings,
                         )?;
                     }
-                } else if name_eq(element.name().as_ref(), b"row") && in_row {
-                    write_csv_row(writer, &row, delimiter)?;
-                    in_row = false;
+                } else if name_eq(element.name().as_ref(), b"row")
+                    && let Some(row) = row.take()
+                {
+                    sink.emit(&row)?;
                 }
             }
             Ok(Event::Eof) => break,
@@ -533,7 +657,11 @@ pub fn fuzz_parse_shared_strings(xml: &[u8]) -> Result<()> {
 
 #[doc(hidden)]
 pub fn fuzz_parse_sheet(xml: &[u8]) -> Result<()> {
-    let mut sink = Vec::new();
+    let mut output = Vec::new();
+    let mut sink = CsvRowSink {
+        writer: &mut output,
+        delimiter: b',',
+    };
     let mut shared_strings = SharedStringStore::empty();
     let styles = XlsxStyles::default();
     let format_context = SheetFormatContext {
@@ -541,47 +669,18 @@ pub fn fuzz_parse_sheet(xml: &[u8]) -> Result<()> {
         date_system: DateSystem::Excel1900,
         styles: &styles,
     };
-    let _ = write_sheet_csv(
+    let _ = parse_sheet_rows(
         Cursor::new(xml),
         "xl/worksheets/sheet1.xml",
         &mut shared_strings,
-        b',',
         &format_context,
         &mut sink,
     )?;
     Ok(())
 }
 
-#[derive(Debug, Default)]
-struct SparseCsvRow {
-    cells: Vec<(usize, String)>,
-    next_column: usize,
-}
-
-impl SparseCsvRow {
-    fn clear(&mut self) {
-        self.cells.clear();
-        self.next_column = 0;
-    }
-
-    fn next_column(&self) -> usize {
-        self.next_column
-    }
-
-    fn set(&mut self, column: usize, value: String) {
-        self.next_column = self.next_column.max(column.saturating_add(1));
-        match self
-            .cells
-            .binary_search_by_key(&column, |(column, _)| *column)
-        {
-            Ok(index) => self.cells[index].1 = value,
-            Err(index) => self.cells.insert(index, (column, value)),
-        }
-    }
-}
-
-fn push_cell_value(
-    row: &mut SparseCsvRow,
+fn push_typed_cell(
+    row: &mut SheetRow,
     cell: CellState,
     shared_strings: &mut impl SharedStringLookup,
     path: &str,
@@ -593,12 +692,18 @@ fn push_cell_value(
     let value = if cell.value_type.as_deref() == Some("s") {
         match cell.value.trim().parse::<usize>() {
             Ok(index) => match shared_strings.lookup(index)? {
-                Some(value) => value,
+                Some(value) => SheetCellValue::String {
+                    raw: cell.value.clone(),
+                    value,
+                },
                 None => {
                     warnings.push(OutputWarning::shared_string_index_out_of_bounds(
                         path, index,
                     ));
-                    String::new()
+                    SheetCellValue::String {
+                        raw: cell.value.clone(),
+                        value: String::new(),
+                    }
                 }
             },
             Err(_) => {
@@ -606,25 +711,60 @@ fn push_cell_value(
                     path,
                     cell.value.clone(),
                 ));
-                cell.value
+                SheetCellValue::String {
+                    raw: cell.value.clone(),
+                    value: cell.value.clone(),
+                }
             }
         }
     } else if cell.value_type.as_deref() == Some("b") {
-        match cell.value.trim() {
-            "1" | "true" | "TRUE" => "TRUE".to_owned(),
-            "0" | "false" | "FALSE" => "FALSE".to_owned(),
-            _ => cell.value,
+        let boolean = match cell.value.trim() {
+            "1" | "true" | "TRUE" => Some(true),
+            "0" | "false" | "FALSE" => Some(false),
+            _ => None,
+        };
+        SheetCellValue::Boolean {
+            raw: cell.value.clone(),
+            value: boolean,
         }
-    } else if format_context.value_mode == XlsxValueMode::Formatted {
-        format_cell_value(&cell, format_context.styles, format_context.date_system)
-            .unwrap_or(cell.value)
+    } else if matches!(cell.value_type.as_deref(), Some("str" | "inlineStr")) {
+        SheetCellValue::String {
+            raw: cell.value.clone(),
+            value: cell.value.clone(),
+        }
+    } else if cell.value_type.as_deref() == Some("e") {
+        SheetCellValue::Error {
+            raw: cell.value.clone(),
+        }
+    } else if cell.value.is_empty() {
+        SheetCellValue::Blank
     } else {
-        cell.value
+        let formatted = (format_context.value_mode == XlsxValueMode::Formatted)
+            .then(|| format_cell_value(&cell, format_context.styles, format_context.date_system))
+            .flatten();
+        SheetCellValue::Number {
+            raw: cell.value.clone(),
+            formatted,
+        }
     };
 
-    row.set(target_column, value);
+    row.set(SheetCell {
+        column_index: target_column,
+        value,
+        has_formula: cell.has_formula,
+    });
 
     Ok(())
+}
+
+fn row_index_from_element(
+    element: &quick_xml::events::BytesStart<'_>,
+    fallback_index: usize,
+) -> usize {
+    attr_value(element, b"r")
+        .and_then(|index| index.parse::<usize>().ok())
+        .and_then(|index| index.checked_sub(1))
+        .unwrap_or(fallback_index)
 }
 
 fn cell_state_from_element(
@@ -859,10 +999,10 @@ fn parse_cell_column(cell_ref: &str) -> Option<usize> {
     saw_letter.then_some(column.saturating_sub(1))
 }
 
-fn write_csv_row<W: Write>(writer: &mut W, row: &SparseCsvRow, delimiter: u8) -> Result<()> {
+fn write_csv_row<W: Write>(writer: &mut W, row: &SheetRow, delimiter: u8) -> Result<()> {
     let mut next_column = 0;
-    for (column, value) in &row.cells {
-        while next_column < *column {
+    for cell in &row.cells {
+        while next_column < cell.column_index {
             if next_column > 0 {
                 writer.write_all(&[delimiter])?;
             }
@@ -871,8 +1011,8 @@ fn write_csv_row<W: Write>(writer: &mut W, row: &SparseCsvRow, delimiter: u8) ->
         if next_column > 0 {
             writer.write_all(&[delimiter])?;
         }
-        write_csv_field(writer, value, delimiter)?;
-        next_column = column.saturating_add(1);
+        write_csv_field(writer, cell.value.csv_value(), delimiter)?;
+        next_column = cell.column_index.saturating_add(1);
     }
     writer.write_all(b"\n")?;
     Ok(())
@@ -910,10 +1050,23 @@ mod tests {
     use crate::parsers::xlsx_shared_strings::{SharedStringLookup, SharedStringStore};
 
     use super::{
-        CellFormat, CellState, DateSystem, SheetFormatContext, XlsxStyles, classify_number_format,
-        format_cell_value, format_number, parse_cell_column, parse_styles,
-        parse_workbook_date_system, parse_workbook_sheets, select_sheet, write_sheet_csv,
+        CellFormat, CellState, DateSystem, SheetCellValue, SheetFormatContext, SheetRow,
+        SheetRowSink, XlsxStyles, classify_number_format, format_cell_value, format_number,
+        parse_cell_column, parse_sheet_rows, parse_styles, parse_workbook_date_system,
+        parse_workbook_sheets, select_sheet, write_sheet_csv,
     };
+
+    #[derive(Default)]
+    struct CollectRows {
+        rows: Vec<SheetRow>,
+    }
+
+    impl SheetRowSink for CollectRows {
+        fn emit(&mut self, row: &SheetRow) -> crate::Result<()> {
+            self.rows.push(row.clone());
+            Ok(())
+        }
+    }
 
     fn raw_context(styles: &XlsxStyles) -> SheetFormatContext<'_> {
         SheetFormatContext {
@@ -1079,6 +1232,139 @@ mod tests {
             String::from_utf8(output).unwrap(),
             "shared,TRUE,#DIV/0!,inline,\n\n"
         );
+    }
+
+    #[test]
+    fn emits_typed_sparse_rows_to_sink() {
+        let styles = XlsxStyles {
+            cell_formats: vec![CellFormat {
+                number_format: Some("m/d/yyyy".to_owned()),
+            }],
+        };
+        let xml = r#"
+            <worksheet>
+              <sheetData>
+                <row r="3">
+                  <c r="A3"/>
+                  <c r="C3" t="b"><v>1</v></c>
+                  <c r="D3" t="e"><v>#N/A</v></c>
+                  <c r="E3" s="0"><f>TODAY()</f><v>44927</v></c>
+                  <c r="G3" t="s"><v>0</v></c>
+                </row>
+              </sheetData>
+            </worksheet>
+        "#;
+        let mut shared_strings = SharedStringStore::from_values(vec!["text".to_owned()]);
+        let mut sink = CollectRows::default();
+
+        parse_sheet_rows(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            &formatted_context(&styles),
+            &mut sink,
+        )
+        .unwrap();
+
+        assert_eq!(sink.rows.len(), 1);
+        let row = &sink.rows[0];
+        assert_eq!(row.index, 2);
+        assert_eq!(
+            row.cells
+                .iter()
+                .map(|cell| cell.column_index)
+                .collect::<Vec<_>>(),
+            vec![0, 2, 3, 4, 6]
+        );
+        assert_eq!(row.cells[0].value, SheetCellValue::Blank);
+        assert_eq!(
+            row.cells[1].value,
+            SheetCellValue::Boolean {
+                raw: "1".to_owned(),
+                value: Some(true),
+            }
+        );
+        assert_eq!(
+            row.cells[2].value,
+            SheetCellValue::Error {
+                raw: "#N/A".to_owned(),
+            }
+        );
+        assert!(row.cells[3].has_formula);
+        assert_eq!(
+            row.cells[3].value,
+            SheetCellValue::Number {
+                raw: "44927".to_owned(),
+                formatted: Some("2023-01-01".to_owned()),
+            }
+        );
+        assert_eq!(
+            row.cells[4].value,
+            SheetCellValue::String {
+                raw: "0".to_owned(),
+                value: "text".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn typed_rows_sort_cells_and_keep_the_last_duplicate() {
+        let xml = r#"
+            <worksheet>
+              <sheetData>
+                <row>
+                  <c r="C1"><v>first</v></c>
+                  <c r="A1"><v>left</v></c>
+                  <c r="C1"><v>last</v></c>
+                </row>
+              </sheetData>
+            </worksheet>
+        "#;
+        let mut shared_strings = SharedStringStore::empty();
+        let mut sink = CollectRows::default();
+
+        parse_sheet_rows(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            &raw_context(&XlsxStyles::default()),
+            &mut sink,
+        )
+        .unwrap();
+
+        assert_eq!(
+            sink.rows[0]
+                .cells
+                .iter()
+                .map(|cell| (cell.column_index, cell.value.csv_value()))
+                .collect::<Vec<_>>(),
+            vec![(0, "left"), (2, "last")]
+        );
+    }
+
+    #[test]
+    fn typed_rows_keep_completed_rows_before_malformed_xml() {
+        let xml = r#"
+            <worksheet>
+              <sheetData>
+                <row><c r="A1"><v>complete</v></c></row>
+                <row><c r="A2"><v>incomplete</v></c><
+        "#;
+        let mut shared_strings = SharedStringStore::empty();
+        let mut sink = CollectRows::default();
+
+        let result = parse_sheet_rows(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            &raw_context(&XlsxStyles::default()),
+            &mut sink,
+        )
+        .unwrap();
+
+        assert_eq!(result.warnings.len(), 1);
+        assert_eq!(sink.rows.len(), 1);
+        assert_eq!(sink.rows[0].cells[0].value.csv_value(), "complete");
     }
 
     #[test]
