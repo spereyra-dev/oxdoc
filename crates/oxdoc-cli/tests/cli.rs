@@ -625,6 +625,140 @@ fn rejects_invalid_xlsx_rows_without_stdout_records() {
 }
 
 #[test]
+fn infers_xlsx_schema_with_monotonic_promotion_and_style_dates() {
+    let xlsx = create_ooxml(
+        "schema-inference.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<styleSheet><cellXfs><xf numFmtId="0"/><xf numFmtId="14"/></cellXfs></styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData>
+                    <row r="1"><c r="A1"><v>1</v></c><c r="C1" s="1"><v>44927</v></c></row>
+                    <row r="2"><c r="A2"><v>2.5</v></c><c r="B2" t="b"><v>1</v></c><c r="C2" s="1"><v>44928</v></c></row>
+                    <row r="3"><c r="A3" t="inlineStr"><is><t>late</t></is></c></row>
+                </sheetData></worksheet>"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc(["infer", "schema", xlsx.to_str().unwrap(), "--sheet", "Data"]);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stderr(&output).is_empty());
+    let report: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(report["schema_version"], 1);
+    assert_eq!(report["experimental"], true);
+    assert_eq!(report["sheet_name"], "Data");
+    assert_eq!(report["header_policy"], "none");
+    assert_eq!(report["scan"]["mode"], "full");
+    assert_eq!(report["scan"]["examined_rows"], 3);
+
+    let columns = report["columns"].as_array().unwrap();
+    assert_eq!(columns.len(), 3);
+    assert_eq!(columns[0]["name"], "A");
+    assert_eq!(columns[0]["logical_type"], "utf8");
+    assert_eq!(columns[0]["nullable"], false);
+    assert_eq!(
+        columns[0]["observed_types"],
+        serde_json::json!(["int64", "float64", "utf8"])
+    );
+    assert_eq!(columns[1]["name"], "B");
+    assert_eq!(columns[1]["logical_type"], "bool");
+    assert_eq!(columns[1]["nullable"], true);
+    assert_eq!(columns[2]["logical_type"], "date");
+    assert_eq!(columns[2]["nullable"], true);
+
+    let warnings = report["warnings"].as_array().unwrap();
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| { warning["code"] == "type_conflict" && warning["column_index"] == 0 })
+    );
+}
+
+#[test]
+fn marks_sampled_xlsx_schema_as_approximate() {
+    let xlsx = create_ooxml(
+        "sampled-schema.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData>
+                    <row r="1"><c r="A1"><v>1</v></c></row>
+                    <row r="2"><c r="A2"><v>2</v></c></row>
+                    <row r="3"><c r="A3" t="inlineStr"><is><t>late conflict</t></is></c></row>
+                </sheetData></worksheet>"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "infer",
+        "schema",
+        xlsx.to_str().unwrap(),
+        "--sample-rows",
+        "2",
+    ]);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let report: serde_json::Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(report["scan"]["mode"], "sampled");
+    assert_eq!(report["scan"]["sample_rows"], 2);
+    assert_eq!(report["scan"]["examined_rows"], 2);
+    assert_eq!(report["columns"][0]["logical_type"], "int64");
+    assert!(
+        report["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| { warning["code"] == "sampled_result" })
+    );
+}
+
+#[test]
+fn rejects_zero_sample_rows_for_xlsx_schema() {
+    let xlsx = fixtures::build_package("xlsx/basic", "schema-zero-sample.xlsx");
+
+    let output = oxdoc([
+        "infer",
+        "schema",
+        xlsx.to_str().unwrap(),
+        "--sample-rows",
+        "0",
+    ]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("--sample-rows"));
+}
+
+#[test]
 fn extracts_application_generated_xlsx_csv_to_stdout() {
     let xlsx = fixtures::fixture_file("xlsx/openpyxl-basic.xlsx");
 

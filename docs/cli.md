@@ -252,6 +252,39 @@ Row and column indices in each record are 0-based. Requested `sheet_index`
 values remain 1-based. Sparse cells are omitted, raw numbers remain strings,
 and warnings are emitted to stderr without contaminating the JSONL stream.
 
+## Infer an XLSX Schema
+
+```bash
+oxdoc infer schema FILE [--sheet NAME|--sheet-index INDEX] [--include-hidden] [--sample-rows N]
+```
+
+This experimental command accepts one `.xlsx` workbook, including `-` for
+stdin, and writes one JSON report to stdout. JSON is the only output format.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--sheet <NAME>` | first visible workbook sheet | Select a sheet by name. Mutually exclusive with `--sheet-index`. |
+| `--sheet-index <INDEX>` | first visible workbook sheet | Select by 1-based visible sheet index, or full workbook index with `--include-hidden`. |
+| `--include-hidden` | false | Include hidden and very hidden sheets in index selection and permit selection by name. |
+| `--sample-rows <N>` | full scan | Examine at most `N` worksheet rows and mark the report as sampled. |
+
+```bash
+oxdoc infer schema data.xlsx --sheet "Sales Q1"
+oxdoc infer schema data.xlsx --sheet-index 2 --sample-rows 1000
+```
+
+The report has `schema_version: 1` and `experimental: true`. It does not infer
+headers: `header_policy` is always `none`, and columns use Excel-style names
+such as `A`, `B`, and `AA`. Column indices are 0-based; requested sheet indices
+remain 1-based.
+
+The default is a full worksheet scan. `--sample-rows` is faster for large
+worksheets but produces an approximate schema based only on examined rows.
+Logical types are exactly `null`, `bool`, `int64`, `float64`, `date`, `time`,
+`datetime`, and `utf8`. Date and time types are inferred only when workbook
+styles support that interpretation. Incompatible observed types promote the
+column to `utf8`. Numeric inference does not claim decimal precision or scale.
+
 ## Read Metadata
 
 ```bash

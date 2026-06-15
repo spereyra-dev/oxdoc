@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v1/oxdoc-xlsx-schema.schema.json",
+  "title": "oxdoc XLSX inferred schema report",
+  "description": "Schema for the experimental JSON report emitted by `oxdoc infer schema` in oxdoc schema version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "experimental",
+    "file",
+    "scan",
+    "header_policy",
+    "columns",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of the XLSX inferred schema report contract."
+    },
+    "experimental": {
+      "type": "boolean",
+      "const": true,
+      "description": "Marks schema inference as an experimental feature."
+    },
+    "file": {
+      "type": "string",
+      "description": "File name derived from the provided input path, or `<stdin>` for standard input."
+    },
+    "sheet_name": {
+      "type": "string",
+      "description": "Sheet name supplied with `--sheet`, when that selector was used."
+    },
+    "sheet_index": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-based sheet index supplied with `--sheet-index`, when that selector was used."
+    },
+    "scan": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/fullScan"
+        },
+        {
+          "$ref": "#/$defs/sampledScan"
+        }
+      ]
+    },
+    "header_policy": {
+      "type": "string",
+      "const": "none",
+      "description": "No worksheet row is interpreted as a header."
+    },
+    "columns": {
+      "type": "array",
+      "description": "Inferred columns in ascending worksheet column order.",
+      "items": {
+        "$ref": "#/$defs/column"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Recoverable inference warnings included in the JSON report.",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    }
+  },
+  "not": {
+    "required": ["sheet_name", "sheet_index"]
+  },
+  "$defs": {
+    "logicalType": {
+      "type": "string",
+      "enum": [
+        "null",
+        "bool",
+        "int64",
+        "float64",
+        "date",
+        "time",
+        "datetime",
+        "utf8"
+      ]
+    },
+    "fullScan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "examined_rows"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "const": "full"
+        },
+        "examined_rows": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of worksheet rows examined."
+        }
+      }
+    },
+    "sampledScan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "sample_rows", "examined_rows"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "const": "sampled"
+        },
+        "sample_rows": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum number of worksheet rows requested for sampling."
+        },
+        "examined_rows": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of worksheet rows actually examined."
+        }
+      }
+    },
+    "column": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "column_index",
+        "name",
+        "logical_type",
+        "nullable",
+        "observed_types"
+      ],
+      "properties": {
+        "column_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0-based worksheet column index."
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Z]+$",
+          "description": "Excel-style column name such as `A`, `B`, or `AA`."
+        },
+        "logical_type": {
+          "$ref": "#/$defs/logicalType"
+        },
+        "nullable": {
+          "type": "boolean",
+          "description": "Whether a null or absent value was observed for the column."
+        },
+        "observed_types": {
+          "type": "array",
+          "description": "Distinct logical types observed before promotion.",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/logicalType"
+          }
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "column_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0-based worksheet column index when the warning applies to one column."
+        }
+      }
+    }
+  }
+}

@@ -93,6 +93,18 @@ Use `--value-mode formatted` to include supported formatted numeric values.
 Row and column indices in the records are 0-based; `--sheet-index` remains a
 1-based selector. Raw numeric values stay strings, and warnings go to stderr.
 
+Infer an experimental JSON schema for a worksheet:
+
+```bash
+cargo run -p oxdoc-cli -- infer schema data.xlsx --sheet "Sales Q1"
+```
+
+Inference scans the full sheet by default. Use `--sample-rows N` for a faster,
+approximate report. It does not infer a header row; columns are named with
+Excel letters. Date and time inference requires supporting workbook styles,
+incompatible types promote to `utf8`, and numeric types make no decimal
+precision claim.
+
 ## Read Metadata
 
 ```bash

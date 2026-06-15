@@ -15,6 +15,7 @@ Fast OOXML extraction without rendering.
 - PPTX text extraction from slide text boxes and speaker notes.
 - XLSX worksheet-to-CSV extraction.
 - XLSX typed row streaming as JSONL.
+- Experimental XLSX schema inference as a versioned JSON report.
 - XLSX sheet listing and sheet selection by name or index, with explicit opt-in for hidden and very hidden sheets.
 - Metadata extraction from core, app, and custom document properties.
 - A reusable `oxdoc-core` crate and a CLI-facing `oxdoc-cli` crate.
@@ -229,6 +230,19 @@ object per worksheet row. Row and column indices are 0-based, while requested
 `--sheet-index` values are 1-based. Sparse cells are omitted, raw numbers remain
 strings, and recoverable warnings stay on stderr.
 
+### Infer an XLSX Schema
+
+```bash
+oxdoc infer schema data.xlsx --sheet "Ventas Q1"
+```
+
+The experimental command emits a JSON-only, versioned report. It scans the
+full worksheet by default; `--sample-rows N` produces a faster, approximate
+result. Headers are not inferred, so columns use Excel-letter names. Supported
+types are `null`, `bool`, `int64`, `float64`, `date`, `time`, `datetime`, and
+`utf8`. Date/time inference requires supporting styles, incompatible types
+promote to `utf8`, and no decimal precision or scale is claimed.
+
 ### Read Metadata
 
 ```bash
@@ -312,10 +326,10 @@ The command-line application. It owns:
 | --- | --- |
 | DOCX text | Main document text from `<w:t>`, paragraph breaks, tabs, and line breaks. |
 | PPTX text | Slide text boxes and linked speaker notes in presentation order. |
-| XLSX CSV and rows | Workbook relationship lookup, sheet name/index selection, hidden-sheet opt-in, shared strings, inline strings, sparse cells, typed JSONL rows, booleans, errors, cached formula values, CSV escaping. |
+| XLSX CSV, rows, and schema inference | Workbook relationship lookup, sheet name/index selection, hidden-sheet opt-in, shared strings, inline strings, sparse cells, typed JSONL rows, experimental inferred schemas, booleans, errors, cached formula values, CSV escaping. |
 | Metadata | Core/app properties plus basic macro detection. |
 | Audit | Factual signals for macros, custom properties, suspicious relationships, hidden XLSX sheets, and recoverable parser warnings. |
-| Output | Plain text, CSV, JSONL rows, JSON metadata, JSON text extraction. |
+| Output | Plain text, CSV, JSONL rows, JSON metadata, JSON text extraction, experimental XLSX schema JSON. |
 | Errors | Typed library errors, CLI non-zero hard failures. |
 | Warnings | Recoverable parser warnings with OOXML part paths. |
 
