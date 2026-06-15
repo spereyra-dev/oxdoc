@@ -118,6 +118,50 @@ Extraction<()>
 
 The caller owns the writer. This keeps the CSV path stream-friendly.
 
+### Typed XLSX rows
+
+Use `visit_xlsx_rows` when a consumer needs cell types without materializing
+the full worksheet:
+
+```rust
+use oxdoc_core::{
+    XlsxCellValue, XlsxRowControl, XlsxSheetOptions, XlsxValueMode,
+};
+
+fn main() -> oxdoc_core::Result<()> {
+    let extraction = oxdoc_core::visit_xlsx_rows(
+        "data.xlsx",
+        XlsxSheetOptions::default(),
+        XlsxValueMode::Formatted,
+        |row| {
+            for cell in &row.cells {
+                if let XlsxCellValue::Number { raw, formatted } = &cell.value {
+                    println!(
+                        "row={} column={} raw={} formatted={:?}",
+                        row.row_index, cell.column_index, raw, formatted
+                    );
+                }
+            }
+            Ok(XlsxRowControl::Continue)
+        },
+    )?;
+
+    assert!(extraction.value == ());
+    Ok(())
+}
+```
+
+Rows and columns use zero-based indexes. Rows are sparse: absent cells are not
+included, while explicit empty cell elements use `XlsxCellValue::Blank`.
+Repeated columns use the last cell in XML order. Formulas are not recalculated;
+`has_formula` identifies formula cells and the value is the workbook's cached
+value. Returning `XlsxRowControl::Stop` ends traversal successfully after the
+current row. Returning an `OxdocError` aborts traversal.
+
+`visit_xlsx_rows_from_reader` provides the equivalent `Read + Seek` entry
+point. `XlsxSheetOptions` selects a sheet independently from CSV delimiter
+configuration.
+
 ### `read_info`
 
 ```rust
@@ -170,7 +214,8 @@ use std::io::Cursor;
 
 use oxdoc_core::{
     extract_docx_text_from_reader, extract_pptx_text_from_reader, extract_xlsx_csv_from_reader,
-    read_audit_from_reader, read_info_from_reader, XlsxCsvOptions,
+    read_audit_from_reader, read_info_from_reader, visit_xlsx_rows_from_reader, XlsxCsvOptions,
+    XlsxRowControl, XlsxSheetOptions, XlsxValueMode,
 };
 
 fn main() -> oxdoc_core::Result<()> {
@@ -185,6 +230,17 @@ fn main() -> oxdoc_core::Result<()> {
     let xlsx = std::fs::File::open("data.xlsx")?;
     let mut csv = Vec::new();
     extract_xlsx_csv_from_reader(xlsx, XlsxCsvOptions::default(), &mut csv)?;
+
+    let typed_xlsx = std::fs::File::open("data.xlsx")?;
+    visit_xlsx_rows_from_reader(
+        typed_xlsx,
+        XlsxSheetOptions::default(),
+        XlsxValueMode::Raw,
+        |row| {
+            println!("typed row {}", row.row_index);
+            Ok(XlsxRowControl::Continue)
+        },
+    )?;
 
     let info_bytes = std::fs::read("deck.pptx")?;
     let info = read_info_from_reader(Cursor::new(info_bytes), "deck.pptx")?;

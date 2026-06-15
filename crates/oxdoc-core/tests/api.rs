@@ -4,7 +4,10 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use oxdoc_core::vfs::{OoxmlLimits, OoxmlPackage};
-use oxdoc_core::{DocumentType, OxdocError, XlsxCsvOptions, XlsxSheetVisibility, XlsxValueMode};
+use oxdoc_core::{
+    DocumentType, OxdocError, XlsxCellValue, XlsxCsvOptions, XlsxRowControl, XlsxSheetOptions,
+    XlsxSheetVisibility, XlsxValueMode,
+};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -400,6 +403,129 @@ fn extracts_formatted_xlsx_csv_through_public_api() {
 
     assert!(extraction.warnings.is_empty());
     assert_eq!(String::from_utf8(csv).unwrap(), "2023-01-01,50.00%\n");
+}
+
+#[test]
+fn visits_typed_xlsx_rows_through_path_api() {
+    let file = create_ooxml(
+        "typed-rows-path.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<styleSheet><cellXfs><xf numFmtId="14"/></cellXfs></styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row r="3"><c r="A3"/><c r="C3" t="b"><v>1</v></c><c r="D3" t="e"><v>#N/A</v></c><c r="E3" s="0"><f>TODAY()</f><v>44927</v></c><c r="C3" t="inlineStr"><is><t>last</t></is></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let mut rows = Vec::new();
+
+    let extraction = oxdoc_core::visit_xlsx_rows(
+        &file,
+        XlsxSheetOptions {
+            sheet_name: Some("Data"),
+            ..XlsxSheetOptions::default()
+        },
+        XlsxValueMode::Formatted,
+        |row| {
+            rows.push(row.clone());
+            Ok(XlsxRowControl::Continue)
+        },
+    )
+    .unwrap();
+
+    assert!(extraction.warnings.is_empty());
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].row_index, 2);
+    assert_eq!(
+        rows[0]
+            .cells
+            .iter()
+            .map(|cell| cell.column_index)
+            .collect::<Vec<_>>(),
+        vec![0, 2, 3, 4]
+    );
+    assert_eq!(rows[0].cells[0].value, XlsxCellValue::Blank);
+    assert_eq!(
+        rows[0].cells[1].value,
+        XlsxCellValue::String {
+            raw: "last".to_owned(),
+            value: "last".to_owned(),
+        }
+    );
+    assert_eq!(
+        rows[0].cells[2].value,
+        XlsxCellValue::Error {
+            raw: "#N/A".to_owned(),
+        }
+    );
+    assert!(rows[0].cells[3].has_formula);
+    assert_eq!(
+        rows[0].cells[3].value,
+        XlsxCellValue::Number {
+            raw: "44927".to_owned(),
+            formatted: Some("2023-01-01".to_owned()),
+        }
+    );
+}
+
+#[test]
+fn visits_typed_xlsx_rows_from_reader_and_stops_early() {
+    let file = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+    let reader = File::open(file).unwrap();
+    let mut visited = 0;
+
+    let extraction = oxdoc_core::visit_xlsx_rows_from_reader(
+        reader,
+        XlsxSheetOptions {
+            sheet_name: Some("Sales Q1"),
+            ..XlsxSheetOptions::default()
+        },
+        XlsxValueMode::Raw,
+        |_| {
+            visited += 1;
+            Ok(XlsxRowControl::Stop)
+        },
+    )
+    .unwrap();
+
+    assert_eq!(visited, 1);
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn propagates_typed_xlsx_row_callback_errors() {
+    let file = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let err = oxdoc_core::visit_xlsx_rows(
+        &file,
+        XlsxSheetOptions::default(),
+        XlsxValueMode::Raw,
+        |_| {
+            Err(OxdocError::InvalidArgument(
+                "callback rejected row".to_owned(),
+            ))
+        },
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(err, OxdocError::InvalidArgument(message) if message == "callback rejected row")
+    );
 }
 
 #[test]

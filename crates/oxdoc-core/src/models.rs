@@ -175,9 +175,82 @@ impl TextBlock {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum XlsxValueMode {
+    /// Preserve cached numeric XML values without applying number formats.
     #[default]
     Raw,
+    /// Also provide recognized display formatting while retaining raw values.
     Formatted,
+}
+
+/// Selects one worksheet for typed row extraction.
+///
+/// `sheet_index` is one-based and counts only visible sheets unless
+/// `include_hidden` is true. Set either `sheet_name` or `sheet_index`, not both.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct XlsxSheetOptions<'a> {
+    pub sheet_name: Option<&'a str>,
+    pub sheet_index: Option<usize>,
+    pub include_hidden: bool,
+}
+
+/// A sparse XLSX worksheet row.
+///
+/// `row_index` is the zero-based worksheet row index. Cells are ordered by
+/// `column_index`; absent worksheet cells do not appear in `cells`, while an
+/// explicit empty `<c>` element appears as [`XlsxCellValue::Blank`]. If a
+/// worksheet repeats a column in one row, the last cell wins.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XlsxRow {
+    pub row_index: usize,
+    pub cells: Vec<XlsxCell>,
+}
+
+/// A typed XLSX worksheet cell.
+///
+/// `column_index` is zero-based. `has_formula` reports the presence of a
+/// formula element; `value` is the cached cell value stored in the workbook,
+/// not a recalculation of the formula.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XlsxCell {
+    pub column_index: usize,
+    pub value: XlsxCellValue,
+    pub has_formula: bool,
+}
+
+/// The cached value stored for an XLSX cell.
+///
+/// Raw cell payloads are retained as decoded strings. For shared strings,
+/// `raw` is the shared-string table index and `value` is the resolved text.
+/// Numbers remain strings to avoid precision loss. `formatted` is populated
+/// only when formatted extraction recognizes the cell's number format, which
+/// includes supported date and time formats. Invalid boolean encodings retain
+/// `raw` and use `None` for `value`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum XlsxCellValue {
+    Blank,
+    String {
+        raw: String,
+        value: String,
+    },
+    Boolean {
+        raw: String,
+        value: Option<bool>,
+    },
+    Number {
+        raw: String,
+        formatted: Option<String>,
+    },
+    Error {
+        raw: String,
+    },
+}
+
+/// Controls typed XLSX row visitation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XlsxRowControl {
+    Continue,
+    Stop,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -289,7 +362,9 @@ impl AuditSignal {
 
 #[cfg(test)]
 mod tests {
-    use super::{Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCsvOptions};
+    use super::{
+        Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCsvOptions, XlsxSheetOptions,
+    };
 
     #[test]
     fn builds_and_maps_extractions() {
@@ -342,5 +417,14 @@ mod tests {
         assert_eq!(options.sheet_index, None);
         assert!(!options.include_hidden);
         assert_eq!(options.delimiter, b',');
+    }
+
+    #[test]
+    fn defaults_xlsx_sheet_options() {
+        let options = XlsxSheetOptions::default();
+
+        assert_eq!(options.sheet_name, None);
+        assert_eq!(options.sheet_index, None);
+        assert!(!options.include_hidden);
     }
 }

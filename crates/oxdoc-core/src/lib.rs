@@ -27,7 +27,8 @@ use std::path::Path;
 pub use error::{OxdocError, Result};
 pub use models::{
     AuditSignal, DocumentAudit, DocumentInfo, DocumentType, Extraction, OutputWarning,
-    StructuredText, TextBlock, XlsxCsvOptions, XlsxSheet, XlsxSheetVisibility, XlsxValueMode,
+    StructuredText, TextBlock, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxRow, XlsxRowControl,
+    XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
 };
 #[doc(hidden)]
 pub use parsers::docx::fuzz_extract_text as fuzz_docx_text;
@@ -121,6 +122,63 @@ pub fn extract_xlsx_csv_from_reader_with_value_mode<R: Read + Seek, W: Write>(
 ) -> Result<Extraction<()>> {
     let mut package = OoxmlPackage::new(reader)?;
     xlsx::write_csv(&mut package, options, value_mode, writer)
+}
+
+/// Visits one worksheet row at a time without materializing the full sheet.
+///
+/// Rows and their cells are borrowed for the duration of each callback. Return
+/// [`XlsxRowControl::Stop`] for successful early termination, or return an
+/// [`OxdocError`] to abort and propagate that error. Completed rows are visited
+/// before malformed worksheet XML is reported as a recoverable warning;
+/// an incomplete row at the malformed boundary is not visited.
+///
+/// Successful completion, including `Stop`, returns warnings encountered
+/// before termination. A callback error returns immediately as `Err`, so no
+/// [`Extraction`] is produced and parsing does not continue to discover later
+/// warnings.
+///
+/// ```
+/// # fn demo() -> oxdoc_core::Result<()> {
+/// use oxdoc_core::{XlsxRowControl, XlsxSheetOptions, XlsxValueMode};
+///
+/// oxdoc_core::visit_xlsx_rows(
+///     "data.xlsx",
+///     XlsxSheetOptions::default(),
+///     XlsxValueMode::Raw,
+///     |row| {
+///         println!("row {}", row.row_index);
+///         Ok(XlsxRowControl::Continue)
+///     },
+/// )?;
+/// # Ok(())
+/// # }
+/// ```
+pub fn visit_xlsx_rows<F>(
+    path: impl AsRef<Path>,
+    options: XlsxSheetOptions<'_>,
+    value_mode: XlsxValueMode,
+    visitor: F,
+) -> Result<Extraction<()>>
+where
+    F: FnMut(&XlsxRow) -> Result<XlsxRowControl>,
+{
+    let file = File::open(path)?;
+    visit_xlsx_rows_from_reader(file, options, value_mode, visitor)
+}
+
+/// Reader-based counterpart to [`visit_xlsx_rows`].
+pub fn visit_xlsx_rows_from_reader<R, F>(
+    reader: R,
+    options: XlsxSheetOptions<'_>,
+    value_mode: XlsxValueMode,
+    visitor: F,
+) -> Result<Extraction<()>>
+where
+    R: Read + Seek,
+    F: FnMut(&XlsxRow) -> Result<XlsxRowControl>,
+{
+    let mut package = OoxmlPackage::new(reader)?;
+    xlsx::visit_rows(&mut package, options, value_mode, visitor)
 }
 
 pub fn list_xlsx_sheets(path: impl AsRef<Path>) -> Result<Extraction<Vec<XlsxSheet>>> {
