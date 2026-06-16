@@ -13,6 +13,7 @@ Machine-readable schemas live under `schemas/v1/` in the repository and are mirr
 | `oxdoc extract text --format structured-json` | [`schemas/v1/oxdoc-structured-text.schema.json`](schemas/v1/oxdoc-structured-text.schema.json) |
 | `oxdoc extract tables --format json` | [`schemas/v1/oxdoc-docx-tables.schema.json`](schemas/v1/oxdoc-docx-tables.schema.json) |
 | `oxdoc audit --format json` | [`schemas/v1/oxdoc-audit.schema.json`](schemas/v1/oxdoc-audit.schema.json) |
+| Each `oxdoc audit --format jsonl` line | [`schemas/v1/oxdoc-audit-jsonl.schema.json`](schemas/v1/oxdoc-audit-jsonl.schema.json) |
 | `oxdoc extract csv --all-sheets --output-dir <DIR>` manifest | [`schemas/v1/oxdoc-all-sheets-manifest.schema.json`](schemas/v1/oxdoc-all-sheets-manifest.schema.json) |
 | Each `oxdoc extract rows --format jsonl` line | [`schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json`](schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json) |
 | `oxdoc infer schema FILE` | [`schemas/v1/oxdoc-xlsx-schema.schema.json`](schemas/v1/oxdoc-xlsx-schema.schema.json) |
@@ -27,6 +28,11 @@ states, paragraph blocks, nested table blocks, completion flags, and embedded
 recoverable warnings.
 
 The `--all-sheets` manifest records each exported XLSX sheet with `index`, `visibility`, `name`, `csv_path`, recoverable `warnings`, and an optional `error`. `visibility` is one of `visible`, `hidden`, or `veryHidden`.
+
+`oxdoc audit --format jsonl` emits one record per input file with either an
+`audit` object or an `error` object. It is the batch-friendly audit format; the
+regular JSON audit contract stays optimized for one document or a small
+in-memory array.
 
 The `v1` schemas use JSON Schema draft 2020-12, include stable `$id` values, and set `additionalProperties` to `false`. New output fields are introduced through a new schema version instead of silently widening the current contract.
 
