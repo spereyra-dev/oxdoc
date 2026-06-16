@@ -25,6 +25,68 @@ fn representative_structured_text_json_matches_schema() {
 }
 
 #[test]
+fn representative_docx_tables_json_matches_schema() {
+    let schema = read_json_schema("oxdoc-docx-tables.schema.json");
+    let output = serde_json::json!({
+        "schema_version": 1,
+        "file": "contract.docx",
+        "document_type": "docx",
+        "tables": [
+            {
+                "part_type": "main",
+                "part_path": "word/document.xml",
+                "table_ordinal": 1,
+                "complete": true,
+                "grid_column_count": 2,
+                "rows": [
+                    {
+                        "row_ordinal": 1,
+                        "grid_before": 0,
+                        "grid_after": 0,
+                        "complete": true,
+                        "cells": [
+                            {
+                                "cell_ordinal": 1,
+                                "grid_start": 0,
+                                "grid_span": 1,
+                                "vertical_merge": "none",
+                                "complete": true,
+                                "blocks": [
+                                    {"type": "paragraph", "text": "Cell"},
+                                    {
+                                        "type": "table",
+                                        "complete": true,
+                                        "rows": [
+                                            {
+                                                "row_ordinal": 1,
+                                                "grid_before": 0,
+                                                "grid_after": 0,
+                                                "complete": true,
+                                                "cells": []
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "warnings": [
+            {
+                "category": "parser",
+                "code": "W001",
+                "path": "word/document.xml",
+                "message": "stopped after malformed XML: unexpected EOF with open table"
+            }
+        ]
+    });
+
+    validate_object(&schema, &output);
+}
+
+#[test]
 fn representative_audit_json_matches_schema() {
     let schema = read_json_schema("oxdoc-audit.schema.json");
     let output = serde_json::from_str(&read_snapshot("cli_audit_json.json")).unwrap();
@@ -134,6 +196,7 @@ fn schemas_have_stable_public_metadata() {
         "oxdoc-info.schema.json",
         "oxdoc-extract-text.schema.json",
         "oxdoc-structured-text.schema.json",
+        "oxdoc-docx-tables.schema.json",
         "oxdoc-audit.schema.json",
         "oxdoc-all-sheets-manifest.schema.json",
         "oxdoc-xlsx-rows-jsonl.schema.json",

@@ -173,6 +173,66 @@ impl TextBlock {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct DocxTables {
+    pub document_type: String,
+    pub tables: Vec<DocxTable>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocxTable {
+    pub part_type: String,
+    pub part_path: String,
+    pub table_ordinal: usize,
+    pub complete: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grid_column_count: Option<usize>,
+    pub rows: Vec<DocxTableRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocxTableRow {
+    pub row_ordinal: usize,
+    pub grid_before: usize,
+    pub grid_after: usize,
+    pub complete: bool,
+    pub cells: Vec<DocxTableCell>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DocxTableCell {
+    pub cell_ordinal: usize,
+    pub grid_start: usize,
+    pub grid_span: usize,
+    pub vertical_merge: DocxVerticalMerge,
+    pub complete: bool,
+    pub blocks: Vec<DocxTableBlock>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+#[serde(rename_all = "snake_case")]
+pub enum DocxVerticalMerge {
+    None,
+    Restart,
+    Continue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DocxTableBlock {
+    Paragraph {
+        text: String,
+    },
+    Table {
+        complete: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        grid_column_count: Option<usize>,
+        rows: Vec<DocxTableRow>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum XlsxValueMode {
     /// Preserve cached numeric XML values without applying number formats.

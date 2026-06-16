@@ -76,6 +76,36 @@ fn main() -> oxdoc_core::Result<()> {
 
 Structured extraction is available through `extract_docx_structured_text`, `extract_docx_structured_text_from_reader`, `extract_pptx_structured_text`, and `extract_pptx_structured_text_from_reader`. It preserves the existing plain text extraction behavior while exposing ordered source blocks for downstream indexing, review, and RAG workflows.
 
+### DOCX Tables
+
+```rust
+use oxdoc_core::{extract_docx_tables, DocxTableBlock};
+
+fn main() -> oxdoc_core::Result<()> {
+    let extraction = extract_docx_tables("contract.docx")?;
+
+    for table in extraction.value.tables {
+        println!("{} {} table {}", table.part_type, table.part_path, table.table_ordinal);
+        for row in table.rows {
+            for cell in row.cells {
+                for block in cell.blocks {
+                    if let DocxTableBlock::Paragraph { text } = block {
+                        println!("{text}");
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+```
+
+`extract_docx_tables` and `extract_docx_tables_from_reader` preserve DOCX table
+rows, cells, grid offsets, column spans, raw vertical-merge states, paragraph
+blocks, nested table blocks, source part metadata, completion flags, and
+recoverable warnings.
+
 ### `extract_xlsx_csv`
 
 ```rust

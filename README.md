@@ -159,6 +159,12 @@ For source-aware extraction:
 oxdoc extract text contrato.docx --format structured-json
 ```
 
+For structured DOCX tables:
+
+```bash
+oxdoc extract tables contrato.docx --format json
+```
+
 Output shape:
 
 ```json

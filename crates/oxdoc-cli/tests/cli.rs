@@ -249,6 +249,115 @@ fn extracts_pptx_text_as_structured_json() {
 }
 
 #[test]
+fn extracts_docx_tables_as_json() {
+    let docx = create_ooxml(
+        "tables-cli.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:tbl><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>Alpha</w:t></w:r></w:p><w:p/></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "extract",
+        "tables",
+        docx.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual["schema_version"], 1);
+    assert!(
+        actual["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("tables-cli.docx")
+    );
+    assert_eq!(actual["document_type"], "docx");
+    assert!(actual["warnings"].as_array().unwrap().is_empty());
+    assert_eq!(actual["tables"][0]["part_type"], "main");
+    assert_eq!(actual["tables"][0]["part_path"], "word/document.xml");
+    assert_eq!(actual["tables"][0]["table_ordinal"], 1);
+    assert_eq!(actual["tables"][0]["complete"], true);
+    assert_eq!(actual["tables"][0]["grid_column_count"], 2);
+    assert_eq!(actual["tables"][0]["rows"][0]["row_ordinal"], 1);
+    assert_eq!(actual["tables"][0]["rows"][0]["cells"][0]["grid_start"], 0);
+    assert_eq!(actual["tables"][0]["rows"][0]["cells"][0]["grid_span"], 2);
+    assert_eq!(
+        actual["tables"][0]["rows"][0]["cells"][0]["vertical_merge"],
+        "none"
+    );
+    assert_eq!(
+        actual["tables"][0]["rows"][0]["cells"][0]["blocks"][0]["type"],
+        "paragraph"
+    );
+    assert_eq!(
+        actual["tables"][0]["rows"][0]["cells"][0]["blocks"][0]["text"],
+        "Alpha"
+    );
+    assert_eq!(
+        actual["tables"][0]["rows"][0]["cells"][0]["blocks"][1]["text"],
+        ""
+    );
+}
+
+#[test]
+fn extracts_docx_tables_from_stdin() {
+    let docx = create_ooxml(
+        "tables-stdin.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>From stdin</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+            ),
+        ],
+    );
+
+    let output = oxdoc_with_stdin(
+        ["extract", "tables", "-", "--format", "json"],
+        &fs::read(docx).unwrap(),
+    );
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual["file"], "<stdin>");
+    assert_eq!(
+        actual["tables"][0]["rows"][0]["cells"][0]["blocks"][0]["text"],
+        "From stdin"
+    );
+}
+
+#[test]
+fn rejects_docx_tables_from_non_docx_packages() {
+    let xlsx = fixtures::build_package("xlsx/basic", "tables.xlsx");
+    let pptx = fixtures::build_package("pptx/text", "tables.pptx");
+
+    let xlsx_output = oxdoc(["extract", "tables", xlsx.to_str().unwrap()]);
+    let pptx_output = oxdoc(["extract", "tables", pptx.to_str().unwrap()]);
+
+    assert!(!xlsx_output.status.success());
+    assert!(stdout(&xlsx_output).is_empty());
+    assert!(stderr(&xlsx_output).contains("cannot extract DOCX tables from an XLSX workbook"));
+    assert!(!pptx_output.status.success());
+    assert!(stdout(&pptx_output).is_empty());
+    assert!(stderr(&pptx_output).contains("cannot extract tables from a PPTX presentation"));
+}
+
+#[test]
 fn extracts_structured_json_from_stdin_and_multiple_inputs() {
     let docx = fixtures::build_package("docx/basic", "structured-stdin.docx");
     let second = fixtures::build_package("docx/basic", "structured-second.docx");
@@ -2112,8 +2221,10 @@ fn unique_path(name: &str) -> PathBuf {
 
 #[test]
 fn update_check_only_runs_successfully() {
-    // Just verify the command doesn't crash
-    let output = oxdoc(["update", "--check"]);
+    // Use an explicit target version so the integration test does not depend on
+    // GitHub availability or rate limits.
+    let current = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let output = oxdoc(["update", "--check", "--version", &current]);
     assert!(output.status.success());
 }
 

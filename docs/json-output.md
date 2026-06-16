@@ -11,6 +11,7 @@ Machine-readable schemas live under `schemas/v1/` in the repository and are mirr
 | `oxdoc info --format json` | [`schemas/v1/oxdoc-info.schema.json`](schemas/v1/oxdoc-info.schema.json) |
 | `oxdoc extract text --format json` | [`schemas/v1/oxdoc-extract-text.schema.json`](schemas/v1/oxdoc-extract-text.schema.json) |
 | `oxdoc extract text --format structured-json` | [`schemas/v1/oxdoc-structured-text.schema.json`](schemas/v1/oxdoc-structured-text.schema.json) |
+| `oxdoc extract tables --format json` | [`schemas/v1/oxdoc-docx-tables.schema.json`](schemas/v1/oxdoc-docx-tables.schema.json) |
 | `oxdoc audit --format json` | [`schemas/v1/oxdoc-audit.schema.json`](schemas/v1/oxdoc-audit.schema.json) |
 | `oxdoc extract csv --all-sheets --output-dir <DIR>` manifest | [`schemas/v1/oxdoc-all-sheets-manifest.schema.json`](schemas/v1/oxdoc-all-sheets-manifest.schema.json) |
 | Each `oxdoc extract rows --format jsonl` line | [`schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json`](schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json) |
@@ -19,6 +20,11 @@ Machine-readable schemas live under `schemas/v1/` in the repository and are mirr
 `oxdoc extract text --format jsonl` emits newline-delimited records for streaming batch ingestion. Each line is a standalone JSON object with `file`, `document_type`, and either `text` or `error`; successful records may include `warnings`.
 
 `oxdoc extract text --format structured-json` emits ordered text blocks with `part_type`, `part_path`, `ordinal`, and `text` so consumers can distinguish body text from related parts such as comments, headers, speaker notes, and slides.
+
+`oxdoc extract tables --format json` emits DOCX tables with source part
+metadata, row and cell ordinals, grid offsets, column spans, vertical merge
+states, paragraph blocks, nested table blocks, completion flags, and embedded
+recoverable warnings.
 
 The `--all-sheets` manifest records each exported XLSX sheet with `index`, `visibility`, `name`, `csv_path`, recoverable `warnings`, and an optional `error`. `visibility` is one of `visible`, `hidden`, or `veryHidden`.
 
@@ -29,7 +35,7 @@ Within a schema version:
 - Required fields remain required.
 - Optional fields may be omitted when the source document does not provide them.
 - Existing field names and JSON types remain stable.
-- Warnings stay on stderr for regular JSON payloads. JSONL text extraction also embeds recoverable per-file warnings in the record so batch consumers can index them with the extracted text.
+- Warnings stay on stderr for legacy regular JSON payloads. JSONL text extraction and DOCX table JSON embed recoverable per-file warnings in the record so batch consumers can index them with the extracted content.
 
 ## XLSX Rows JSONL
 

@@ -7,6 +7,7 @@ Reusable OOXML extraction library for `oxdoc`.
 ## Capabilities
 
 - Extract DOCX plain text from the supported document parts.
+- Extract structured DOCX tables with source part metadata, spans, merges, and nested table blocks.
 - Extract PPTX plain text from slide text boxes and speaker notes.
 - Stream XLSX worksheet data to a caller-owned CSV writer.
 - Visit sparse, typed XLSX rows through a bounded-memory callback API.
