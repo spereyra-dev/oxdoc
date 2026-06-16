@@ -586,7 +586,10 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::io::{Cursor, Write};
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use arrow_array::{
         Array, BooleanArray, Date32Array, Float64Array, Int64Array, StringArray,
@@ -642,6 +645,53 @@ mod tests {
     }
 
     #[test]
+    fn path_wrappers_visit_batches_and_write_parquet() {
+        let schema = test_schema();
+        let input = temp_path("tabular-input.xlsx");
+        fs::write(
+            &input,
+            workbook(&[("1", "alpha"), ("2", "beta")]).into_inner(),
+        )
+        .unwrap();
+
+        let mut visited_rows = 0;
+        let extraction =
+            visit_xlsx_record_batches(&input, XlsxSheetOptions::default(), &schema, 10, |batch| {
+                visited_rows += batch.num_rows();
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(visited_rows, 2);
+        assert_eq!(
+            extraction.value,
+            BatchStats {
+                rows: 2,
+                batches: 1
+            }
+        );
+
+        let mut parquet = Vec::new();
+        let extraction = write_xlsx_parquet(
+            &input,
+            XlsxSheetOptions::default(),
+            &schema,
+            10,
+            &mut parquet,
+        )
+        .unwrap();
+        assert_eq!(
+            extraction.value,
+            ParquetStats {
+                rows: 2,
+                batches: 1,
+                row_groups: 1
+            }
+        );
+        fs::remove_file(input).unwrap();
+    }
+
+    #[test]
     fn writes_one_parquet_row_group_per_batch() {
         let schema = test_schema();
         let mut output = Vec::new();
@@ -674,6 +724,31 @@ mod tests {
     }
 
     #[test]
+    fn validates_schema_shape() {
+        assert!(matches!(
+            TabularSchema::new(vec![]),
+            Err(Error::EmptySchema)
+        ));
+        assert!(matches!(
+            TabularSchema::new(vec![Column::new("", 0, TabularType::Utf8, true)]),
+            Err(Error::EmptyColumnName { position: 0 })
+        ));
+        assert!(matches!(
+            TabularSchema::new(vec![
+                Column::new("a", 0, TabularType::Utf8, true),
+                Column::new("b", 0, TabularType::Bool, true),
+            ]),
+            Err(Error::DuplicateColumnIndex { index: 0 })
+        ));
+        assert!(matches!(
+            TabularSchema::new(vec![Column::new("null", 0, TabularType::Null, false)]),
+            Err(Error::NonNullableNullColumn { .. })
+        ));
+        let schema = test_schema();
+        assert_eq!(schema.columns().len(), 2);
+    }
+
+    #[test]
     fn rejects_schema_mismatch_with_row_and_column_context() {
         let schema =
             TabularSchema::new(vec![Column::new("id", 1, TabularType::Int64, false)]).unwrap();
@@ -694,6 +769,48 @@ mod tests {
                 expected: TabularType::Int64,
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn rejects_missing_non_nullable_values_and_callback_errors() {
+        let schema =
+            TabularSchema::new(vec![Column::new("id", 0, TabularType::Int64, false)]).unwrap();
+        let missing = visit_xlsx_record_batches_from_reader(
+            workbook(&[]),
+            XlsxSheetOptions::default(),
+            &schema,
+            10,
+            |_| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(missing.value.rows, 0);
+
+        let error = visit_xlsx_record_batches_from_reader(
+            workbook(&[("1", "alpha")]),
+            XlsxSheetOptions::default(),
+            &schema,
+            1,
+            |_| Err(Error::InvalidBatchRows),
+        )
+        .unwrap_err();
+        assert!(matches!(error, Error::InvalidBatchRows));
+
+        let error = visit_xlsx_record_batches_from_reader(
+            workbook(&[("", "alpha")]),
+            XlsxSheetOptions::default(),
+            &schema,
+            10,
+            |_| Ok(()),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::SchemaMismatch {
+                actual,
+                column_index: 0,
+                ..
+            } if actual == "null"
         ));
     }
 
@@ -817,6 +934,58 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rejects_invalid_temporal_and_numeric_values() {
+        for (data_type, value) in [
+            (TabularType::Date, number_cell(0, "1", Some("2024-02-30"))),
+            (TabularType::Time, number_cell(0, "1", Some("24:00:00"))),
+            (
+                TabularType::DateTime,
+                number_cell(0, "1", Some("2024-01-01T12:00:00.0000000")),
+            ),
+            (TabularType::Float64, number_cell(0, "NaN", None)),
+            (
+                TabularType::Bool,
+                cell(
+                    0,
+                    XlsxCellValue::Boolean {
+                        raw: "maybe".into(),
+                        value: None,
+                    },
+                ),
+            ),
+            (
+                TabularType::Utf8,
+                cell(0, XlsxCellValue::Error { raw: "#N/A".into() }),
+            ),
+        ] {
+            let schema =
+                TabularSchema::new(vec![Column::new("value", 0, data_type, false)]).unwrap();
+            let mut converter = BatchConverter::new(&schema, schema.arrow_schema(), 1);
+            assert!(matches!(
+                converter.push(&XlsxRow {
+                    row_index: 7,
+                    cells: vec![value],
+                }),
+                Err(Error::SchemaMismatch { row_index: 7, .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn propagates_file_open_errors() {
+        let missing = temp_path("missing.xlsx");
+        let error = visit_xlsx_record_batches(
+            &missing,
+            XlsxSheetOptions::default(),
+            &test_schema(),
+            1,
+            |_| Ok(()),
+        )
+        .unwrap_err();
+        assert!(matches!(error, Error::Core(_)));
+    }
+
     fn test_schema() -> TabularSchema {
         TabularSchema::new(vec![
             Column::new("id", 0, TabularType::Int64, false),
@@ -876,6 +1045,14 @@ mod tests {
         }
         output.set_position(0);
         output
+    }
+
+    fn temp_path(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("oxdoc-{nonce}-{name}"))
     }
 
     fn sheet_xml(rows: &[(&str, &str)]) -> String {
