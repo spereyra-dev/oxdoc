@@ -103,6 +103,16 @@ fn parse_hidden_xlsx_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<Audi
                     ));
                 }
             }
+            Ok(Event::Start(element)) | Ok(Event::Empty(element))
+                if name_eq(element.name().as_ref(), b"workbookProtection") =>
+            {
+                signals.push(AuditSignal::new(
+                    "workbook_protection",
+                    "warning",
+                    path,
+                    "workbook protection settings are present",
+                ));
+            }
             Ok(Event::Eof) => break,
             Err(source) => {
                 warnings.push(OutputWarning::malformed_xml(path, source));
@@ -140,27 +150,69 @@ fn audit_relationship_targets<R: Read + Seek>(
         };
 
         for relationship in relationships {
-            if let Err(err) = resolve_relationship_target(
+            match resolve_relationship_target(
                 &relationship_base_dir(&relationship_path),
                 &relationship,
                 &relationship_path,
             ) {
-                match err {
-                    OxdocError::SuspiciousRelationshipTarget { target, reason, .. } => {
+                Ok(_) => {
+                    if let Some((kind, message)) = internal_relationship_signal(
+                        relationship.relationship_type.as_deref(),
+                        &relationship.target,
+                    ) {
                         signals.push(AuditSignal::new(
-                            "relationship_target",
+                            kind,
+                            "warning",
+                            &relationship_path,
+                            message,
+                        ));
+                    }
+                }
+                Err(err) => match err {
+                    OxdocError::SuspiciousRelationshipTarget { target, reason, .. } => {
+                        let kind =
+                            external_relationship_kind(relationship.relationship_type.as_deref())
+                                .unwrap_or("relationship_target");
+                        signals.push(AuditSignal::new(
+                            kind,
                             "warning",
                             &relationship_path,
                             format!("relationship target '{target}' is suspicious: {reason}"),
                         ));
                     }
                     err => return Err(err),
-                }
+                },
             }
         }
     }
 
     Ok(Extraction::with_warnings(signals, warnings))
+}
+
+fn external_relationship_kind(relationship_type: Option<&str>) -> Option<&'static str> {
+    match relationship_type?.rsplit('/').next()? {
+        kind if kind.eq_ignore_ascii_case("hyperlink") => Some("hyperlink"),
+        kind if kind.eq_ignore_ascii_case("externalLink") => Some("external_link"),
+        kind if kind.eq_ignore_ascii_case("attachedTemplate") => Some("attached_template"),
+        _ => None,
+    }
+}
+
+fn internal_relationship_signal(
+    relationship_type: Option<&str>,
+    target: &str,
+) -> Option<(&'static str, String)> {
+    match relationship_type?.rsplit('/').next()? {
+        kind if kind.eq_ignore_ascii_case("oleObject") => Some((
+            "ole_object",
+            format!("internal OLE object relationship targets '{target}'"),
+        )),
+        kind if kind.eq_ignore_ascii_case("package") => Some((
+            "embedded_package",
+            format!("internal embedded package relationship targets '{target}'"),
+        )),
+        _ => None,
+    }
 }
 
 fn relationship_base_dir(relationship_path: &str) -> String {

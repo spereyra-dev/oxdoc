@@ -1174,11 +1174,71 @@ fn reads_audit_signals_through_public_api() {
     assert_signal(&audit.signals, "hidden_sheet", "warning", "Very Hidden");
     assert_signal(
         &audit.signals,
-        "relationship_target",
+        "hyperlink",
         "warning",
         "https://example.invalid/model",
     );
     assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn audit_classifies_external_relationships_by_type() {
+    let file = create_ooxml(
+        "audit-external-relationships.docx",
+        &[(
+            "word/_rels/document.xml.rels",
+            r#"<Relationships><Relationship Id="rHyperlink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" TargetMode="External" Target="https://example.invalid/link"/><Relationship Id="rExternalLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" TargetMode="External" Target="https://example.invalid/book.xlsx"/><Relationship Id="rTemplate" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/attachedTemplate" TargetMode="External" Target="https://example.invalid/template.dotm"/><Relationship Id="rUnknown" Type="https://example.invalid/relationships/custom" TargetMode="External" Target="https://example.invalid/custom"/></Relationships>"#,
+        )],
+    );
+
+    let audit = oxdoc_core::read_audit(&file).unwrap().value;
+
+    assert_signal(&audit.signals, "hyperlink", "warning", "/link");
+    assert_signal(&audit.signals, "external_link", "warning", "book.xlsx");
+    assert_signal(
+        &audit.signals,
+        "attached_template",
+        "warning",
+        "template.dotm",
+    );
+    assert_signal(&audit.signals, "relationship_target", "warning", "/custom");
+}
+
+#[test]
+fn audit_detects_internal_embedded_relationships_and_workbook_protection() {
+    let file = create_ooxml(
+        "audit-embedded.xlsx",
+        &[
+            (
+                "[Content_Types].xml",
+                r#"<Types><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook><workbookProtection lockStructure="1"/><sheets/></workbook>"#,
+            ),
+            (
+                "xl/worksheets/_rels/sheet1.xml.rels",
+                r#"<Relationships><Relationship Id="rOle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" Target="../embeddings/oleObject1.bin"/><Relationship Id="rPackage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/package1.bin"/></Relationships>"#,
+            ),
+        ],
+    );
+
+    let audit = oxdoc_core::read_audit(&file).unwrap().value;
+
+    assert_signal(
+        &audit.signals,
+        "workbook_protection",
+        "warning",
+        "protection settings",
+    );
+    assert_signal(&audit.signals, "ole_object", "warning", "oleObject1.bin");
+    assert_signal(
+        &audit.signals,
+        "embedded_package",
+        "warning",
+        "package1.bin",
+    );
 }
 
 #[test]
