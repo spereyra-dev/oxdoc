@@ -14,6 +14,8 @@ fixture classes:
 Layout:
 
 - `corpus/` contains the OOXML source trees that are zipped at test time.
+- `docx/` contains hand-authored DOCX structural XML cases and JSON result
+  oracles for future table API tests.
 - `files/` contains small application-generated OOXML binaries consumed as-is.
 - `snapshots/` contains the versioned expected outputs.
 - `provenance/` contains one note per fixture with source and redistribution status.
@@ -24,6 +26,9 @@ Current fixtures:
 
 - `corpus/docx/basic`
 - `corpus/docx/external-target`
+- `docx/table-semantics`
+- `docx/related-parts`
+- `docx/malformed-table`
 - `corpus/xlsx/basic`
 - `corpus/xlsx/app-metadata`
 - `corpus/pptx/basic`
