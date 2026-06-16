@@ -14,6 +14,7 @@ Machine-readable schemas live under `schemas/v1/` in the repository and are mirr
 | `oxdoc audit --format json` | [`schemas/v1/oxdoc-audit.schema.json`](schemas/v1/oxdoc-audit.schema.json) |
 | `oxdoc extract csv --all-sheets --output-dir <DIR>` manifest | [`schemas/v1/oxdoc-all-sheets-manifest.schema.json`](schemas/v1/oxdoc-all-sheets-manifest.schema.json) |
 | Each `oxdoc extract rows --format jsonl` line | [`schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json`](schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json) |
+| `oxdoc infer schema FILE` | [`schemas/v1/oxdoc-xlsx-schema.schema.json`](schemas/v1/oxdoc-xlsx-schema.schema.json) |
 
 `oxdoc extract text --format jsonl` emits newline-delimited records for streaming batch ingestion. Each line is a standalone JSON object with `file`, `document_type`, and either `text` or `error`; successful records may include `warnings`.
 
@@ -53,6 +54,62 @@ cells may include `formatted`. Every cell includes `has_formula`.
 
 Rows extraction accepts one XLSX input, including `-` for stdin. Recoverable
 warnings are written to stderr so stdout remains a valid JSONL stream.
+
+## XLSX Inferred Schema JSON
+
+Command:
+
+```bash
+oxdoc infer schema workbook.xlsx --sheet "Sales Q1"
+```
+
+The experimental command emits JSON only:
+
+```json
+{
+  "schema_version": 1,
+  "experimental": true,
+  "file": "workbook.xlsx",
+  "sheet_name": "Sales Q1",
+  "scan": {
+    "mode": "full",
+    "examined_rows": 250
+  },
+  "header_policy": "none",
+  "columns": [
+    {
+      "column_index": 0,
+      "name": "A",
+      "logical_type": "int64",
+      "nullable": false,
+      "observed_types": ["int64"]
+    },
+    {
+      "column_index": 1,
+      "name": "B",
+      "logical_type": "utf8",
+      "nullable": true,
+      "observed_types": ["null", "utf8"]
+    }
+  ],
+  "warnings": []
+}
+```
+
+`sheet_name` or `sheet_index` is included when the corresponding selector is
+used; they are mutually exclusive. `sheet_index` is 1-based and
+`column_index` is 0-based.
+
+The scan defaults to `mode: "full"`. With `--sample-rows N`, the scan uses
+`mode: "sampled"` and includes both `sample_rows` and `examined_rows`; sampled
+results are approximate. No row is treated as a header. `header_policy` is
+always `none`, so column names are Excel letters such as `A`, `B`, and `AA`.
+
+The only logical and observed types are `null`, `bool`, `int64`, `float64`,
+`date`, `time`, `datetime`, and `utf8`. Date/time inference requires supporting
+workbook style information. Incompatible types promote to `utf8`, and numeric
+inference makes no decimal precision or scale claim. Report warnings are
+objects with `code`, `message`, and an optional 0-based `column_index`.
 
 ## DOCX Text JSON
 

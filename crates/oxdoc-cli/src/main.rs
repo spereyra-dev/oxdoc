@@ -1,5 +1,6 @@
 use std::fs::{self, File};
 use std::io::{self, Cursor, Read, Write};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -11,6 +12,7 @@ use oxdoc_core::{
 };
 
 mod update;
+mod xlsx_schema;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -43,6 +45,10 @@ enum Command {
         #[arg(long, value_enum, default_value_t = InfoFormat::Json)]
         format: InfoFormat,
     },
+    Infer {
+        #[command(subcommand)]
+        command: InferCommand,
+    },
     /// Check for a newer release and install it
     Update {
         /// Only check if an update is available; do not download or install
@@ -51,6 +57,26 @@ enum Command {
         /// Install a specific version instead of the latest (e.g. v0.2.0)
         #[arg(long, value_name = "VERSION")]
         version: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum InferCommand {
+    /// Infer an experimental logical schema for one XLSX worksheet
+    Schema {
+        file: PathBuf,
+        #[arg(long, conflicts_with = "sheet_index")]
+        sheet: Option<String>,
+        #[arg(
+            long,
+            conflicts_with = "sheet",
+            help = "1-based visible workbook sheet index to inspect"
+        )]
+        sheet_index: Option<usize>,
+        #[arg(long, help = "Include hidden and very hidden workbook sheets")]
+        include_hidden: bool,
+        #[arg(long, value_name = "N")]
+        sample_rows: Option<NonZeroUsize>,
     },
 }
 
@@ -271,6 +297,27 @@ fn run() -> Result<(), CliError> {
                 }
                 InfoFormat::Text => print_audit(&result.value),
             }
+        }
+        Command::Infer {
+            command:
+                InferCommand::Schema {
+                    file,
+                    sheet,
+                    sheet_index,
+                    include_hidden,
+                    sample_rows,
+                },
+        } => {
+            infer_schema_command(
+                &file,
+                XlsxSheetOptions {
+                    sheet_name: sheet.as_deref(),
+                    sheet_index,
+                    include_hidden,
+                },
+                sample_rows,
+                warning_format,
+            )?;
         }
         Command::Update { check, version } => {
             match update::run(check, version).map_err(CliError::Update)? {
@@ -583,6 +630,36 @@ fn extract_rows_command(
 
     writer.flush()?;
     emit_warnings(&extraction.warnings, warning_format);
+    Ok(())
+}
+
+fn infer_schema_command(
+    file: &Path,
+    options: XlsxSheetOptions<'_>,
+    sample_rows: Option<NonZeroUsize>,
+    warning_format: WarningFormat,
+) -> Result<(), CliError> {
+    let input = read_input(file)?;
+    let file_name = display_file_name(file);
+    let mut inferrer = match sample_rows {
+        Some(limit) => xlsx_schema::XlsxSchemaInferrer::sampled(limit.get()),
+        None => xlsx_schema::XlsxSchemaInferrer::full_scan(),
+    };
+
+    let extraction = input
+        .visit_xlsx_rows(options, XlsxValueMode::Formatted, |row| {
+            Ok(inferrer.observe_row(row))
+        })
+        .map_err(CliError::Core)?;
+    let report = inferrer.finish(
+        file_name,
+        options.sheet_name.map(str::to_owned),
+        options.sheet_index,
+    );
+
+    emit_warnings(&extraction.warnings, warning_format);
+    serde_json::to_writer_pretty(io::stdout().lock(), &report)?;
+    println!();
     Ok(())
 }
 

@@ -84,6 +84,51 @@ fn representative_xlsx_rows_jsonl_record_matches_schema_shape() {
 }
 
 #[test]
+fn representative_xlsx_schema_report_matches_schema_shape() {
+    let schema = read_json_schema("oxdoc-xlsx-schema.schema.json");
+    let output = serde_json::json!({
+        "schema_version": 1,
+        "experimental": true,
+        "file": "book.xlsx",
+        "sheet_name": "Data",
+        "scan": {
+            "mode": "sampled",
+            "sample_rows": 100,
+            "examined_rows": 3
+        },
+        "header_policy": "none",
+        "columns": [{
+            "column_index": 0,
+            "name": "A",
+            "logical_type": "float64",
+            "nullable": true,
+            "observed_types": ["int64", "float64", "null"]
+        }],
+        "warnings": [{
+            "code": "sampled_result",
+            "message": "schema inference used a row sample; results are approximate"
+        }]
+    });
+
+    let required = schema["required"].as_array().unwrap();
+    let properties = schema["properties"].as_object().unwrap();
+    for field in required {
+        assert!(output.get(field.as_str().unwrap()).is_some());
+    }
+    for field in output.as_object().unwrap().keys() {
+        assert!(properties.contains_key(field));
+    }
+    assert_eq!(output["schema_version"], 1);
+    assert_eq!(output["experimental"], true);
+    assert_eq!(output["header_policy"], "none");
+    assert_eq!(output["scan"]["mode"], "sampled");
+    assert!(output["scan"]["sample_rows"].as_u64().is_some());
+    assert!(output["columns"][0]["column_index"].as_u64().is_some());
+    assert_eq!(output["columns"][0]["name"], "A");
+    assert_eq!(output["warnings"][0]["code"], "sampled_result");
+}
+
+#[test]
 fn schemas_have_stable_public_metadata() {
     for name in [
         "oxdoc-info.schema.json",
@@ -92,6 +137,7 @@ fn schemas_have_stable_public_metadata() {
         "oxdoc-audit.schema.json",
         "oxdoc-all-sheets-manifest.schema.json",
         "oxdoc-xlsx-rows-jsonl.schema.json",
+        "oxdoc-xlsx-schema.schema.json",
     ] {
         let schema = read_json_schema(name);
 
