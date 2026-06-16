@@ -1,0 +1,44 @@
+{
+  "part_type": "main",
+  "part_path": "word/document.xml",
+  "tables": [
+    {
+      "table_ordinal": 1,
+      "complete": false,
+      "grid_column_count": 2,
+      "rows": [
+        {
+          "row_ordinal": 1,
+          "grid_before": 0,
+          "grid_after": 0,
+          "complete": true,
+          "cells": [
+            {
+              "cell_ordinal": 1,
+              "grid_start": 0,
+              "grid_span": 1,
+              "vertical_merge": "none",
+              "complete": true,
+              "blocks": [
+                {"type": "paragraph", "text": "Complete left"}
+              ]
+            },
+            {
+              "cell_ordinal": 2,
+              "grid_start": 1,
+              "grid_span": 1,
+              "vertical_merge": "none",
+              "complete": true,
+              "blocks": [
+                {"type": "paragraph", "text": "Complete right"}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    "malformed word/document.xml after table 1 row 1; emitted incomplete table prefix"
+  ]
+}

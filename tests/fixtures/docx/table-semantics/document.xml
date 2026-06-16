@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Before table</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tblGrid>
+        <w:gridCol w:w="1200"/>
+        <w:gridCol w:w="1200"/>
+        <w:gridCol w:w="1200"/>
+        <w:gridCol w:w="1200"/>
+      </w:tblGrid>
+      <w:tr>
+        <w:trPr><w:gridBefore w:val="1"/></w:trPr>
+        <w:tc>
+          <w:tcPr><w:gridSpan w:val="2"/></w:tcPr>
+          <w:p><w:r><w:t>Alpha</w:t></w:r></w:p>
+          <w:p/>
+          <w:p><w:r><w:t>Beta</w:t></w:r></w:p>
+        </w:tc>
+        <w:tc>
+          <w:tcPr><w:vMerge w:val="restart"/></w:tcPr>
+          <w:p><w:r><w:t>Vertical start</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+      <w:tr>
+        <w:trPr><w:gridBefore w:val="1"/></w:trPr>
+        <w:tc>
+          <w:tcPr><w:gridSpan w:val="2"/></w:tcPr>
+          <w:p><w:r><w:t>Before nested</w:t></w:r></w:p>
+          <w:tbl>
+            <w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid>
+            <w:tr>
+              <w:tc>
+                <w:p><w:r><w:t>Nested cell</w:t></w:r></w:p>
+              </w:tc>
+            </w:tr>
+          </w:tbl>
+          <w:p><w:r><w:t>After nested</w:t></w:r></w:p>
+        </w:tc>
+        <w:tc>
+          <w:tcPr><w:vMerge/></w:tcPr>
+          <w:p/>
+        </w:tc>
+      </w:tr>
+      <w:tr>
+        <w:trPr><w:gridAfter w:val="2"/></w:trPr>
+        <w:tc>
+          <w:p>
+            <w:r><w:t>Visible before</w:t></w:r>
+            <w:del><w:r><w:delText> deleted</w:delText></w:r></w:del>
+            <w:ins><w:r><w:t> inserted</w:t></w:r></w:ins>
+            <w:moveFrom><w:r><w:t> moved away</w:t></w:r></w:moveFrom>
+            <w:moveTo><w:r><w:t> moved here</w:t></w:r></w:moveTo>
+          </w:p>
+        </w:tc>
+        <w:tc>
+          <w:tcPr>
+            <w:gridSpan w:val="0"/>
+            <w:vMerge w:val="unexpected"/>
+          </w:tcPr>
+          <w:p><w:r><w:t>Invalid properties</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+      <w:tr>
+        <w:trPr><w:del w:id="7" w:author="oxdoc"/></w:trPr>
+        <w:tc>
+          <w:tcPr><w:gridSpan w:val="4"/></w:tcPr>
+          <w:p><w:r><w:t>Deleted row</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:p><w:r><w:t>After table</w:t></w:r></w:p>
+  </w:body>
+</w:document>

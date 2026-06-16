@@ -1,0 +1,41 @@
+{
+  "parts": [
+    {
+      "part_type": "main",
+      "part_path": "word/document.xml",
+      "table_ordinal": 1,
+      "text": "Main table"
+    },
+    {
+      "part_type": "comments",
+      "part_path": "word/comments.xml",
+      "table_ordinal": 1,
+      "text": "Comment table"
+    },
+    {
+      "part_type": "header",
+      "part_path": "word/header1.xml",
+      "table_ordinal": 1,
+      "text": "Header table"
+    },
+    {
+      "part_type": "footnotes",
+      "part_path": "word/footnotes.xml",
+      "table_ordinal": 1,
+      "text": "Footnote table"
+    },
+    {
+      "part_type": "footer",
+      "part_path": "word/footer1.xml",
+      "table_ordinal": 1,
+      "text": "Footer table"
+    },
+    {
+      "part_type": "endnotes",
+      "part_path": "word/endnotes.xml",
+      "table_ordinal": 1,
+      "text": "Endnote table"
+    }
+  ],
+  "warnings": []
+}

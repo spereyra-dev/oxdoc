@@ -1,0 +1,129 @@
+{
+  "part_type": "main",
+  "part_path": "word/document.xml",
+  "tables": [
+    {
+      "table_ordinal": 1,
+      "complete": true,
+      "grid_column_count": 4,
+      "rows": [
+        {
+          "row_ordinal": 1,
+          "grid_before": 1,
+          "grid_after": 0,
+          "complete": true,
+          "cells": [
+            {
+              "cell_ordinal": 1,
+              "grid_start": 1,
+              "grid_span": 2,
+              "vertical_merge": "none",
+              "complete": true,
+              "blocks": [
+                {"type": "paragraph", "text": "Alpha"},
+                {"type": "paragraph", "text": ""},
+                {"type": "paragraph", "text": "Beta"}
+              ]
+            },
+            {
+              "cell_ordinal": 2,
+              "grid_start": 3,
+              "grid_span": 1,
+              "vertical_merge": "restart",
+              "complete": true,
+              "blocks": [
+                {"type": "paragraph", "text": "Vertical start"}
+              ]
+            }
+          ]
+        },
+        {
+          "row_ordinal": 2,
+          "grid_before": 1,
+          "grid_after": 0,
+          "complete": true,
+          "cells": [
+            {
+              "cell_ordinal": 1,
+              "grid_start": 1,
+              "grid_span": 2,
+              "vertical_merge": "none",
+              "complete": true,
+              "blocks": [
+                {"type": "paragraph", "text": "Before nested"},
+                {
+                  "type": "table",
+                  "complete": true,
+                  "grid_column_count": 1,
+                  "rows": [
+                    {
+                      "row_ordinal": 1,
+                      "grid_before": 0,
+                      "grid_after": 0,
+                      "complete": true,
+                      "cells": [
+                        {
+                          "cell_ordinal": 1,
+                          "grid_start": 0,
+                          "grid_span": 1,
+                          "vertical_merge": "none",
+                          "complete": true,
+                          "blocks": [
+                            {"type": "paragraph", "text": "Nested cell"}
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {"type": "paragraph", "text": "After nested"}
+              ]
+            },
+            {
+              "cell_ordinal": 2,
+              "grid_start": 3,
+              "grid_span": 1,
+              "vertical_merge": "continue",
+              "complete": true,
+              "blocks": [
+                {"type": "paragraph", "text": ""}
+              ]
+            }
+          ]
+        },
+        {
+          "row_ordinal": 3,
+          "grid_before": 0,
+          "grid_after": 2,
+          "complete": true,
+          "cells": [
+            {
+              "cell_ordinal": 1,
+              "grid_start": 0,
+              "grid_span": 1,
+              "vertical_merge": "none",
+              "complete": true,
+              "blocks": [
+                {"type": "paragraph", "text": "Visible before inserted moved here"}
+              ]
+            },
+            {
+              "cell_ordinal": 2,
+              "grid_start": 1,
+              "grid_span": 1,
+              "vertical_merge": "none",
+              "complete": true,
+              "blocks": [
+                {"type": "paragraph", "text": "Invalid properties"}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": [
+    "row 3 cell 2 has invalid gridSpan value 0; using 1",
+    "row 3 cell 2 has unknown vMerge value unexpected; using none"
+  ]
+}
