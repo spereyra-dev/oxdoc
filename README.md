@@ -14,6 +14,7 @@ Fast OOXML extraction without rendering.
 - DOCX logical text semantics for paragraph breaks, table cell and row separation, tabs, line breaks, and deleted revision text handling.
 - PPTX text extraction from slide text boxes and speaker notes.
 - XLSX worksheet-to-CSV extraction.
+- XLSX typed row streaming as JSONL.
 - XLSX sheet listing and sheet selection by name or index, with explicit opt-in for hidden and very hidden sheets.
 - Metadata extraction from core, app, and custom document properties.
 - A reusable `oxdoc-core` crate and a CLI-facing `oxdoc-cli` crate.
@@ -217,6 +218,17 @@ Notes:
 - CSV fields are quoted when needed.
 - Sparse cells are padded with empty CSV fields.
 
+### Stream Typed XLSX Rows
+
+```bash
+oxdoc extract rows data.xlsx --sheet "Ventas Q1" --value-mode formatted
+```
+
+The command accepts one workbook, including `-` for stdin, and emits one JSON
+object per worksheet row. Row and column indices are 0-based, while requested
+`--sheet-index` values are 1-based. Sparse cells are omitted, raw numbers remain
+strings, and recoverable warnings stay on stderr.
+
 ### Read Metadata
 
 ```bash
@@ -300,10 +312,10 @@ The command-line application. It owns:
 | --- | --- |
 | DOCX text | Main document text from `<w:t>`, paragraph breaks, tabs, and line breaks. |
 | PPTX text | Slide text boxes and linked speaker notes in presentation order. |
-| XLSX CSV | Workbook relationship lookup, sheet name/index selection, hidden-sheet opt-in, shared strings, inline strings, sparse cells, booleans, errors, cached formula values, CSV escaping. |
+| XLSX CSV and rows | Workbook relationship lookup, sheet name/index selection, hidden-sheet opt-in, shared strings, inline strings, sparse cells, typed JSONL rows, booleans, errors, cached formula values, CSV escaping. |
 | Metadata | Core/app properties plus basic macro detection. |
 | Audit | Factual signals for macros, custom properties, suspicious relationships, hidden XLSX sheets, and recoverable parser warnings. |
-| Output | Plain text, CSV, JSON metadata, JSON text extraction. |
+| Output | Plain text, CSV, JSONL rows, JSON metadata, JSON text extraction. |
 | Errors | Typed library errors, CLI non-zero hard failures. |
 | Warnings | Recoverable parser warnings with OOXML part paths. |
 

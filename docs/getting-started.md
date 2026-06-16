@@ -83,6 +83,16 @@ Opt into formatted spreadsheet values:
 cargo run -p oxdoc-cli -- extract csv data.xlsx --value-mode formatted
 ```
 
+Stream typed worksheet rows as JSONL:
+
+```bash
+cargo run -p oxdoc-cli -- extract rows data.xlsx --sheet "Sales Q1"
+```
+
+Use `--value-mode formatted` to include supported formatted numeric values.
+Row and column indices in the records are 0-based; `--sheet-index` remains a
+1-based selector. Raw numeric values stay strings, and warnings go to stderr.
+
 ## Read Metadata
 
 ```bash

@@ -59,6 +59,58 @@ class OxdocPythonWrapperTests(unittest.TestCase):
         self.assertEqual(csv, "a,b\n1,2\n")
         self.assertEqual(sheets[1], {"index": 2, "name": "Hidden", "visibility": "hidden"})
 
+    def test_extract_rows_parses_typed_jsonl_and_warnings(self) -> None:
+        binary = fake_oxdoc(
+            """
+            import sys
+            sys.stderr.write("warning[parser/W001]: recovered row\\n")
+            print('{"schema_version":1,"file":"book.xlsx","sheet_name":"Data","row_index":0,"cells":[{"column_index":0,"kind":"number","raw":"42.50","formatted":"42.50","has_formula":false}]}')
+            print('{"schema_version":1,"file":"book.xlsx","sheet_name":"Data","row_index":2,"cells":[{"column_index":1,"kind":"boolean","raw":"1","value":true,"has_formula":false}]}')
+            """
+        )
+
+        result = Oxdoc(binary).extract_rows(
+            "book.xlsx", sheet="Data", value_mode="formatted"
+        )
+
+        self.assertEqual(len(result.value), 2)
+        self.assertEqual(result.value[0]["cells"][0]["raw"], "42.50")
+        self.assertIsInstance(result.value[0]["cells"][0]["raw"], str)
+        self.assertIs(result.value[1]["cells"][0]["value"], True)
+        self.assertEqual(result.warnings, ("warning[parser/W001]: recovered row",))
+
+    def test_extract_rows_passes_index_hidden_and_value_mode_options(self) -> None:
+        binary = fake_oxdoc(
+            """
+            import json
+            import sys
+            print(json.dumps({"args": sys.argv[1:]}))
+            """
+        )
+
+        result = Oxdoc(binary).extract_rows(
+            "book.xlsx",
+            sheet_index=2,
+            include_hidden=True,
+            value_mode="raw",
+        )
+
+        self.assertEqual(
+            result.value[0]["args"],
+            [
+                "extract",
+                "rows",
+                "book.xlsx",
+                "--format",
+                "jsonl",
+                "--value-mode",
+                "raw",
+                "--sheet-index",
+                "2",
+                "--include-hidden",
+            ],
+        )
+
     def test_process_errors_expose_status_and_stderr(self) -> None:
         binary = fake_oxdoc(
             """
