@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use oxdoc_core::{
-    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, OutputWarning, OxdocError,
+    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, DocxTables, OutputWarning, OxdocError,
     StructuredText, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxRow, XlsxRowControl,
     XlsxSheetOptions, XlsxValueMode,
 };
@@ -149,6 +149,11 @@ enum ExtractCommand {
         #[arg(long, value_enum, default_value_t = CliXlsxValueMode::Raw)]
         value_mode: CliXlsxValueMode,
     },
+    Tables {
+        file: PathBuf,
+        #[arg(long, value_enum, default_value_t = TablesFormat::Json)]
+        format: TablesFormat,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -162,6 +167,11 @@ enum TextFormat {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum RowsFormat {
     Jsonl,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum TablesFormat {
+    Json,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -266,6 +276,12 @@ fn run() -> Result<(), CliError> {
                     value_mode.into(),
                     warning_format,
                 )?;
+            }
+            ExtractCommand::Tables {
+                file,
+                format: TablesFormat::Json,
+            } => {
+                extract_tables_command(&file, warning_format)?;
             }
         },
         Command::Info { file, format } => {
@@ -443,6 +459,41 @@ fn extract_structured_text(
         }
         DocumentType::Xlsx => Err(CliError::InvalidArgument(
             "cannot extract text from an XLSX workbook".to_owned(),
+        )),
+    }
+}
+
+fn extract_tables_command(file: &Path, warning_format: WarningFormat) -> Result<(), CliError> {
+    let result = extract_docx_tables(file)?;
+    if !matches!(warning_format, WarningFormat::None) {
+        emit_warnings(&result.warnings, warning_format);
+    }
+    let payload = TablesPayload {
+        schema_version: 1,
+        file: display_file_name(file),
+        tables: result.value,
+        warnings: result
+            .warnings
+            .iter()
+            .map(OwnedWarningPayload::from_output_warning)
+            .collect(),
+    };
+    serde_json::to_writer_pretty(io::stdout().lock(), &payload)?;
+    println!();
+    Ok(())
+}
+
+fn extract_docx_tables(file: &Path) -> Result<oxdoc_core::Extraction<DocxTables>, CliError> {
+    let input = read_input(file)?;
+    match document_type_for_input(&input, file)? {
+        DocumentType::Docx | DocumentType::Unknown => {
+            input.extract_docx_tables().map_err(CliError::Core)
+        }
+        DocumentType::Pptx => Err(CliError::InvalidArgument(
+            "cannot extract tables from a PPTX presentation".to_owned(),
+        )),
+        DocumentType::Xlsx => Err(CliError::InvalidArgument(
+            "cannot extract DOCX tables from an XLSX workbook".to_owned(),
         )),
     }
 }
@@ -825,6 +876,13 @@ impl Input {
         }
     }
 
+    fn extract_docx_tables(&self) -> oxdoc_core::Result<oxdoc_core::Extraction<DocxTables>> {
+        match self {
+            Input::Path(path) => oxdoc_core::extract_docx_tables(path),
+            Input::Stdin(bytes) => oxdoc_core::extract_docx_tables_from_reader(Cursor::new(bytes)),
+        }
+    }
+
     fn extract_pptx_structured_text(
         &self,
     ) -> oxdoc_core::Result<oxdoc_core::Extraction<StructuredText>> {
@@ -1061,6 +1119,15 @@ struct TextStructuredPayload {
     file: String,
     #[serde(flatten)]
     structured: StructuredText,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct TablesPayload {
+    schema_version: u8,
+    file: String,
+    #[serde(flatten)]
+    tables: DocxTables,
+    warnings: Vec<OwnedWarningPayload>,
 }
 
 #[derive(Debug, serde::Serialize)]

@@ -26,7 +26,8 @@ use std::path::Path;
 
 pub use error::{OxdocError, Result};
 pub use models::{
-    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, Extraction, OutputWarning,
+    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, DocxTable, DocxTableBlock,
+    DocxTableCell, DocxTableRow, DocxTables, DocxVerticalMerge, Extraction, OutputWarning,
     StructuredText, TextBlock, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxRow, XlsxRowControl,
     XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
 };
@@ -63,6 +64,18 @@ pub fn extract_docx_structured_text_from_reader<R: Read + Seek>(
 ) -> Result<Extraction<StructuredText>> {
     let mut package = OoxmlPackage::new(reader)?;
     docx::extract_structured_text(&mut package)
+}
+
+pub fn extract_docx_tables(path: impl AsRef<Path>) -> Result<Extraction<DocxTables>> {
+    let file = File::open(path)?;
+    extract_docx_tables_from_reader(file)
+}
+
+pub fn extract_docx_tables_from_reader<R: Read + Seek>(
+    reader: R,
+) -> Result<Extraction<DocxTables>> {
+    let mut package = OoxmlPackage::new(reader)?;
+    docx::extract_tables(&mut package)
 }
 
 pub fn extract_pptx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {

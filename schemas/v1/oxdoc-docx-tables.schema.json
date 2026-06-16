@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v1/oxdoc-docx-tables.schema.json",
+  "title": "oxdoc DOCX tables JSON output",
+  "description": "Schema for `oxdoc extract tables --format json` output in oxdoc schema version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "file", "document_type", "tables", "warnings"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "file": {
+      "type": "string",
+      "description": "File name derived from the provided input path."
+    },
+    "document_type": {
+      "type": "string",
+      "const": "docx"
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/table"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    }
+  },
+  "$defs": {
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["part_type", "part_path", "table_ordinal", "complete", "rows"],
+      "properties": {
+        "part_type": {
+          "type": "string"
+        },
+        "part_path": {
+          "type": "string"
+        },
+        "table_ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "grid_column_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/row"
+          }
+        }
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row_ordinal", "grid_before", "grid_after", "complete", "cells"],
+      "properties": {
+        "row_ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "grid_before": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "grid_after": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "cells": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/cell"
+          }
+        }
+      }
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cell_ordinal",
+        "grid_start",
+        "grid_span",
+        "vertical_merge",
+        "complete",
+        "blocks"
+      ],
+      "properties": {
+        "cell_ordinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "grid_start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "grid_span": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "vertical_merge": {
+          "type": "string",
+          "enum": ["none", "restart", "continue"]
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/paragraph_block"
+              },
+              {
+                "$ref": "#/$defs/table_block"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "paragraph_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "paragraph"
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "table_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "complete", "rows"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "table"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "grid_column_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/row"
+          }
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "code", "path", "message"],
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["parser", "data", "custom"]
+        },
+        "code": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

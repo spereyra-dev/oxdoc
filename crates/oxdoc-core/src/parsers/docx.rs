@@ -4,7 +4,11 @@ use std::io::{BufRead, BufReader, Read, Seek};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
-use crate::models::{Extraction, OutputWarning, StructuredText, TextBlock};
+use crate::models::{
+    DocxTableBlock as PublicDocxTableBlock, DocxTableCell as PublicDocxTableCell,
+    DocxTableRow as PublicDocxTableRow, DocxTables, Extraction, OutputWarning, StructuredText,
+    TextBlock,
+};
 use crate::parsers::find_office_document_path;
 use crate::parsers::{
     append_decoded_xml_reference, append_decoded_xml_text, attr_value, name_eq, parent_dir,
@@ -113,6 +117,63 @@ pub(crate) fn extract_structured_text<R: Read + Seek>(
     ))
 }
 
+pub(crate) fn extract_tables<R: Read + Seek>(
+    package: &mut OoxmlPackage<R>,
+) -> Result<Extraction<DocxTables>> {
+    let document_path = find_office_document_path(package, "word/document.xml")?;
+    let document = extract_part_tables(package, &document_path, "main")?;
+    let mut tables = public_tables_for_part(document.value, "main", &document_path);
+    let mut warnings = document.warnings;
+
+    let relationships_path = rels_path_for(&document_path);
+    let relationships_xml = match package.read_to_string(&relationships_path) {
+        Ok(xml) => xml,
+        Err(OxdocError::MissingPart(_)) => {
+            return Ok(Extraction::with_warnings(
+                DocxTables {
+                    document_type: "docx".to_owned(),
+                    tables,
+                },
+                warnings,
+            ));
+        }
+        Err(err) => return Err(err),
+    };
+
+    for relationship in parse_relationships(&relationships_xml, &relationships_path)? {
+        let Some(part_type) =
+            related_docx_text_part_type(relationship.relationship_type.as_deref())
+        else {
+            continue;
+        };
+
+        let part_path = resolve_relationship_target(
+            parent_dir(&document_path),
+            &relationship,
+            &relationships_path,
+        )?;
+        match extract_part_tables(package, &part_path, part_type) {
+            Ok(part) => {
+                tables.extend(public_tables_for_part(part.value, part_type, &part_path));
+                warnings.extend(part.warnings);
+            }
+            Err(OxdocError::MissingPart(part)) => warnings.push(OutputWarning::new(
+                &relationships_path,
+                format!("skipped related DOCX table part {part}: missing part"),
+            )),
+            Err(err) => return Err(err),
+        }
+    }
+
+    Ok(Extraction::with_warnings(
+        DocxTables {
+            document_type: "docx".to_owned(),
+            tables,
+        },
+        warnings,
+    ))
+}
+
 fn extract_part_text<R: Read + Seek>(
     package: &mut OoxmlPackage<R>,
     path: &str,
@@ -120,6 +181,17 @@ fn extract_part_text<R: Read + Seek>(
     package.with_entry(path, |entry| {
         let reader = BufReader::new(entry);
         extract_xml_text(reader, path)
+    })
+}
+
+fn extract_part_tables<R: Read + Seek>(
+    package: &mut OoxmlPackage<R>,
+    path: &str,
+    _part_type: &str,
+) -> Result<Extraction<Vec<DocxTable>>> {
+    package.with_entry(path, |entry| {
+        let reader = BufReader::new(entry);
+        parse_xml_tables(reader, path)
     })
 }
 
@@ -160,6 +232,80 @@ fn append_related_text(text: &mut String, related_text: &str) {
         text.push('\n');
     }
     text.push_str(related_text);
+}
+
+fn public_tables_for_part(
+    tables: Vec<DocxTable>,
+    part_type: &str,
+    part_path: &str,
+) -> Vec<crate::models::DocxTable> {
+    tables
+        .into_iter()
+        .enumerate()
+        .map(|(index, table)| crate::models::DocxTable {
+            part_type: part_type.to_owned(),
+            part_path: part_path.to_owned(),
+            table_ordinal: index + 1,
+            complete: table.complete,
+            grid_column_count: table.grid_column_count,
+            rows: public_rows(table.rows),
+        })
+        .collect()
+}
+
+fn public_rows(rows: Vec<DocxTableRow>) -> Vec<PublicDocxTableRow> {
+    rows.into_iter()
+        .enumerate()
+        .map(|(row_index, row)| {
+            let mut grid_start = row.grid_before;
+            let cells = row
+                .cells
+                .into_iter()
+                .enumerate()
+                .map(|(cell_index, cell)| {
+                    let current_grid_start = grid_start;
+                    grid_start += cell.grid_span;
+                    PublicDocxTableCell {
+                        cell_ordinal: cell_index + 1,
+                        grid_start: current_grid_start,
+                        grid_span: cell.grid_span,
+                        vertical_merge: public_vertical_merge(cell.v_merge),
+                        complete: true,
+                        blocks: public_blocks(cell.blocks),
+                    }
+                })
+                .collect();
+            PublicDocxTableRow {
+                row_ordinal: row_index + 1,
+                grid_before: row.grid_before,
+                grid_after: row.grid_after,
+                complete: true,
+                cells,
+            }
+        })
+        .collect()
+}
+
+fn public_blocks(blocks: Vec<DocxCellBlock>) -> Vec<PublicDocxTableBlock> {
+    blocks
+        .into_iter()
+        .map(|block| match block {
+            DocxCellBlock::Paragraph(text) => PublicDocxTableBlock::Paragraph { text },
+            DocxCellBlock::Table(table) => PublicDocxTableBlock::Table {
+                complete: table.complete,
+                grid_column_count: table.grid_column_count,
+                rows: public_rows(table.rows),
+            },
+        })
+        .collect()
+}
+
+fn public_vertical_merge(value: DocxVerticalMerge) -> crate::models::DocxVerticalMerge {
+    match value {
+        DocxVerticalMerge::None => crate::models::DocxVerticalMerge::None,
+        DocxVerticalMerge::Restart => crate::models::DocxVerticalMerge::Restart,
+        DocxVerticalMerge::Continue => crate::models::DocxVerticalMerge::Continue,
+    }
 }
 
 fn extract_xml_text<R: BufRead>(source: R, path: &str) -> Result<Extraction<String>> {
@@ -280,6 +426,8 @@ fn extract_xml_text<R: BufRead>(source: R, path: &str) -> Result<Extraction<Stri
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DocxTable {
+    complete: bool,
+    grid_column_count: Option<usize>,
     rows: Vec<DocxTableRow>,
 }
 
@@ -332,6 +480,8 @@ fn parse_xml_tables<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<
                     deleted_revision_depth += 1;
                 } else if name_eq(element.name().as_ref(), b"tbl") {
                     table_stack.push(DocxTableBuilder::default());
+                } else if name_eq(element.name().as_ref(), b"gridCol") {
+                    count_grid_column(&mut table_stack);
                 } else if name_eq(element.name().as_ref(), b"tr") {
                     if let Some(table) = table_stack.last_mut() {
                         table.start_row();
@@ -351,11 +501,11 @@ fn parse_xml_tables<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<
                 } else if name_eq(element.name().as_ref(), b"gridBefore")
                     || name_eq(element.name().as_ref(), b"gridAfter")
                 {
-                    apply_row_grid_offset(&mut table_stack, &element);
+                    apply_row_grid_offset(&mut table_stack, &element, path, &mut warnings);
                 } else if name_eq(element.name().as_ref(), b"gridSpan") {
-                    apply_cell_grid_span(&mut table_stack, &element);
+                    apply_cell_grid_span(&mut table_stack, &element, path, &mut warnings);
                 } else if name_eq(element.name().as_ref(), b"vMerge") {
-                    apply_cell_vertical_merge(&mut table_stack, &element);
+                    apply_cell_vertical_merge(&mut table_stack, &element, path, &mut warnings);
                 } else if name_eq(element.name().as_ref(), b"p")
                     && current_table_has_cell(&table_stack)
                 {
@@ -370,14 +520,16 @@ fn parse_xml_tables<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<
             Ok(Event::Empty(element)) if deleted_revision_depth == 0 => {
                 if is_deleted_revision(element.name().as_ref()) {
                     mark_current_row_deleted(&mut table_stack);
+                } else if name_eq(element.name().as_ref(), b"gridCol") {
+                    count_grid_column(&mut table_stack);
                 } else if name_eq(element.name().as_ref(), b"gridBefore")
                     || name_eq(element.name().as_ref(), b"gridAfter")
                 {
-                    apply_row_grid_offset(&mut table_stack, &element);
+                    apply_row_grid_offset(&mut table_stack, &element, path, &mut warnings);
                 } else if name_eq(element.name().as_ref(), b"gridSpan") {
-                    apply_cell_grid_span(&mut table_stack, &element);
+                    apply_cell_grid_span(&mut table_stack, &element, path, &mut warnings);
                 } else if name_eq(element.name().as_ref(), b"vMerge") {
-                    apply_cell_vertical_merge(&mut table_stack, &element);
+                    apply_cell_vertical_merge(&mut table_stack, &element, path, &mut warnings);
                 } else if name_eq(element.name().as_ref(), b"p") {
                     if let Some(cell) = current_cell_mut(&mut table_stack) {
                         cell.blocks.push(DocxCellBlock::Paragraph(String::new()));
@@ -444,7 +596,7 @@ fn parse_xml_tables<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<
                 } else if name_eq(element.name().as_ref(), b"tbl")
                     && let Some(table) = table_stack.pop()
                 {
-                    let table = table.finish();
+                    let table = table.finish(true);
                     if let Some(cell) = current_cell_mut(&mut table_stack) {
                         cell.blocks.push(DocxCellBlock::Table(table));
                     } else {
@@ -473,7 +625,7 @@ fn parse_xml_tables<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<
     }
 
     if malformed && let Some(table) = table_stack.into_iter().next() {
-        let table = table.finish();
+        let table = table.finish(false);
         if !table.rows.is_empty() {
             tables.push(table);
         }
@@ -487,6 +639,7 @@ struct DocxTableBuilder {
     rows: Vec<DocxTableRow>,
     row: Option<DocxTableRow>,
     cell: Option<DocxTableCell>,
+    grid_column_count: Option<usize>,
     row_properties_depth: usize,
     cell_properties_depth: usize,
 }
@@ -530,8 +683,12 @@ impl DocxTableBuilder {
         self.row_properties_depth = 0;
     }
 
-    fn finish(self) -> DocxTable {
-        DocxTable { rows: self.rows }
+    fn finish(self, complete: bool) -> DocxTable {
+        DocxTable {
+            complete,
+            grid_column_count: self.grid_column_count,
+            rows: self.rows,
+        }
     }
 }
 
@@ -541,6 +698,16 @@ fn current_table_has_cell(tables: &[DocxTableBuilder]) -> bool {
 
 fn current_cell_mut(tables: &mut [DocxTableBuilder]) -> Option<&mut DocxTableCell> {
     tables.last_mut()?.cell.as_mut()
+}
+
+fn count_grid_column(tables: &mut [DocxTableBuilder]) {
+    let Some(table) = tables.last_mut() else {
+        return;
+    };
+    if table.row.is_some() || table.cell.is_some() {
+        return;
+    }
+    *table.grid_column_count.get_or_insert(0) += 1;
 }
 
 fn mark_current_row_deleted(tables: &mut [DocxTableBuilder]) {
@@ -562,6 +729,8 @@ fn is_deleted_revision(name: &[u8]) -> bool {
 fn apply_row_grid_offset(
     tables: &mut [DocxTableBuilder],
     element: &quick_xml::events::BytesStart<'_>,
+    path: &str,
+    warnings: &mut Vec<OutputWarning>,
 ) {
     let Some(table) = tables.last_mut() else {
         return;
@@ -569,11 +738,31 @@ fn apply_row_grid_offset(
     if table.row_properties_depth == 0 {
         return;
     }
-    let value = attr_value(element, b"val")
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(0);
+    let raw_value = attr_value(element, b"val");
+    let value = raw_value
+        .as_deref()
+        .and_then(|value| value.parse::<usize>().ok());
     let Some(row) = table.row.as_mut() else {
         return;
+    };
+    let property = if name_eq(element.name().as_ref(), b"gridBefore") {
+        "gridBefore"
+    } else {
+        "gridAfter"
+    };
+    let value = match value {
+        Some(value) => value,
+        None => {
+            warnings.push(OutputWarning::new(
+                path,
+                format!(
+                    "row {} has invalid {property} value {}; using 0",
+                    table.rows.len() + 1,
+                    raw_value.as_deref().unwrap_or("<missing>")
+                ),
+            ));
+            0
+        }
     };
     if name_eq(element.name().as_ref(), b"gridBefore") {
         row.grid_before = value;
@@ -585,6 +774,8 @@ fn apply_row_grid_offset(
 fn apply_cell_grid_span(
     tables: &mut [DocxTableBuilder],
     element: &quick_xml::events::BytesStart<'_>,
+    path: &str,
+    warnings: &mut Vec<OutputWarning>,
 ) {
     let Some(table) = tables.last_mut() else {
         return;
@@ -592,18 +783,34 @@ fn apply_cell_grid_span(
     if table.cell_properties_depth == 0 {
         return;
     }
-    if let Some(span) = attr_value(element, b"val")
+    let raw_value = attr_value(element, b"val");
+    let span = raw_value
+        .as_deref()
         .and_then(|value| value.parse::<usize>().ok())
-        .filter(|span| *span > 0)
-        && let Some(cell) = table.cell.as_mut()
-    {
-        cell.grid_span = span;
+        .filter(|span| *span > 0);
+    let row_ordinal = table.rows.len() + 1;
+    let cell_ordinal = table.row.as_ref().map_or(1, |row| row.cells.len() + 1);
+    if let Some(cell) = table.cell.as_mut() {
+        if let Some(span) = span {
+            cell.grid_span = span;
+        } else {
+            warnings.push(OutputWarning::new(
+                path,
+                format!(
+                    "row {row_ordinal} cell {cell_ordinal} has invalid gridSpan value {}; using 1",
+                    raw_value.as_deref().unwrap_or("<missing>")
+                ),
+            ));
+            cell.grid_span = 1;
+        }
     }
 }
 
 fn apply_cell_vertical_merge(
     tables: &mut [DocxTableBuilder],
     element: &quick_xml::events::BytesStart<'_>,
+    path: &str,
+    warnings: &mut Vec<OutputWarning>,
 ) {
     let Some(table) = tables.last_mut() else {
         return;
@@ -611,12 +818,23 @@ fn apply_cell_vertical_merge(
     if table.cell_properties_depth == 0 {
         return;
     }
+    let raw_value = attr_value(element, b"val");
+    let row_ordinal = table.rows.len() + 1;
+    let cell_ordinal = table.row.as_ref().map_or(1, |row| row.cells.len() + 1);
     if let Some(cell) = table.cell.as_mut() {
-        cell.v_merge = match attr_value(element, b"val").as_deref() {
+        cell.v_merge = match raw_value.as_deref() {
             Some(value) if value.eq_ignore_ascii_case("restart") => DocxVerticalMerge::Restart,
             Some(value) if value.eq_ignore_ascii_case("continue") => DocxVerticalMerge::Continue,
             None => DocxVerticalMerge::Continue,
-            Some(_) => DocxVerticalMerge::None,
+            Some(value) => {
+                warnings.push(OutputWarning::new(
+                    path,
+                    format!(
+                        "row {row_ordinal} cell {cell_ordinal} has unknown vMerge value {value}; using none"
+                    ),
+                ));
+                DocxVerticalMerge::None
+            }
         };
     }
 }
@@ -1044,7 +1262,17 @@ mod tests {
 
         let result = parse_xml_tables(Cursor::new(xml), "word/document.xml").unwrap();
 
-        assert!(result.warnings.is_empty());
+        assert_eq!(result.warnings.len(), 2);
+        assert!(
+            result.warnings[0]
+                .message
+                .contains("invalid gridSpan value 0")
+        );
+        assert!(
+            result.warnings[1]
+                .message
+                .contains("unknown vMerge value unexpected")
+        );
         assert_eq!(result.value.len(), 1);
         let table = &result.value[0];
         assert_eq!(table.rows.len(), 3);

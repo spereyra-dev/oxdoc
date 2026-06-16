@@ -126,6 +126,71 @@ Warnings are still written to stderr when regular JSON output is selected. They 
 
 PPTX extraction preserves presentation slide order, extracts DrawingML text boxes, and includes linked speaker notes after each slide.
 
+## Extract DOCX Tables
+
+```bash
+oxdoc extract tables <FILE> [--format json]
+```
+
+`FILE` is one `.docx` document or `-` for stdin. This command preserves DOCX
+table structure instead of reconstructing rows and cells from flattened text.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--format json` | `json` | Emit the versioned DOCX tables JSON contract. |
+
+Example:
+
+```bash
+oxdoc extract tables contrato.docx --format json
+```
+
+Output shape:
+
+```json
+{
+  "schema_version": 1,
+  "file": "contrato.docx",
+  "document_type": "docx",
+  "tables": [
+    {
+      "part_type": "main",
+      "part_path": "word/document.xml",
+      "table_ordinal": 1,
+      "complete": true,
+      "grid_column_count": 2,
+      "rows": [
+        {
+          "row_ordinal": 1,
+          "grid_before": 0,
+          "grid_after": 0,
+          "complete": true,
+          "cells": [
+            {
+              "cell_ordinal": 1,
+              "grid_start": 0,
+              "grid_span": 1,
+              "vertical_merge": "none",
+              "complete": true,
+              "blocks": [
+                {"type": "paragraph", "text": "Cell text"}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
+```
+
+Top-level tables are emitted in main-part order, then related parts such as
+headers, footers, footnotes, endnotes, and comments in relationship order.
+Nested tables appear as `{"type":"table"}` blocks inside their containing cell.
+Recoverable warnings are embedded in the JSON payload and may also be emitted to
+stderr according to the global `--warnings` setting.
+
 ## Extract XLSX CSV
 
 ```bash

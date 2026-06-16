@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use oxdoc_core::vfs::{OoxmlLimits, OoxmlPackage};
 use oxdoc_core::{
-    DocumentType, OxdocError, XlsxCellValue, XlsxCsvOptions, XlsxRowControl, XlsxSheetOptions,
-    XlsxSheetVisibility, XlsxValueMode,
+    DocumentType, DocxTableBlock, DocxVerticalMerge, OxdocError, XlsxCellValue, XlsxCsvOptions,
+    XlsxRowControl, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
 };
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -195,6 +195,181 @@ fn rejects_external_docx_related_part_targets() {
                 && target == "https://example.invalid/header.xml"
                 && reason.contains("external"))
     );
+}
+
+#[test]
+fn extracts_docx_tables_through_public_api() {
+    let file = create_ooxml(
+        "docx-tables.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:tbl><w:tblGrid><w:gridCol/><w:gridCol/><w:gridCol/></w:tblGrid><w:tr><w:trPr><w:gridBefore w:val="1"/></w:trPr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>Alpha</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>Merge start</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:trPr><w:gridBefore w:val="1"/></w:trPr><w:tc><w:p><w:r><w:t>Before nested</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Nested</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_docx_tables(&file).unwrap();
+
+    assert!(extraction.warnings.is_empty());
+    assert_eq!(extraction.value.document_type, "docx");
+    assert_eq!(extraction.value.tables.len(), 1);
+    let table = &extraction.value.tables[0];
+    assert_eq!(table.part_type, "main");
+    assert_eq!(table.part_path, "word/document.xml");
+    assert_eq!(table.table_ordinal, 1);
+    assert!(table.complete);
+    assert_eq!(table.grid_column_count, Some(3));
+    assert_eq!(table.rows.len(), 2);
+    assert_eq!(table.rows[0].row_ordinal, 1);
+    assert_eq!(table.rows[0].grid_before, 1);
+    assert_eq!(table.rows[0].cells[0].cell_ordinal, 1);
+    assert_eq!(table.rows[0].cells[0].grid_start, 1);
+    assert_eq!(table.rows[0].cells[0].grid_span, 2);
+    assert_eq!(
+        table.rows[0].cells[1].vertical_merge,
+        DocxVerticalMerge::Restart
+    );
+    assert_eq!(
+        table.rows[1].cells[1].vertical_merge,
+        DocxVerticalMerge::Continue
+    );
+    assert_eq!(
+        table.rows[0].cells[0].blocks,
+        vec![DocxTableBlock::Paragraph {
+            text: "Alpha".to_owned(),
+        }]
+    );
+    let DocxTableBlock::Table { rows, complete, .. } = &table.rows[1].cells[0].blocks[1] else {
+        panic!("expected nested table block");
+    };
+    assert!(*complete);
+    assert_eq!(
+        rows[0].cells[0].blocks,
+        vec![DocxTableBlock::Paragraph {
+            text: "Nested".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn extracts_docx_tables_from_read_seek_reader() {
+    let file = create_ooxml(
+        "docx-table-reader.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Reader table</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+            ),
+        ],
+    );
+    let bytes = fs::read(file).unwrap();
+
+    let extraction = oxdoc_core::extract_docx_tables_from_reader(Cursor::new(bytes)).unwrap();
+
+    assert_eq!(
+        extraction.value.tables[0].rows[0].cells[0].blocks,
+        vec![DocxTableBlock::Paragraph {
+            text: "Reader table".to_owned(),
+        }]
+    );
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn extracts_docx_tables_from_related_parts_in_relationship_order() {
+    let file = create_ooxml(
+        "docx-related-table-parts.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Main table</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rComments" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+            ),
+            (
+                "word/comments.xml",
+                r#"<w:comments xmlns:w="w"><w:comment w:id="1"><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Comment table</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:comment></w:comments>"#,
+            ),
+            (
+                "word/header1.xml",
+                r#"<w:hdr xmlns:w="w"><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Header table</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:hdr>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_docx_tables(&file).unwrap();
+
+    let parts = extraction
+        .value
+        .tables
+        .iter()
+        .map(|table| {
+            let DocxTableBlock::Paragraph { text } = &table.rows[0].cells[0].blocks[0] else {
+                panic!("expected paragraph");
+            };
+            (
+                table.part_type.as_str(),
+                table.part_path.as_str(),
+                text.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        parts,
+        vec![
+            ("main", "word/document.xml", "Main table"),
+            ("comments", "word/comments.xml", "Comment table"),
+            ("header", "word/header1.xml", "Header table"),
+        ]
+    );
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn docx_tables_keep_closed_prefix_after_malformed_xml() {
+    let file = create_ooxml(
+        "docx-malformed-table-api.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Complete</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>Discard open"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_docx_tables(&file).unwrap();
+
+    assert_eq!(extraction.value.tables.len(), 1);
+    assert!(!extraction.value.tables[0].complete);
+    assert_eq!(extraction.value.tables[0].rows.len(), 1);
+    assert_eq!(
+        extraction.value.tables[0].rows[0].cells[0].blocks,
+        vec![DocxTableBlock::Paragraph {
+            text: "Complete".to_owned(),
+        }]
+    );
+    assert_eq!(extraction.warnings.len(), 1);
+    assert_eq!(extraction.warnings[0].path, "word/document.xml");
+    assert_eq!(extraction.warnings[0].code().as_str(), "W001");
 }
 
 #[test]

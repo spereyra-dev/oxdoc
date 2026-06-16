@@ -41,12 +41,13 @@ The current parser:
 
 These rules are intentionally stable for scripts. Breaking changes to this contract should be called out in release notes.
 
-## Proposed Structural Table Model
+## Structural Table Model
 
-The plain-text contract above remains unchanged. A future table API should add a
-structural view rather than infer rows and cells from tab-separated text.
+The plain-text contract above remains unchanged. `oxdoc extract tables` and the
+Rust `extract_docx_tables` API expose a structural view rather than infer rows
+and cells from tab-separated text.
 
-The proposed shape is:
+The public shape is:
 
 ```text
 DocxTable {
@@ -106,8 +107,8 @@ nearest table ancestor is absent. A nested table has its own row and cell
 ordinals, scoped to that table, but no independent top-level ordinal.
 
 The hand-authored source fixtures under `tests/fixtures/docx/` encode these
-decisions as XML plus JSON result oracles. They are intentionally unpackaged;
-future parser tests may feed the XML directly or deterministically ZIP the
+decisions as XML plus JSON result oracles. They are intentionally unpackaged so
+parser and API tests can feed the XML directly or deterministically ZIP the
 complete related-parts package tree.
 
 ## Example
