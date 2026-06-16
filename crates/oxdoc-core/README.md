@@ -9,6 +9,7 @@ Reusable OOXML extraction library for `oxdoc`.
 - Extract DOCX plain text from the supported document parts.
 - Extract PPTX plain text from slide text boxes and speaker notes.
 - Stream XLSX worksheet data to a caller-owned CSV writer.
+- Visit sparse, typed XLSX rows through a bounded-memory callback API.
 - Read core and app metadata from OOXML packages.
 - Read factual audit signals for governance and intake workflows.
 - Use path helpers or `Read + Seek` entry points for embedding.
@@ -26,6 +27,26 @@ fn main() -> oxdoc_core::Result<()> {
     extract_xlsx_csv("data.xlsx", XlsxCsvOptions::default(), &mut csv)?;
 
     println!("{}", String::from_utf8_lossy(&csv));
+    Ok(())
+}
+```
+
+Typed rows are also streamed one at a time:
+
+```rust
+use oxdoc_core::{XlsxRowControl, XlsxSheetOptions, XlsxValueMode};
+
+fn main() -> oxdoc_core::Result<()> {
+    oxdoc_core::visit_xlsx_rows(
+        "data.xlsx",
+        XlsxSheetOptions::default(),
+        XlsxValueMode::Raw,
+        |row| {
+            println!("row {} has {} cells", row.row_index, row.cells.len());
+            Ok(XlsxRowControl::Continue)
+        },
+    )?;
+
     Ok(())
 }
 ```
