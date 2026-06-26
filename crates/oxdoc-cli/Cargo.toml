@@ -21,6 +21,7 @@ path = "src/main.rs"
 clap.workspace = true
 flate2 = "1"
 oxdoc-core = { path = "../oxdoc-core", version = "1.1.0" }
+oxdoc-tabular = { path = "../oxdoc-tabular", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10"
