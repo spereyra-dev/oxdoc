@@ -5,8 +5,8 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::models::{
-    Extraction, OutputWarning, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxRow, XlsxRowControl,
-    XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
+    Extraction, OutputWarning, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxReadOptions, XlsxRow,
+    XlsxRowControl, XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
 };
 use crate::parsers::xlsx_shared_strings::{
     DEFAULT_SHARED_STRING_MEMORY_LIMIT, SharedStringLookup, SharedStringStore,
@@ -204,6 +204,19 @@ where
     R: Read + Seek,
     F: FnMut(&XlsxRow) -> Result<XlsxRowControl>,
 {
+    visit_rows_with_read_options(package, XlsxReadOptions::new(options), value_mode, visitor)
+}
+
+pub(crate) fn visit_rows_with_read_options<R, F>(
+    package: &mut OoxmlPackage<R>,
+    options: XlsxReadOptions<'_>,
+    value_mode: XlsxValueMode,
+    visitor: F,
+) -> Result<Extraction<()>>
+where
+    R: Read + Seek,
+    F: FnMut(&XlsxRow) -> Result<XlsxRowControl>,
+{
     let workbook_path = crate::parsers::find_office_document_path(package, "xl/workbook.xml")?;
     let workbook_xml = package.read_to_string(&workbook_path)?;
     let workbook = parse_workbook_sheets(&workbook_xml, &workbook_path)?;
@@ -215,9 +228,9 @@ where
 
     let selected_sheet = select_sheet(
         &workbook.value,
-        options.sheet_name,
-        options.sheet_index,
-        options.include_hidden,
+        options.sheet.sheet_name,
+        options.sheet.sheet_index,
+        options.sheet.include_hidden,
     )?;
     let target = workbook_rels
         .get(&selected_sheet.relation_id)
@@ -243,7 +256,7 @@ where
         Extraction::new(XlsxStyles::default())
     };
 
-    let sheet = package.with_entry(&sheet_path, |entry| {
+    let read_sheet = |entry: &mut dyn Read| {
         let format_context = SheetFormatContext {
             value_mode,
             date_system,
@@ -257,7 +270,12 @@ where
             &format_context,
             &mut sink,
         )
-    })?;
+    };
+    let sheet = if let Some(limits) = options.worksheet_limits {
+        package.with_entry_limits(&sheet_path, limits, read_sheet)
+    } else {
+        package.with_entry(&sheet_path, read_sheet)
+    }?;
 
     Ok(Extraction::with_warnings(
         (),
@@ -1114,19 +1132,24 @@ fn write_csv_field<W: Write>(writer: &mut W, value: &str, delimiter: u8) -> Resu
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::io::{Cursor, Write};
 
     use crate::OxdocError;
     use crate::models::{
-        XlsxCellValue, XlsxRow, XlsxRowControl, XlsxSheetVisibility, XlsxValueMode,
+        XlsxCellValue, XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions,
+        XlsxSheetVisibility, XlsxValueMode,
     };
     use crate::parsers::xlsx_shared_strings::{SharedStringLookup, SharedStringStore};
+    use crate::vfs::{OoxmlLimits, OoxmlPackage};
+    use zip::CompressionMethod;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
 
     use super::{
         CellFormat, CellState, DateSystem, SheetFormatContext, SheetRowSink, XlsxStyles,
         classify_number_format, format_cell_value, format_number, parse_cell_column,
         parse_sheet_rows, parse_styles, parse_workbook_date_system, parse_workbook_sheets,
-        select_sheet, write_sheet_csv,
+        select_sheet, visit_rows_with_read_options, write_sheet_csv,
     };
 
     #[derive(Default)]
@@ -1147,6 +1170,22 @@ mod tests {
             date_system: DateSystem::Excel1900,
             styles,
         }
+    }
+
+    fn xlsx_package(entries: &[(&str, &str)]) -> Cursor<Vec<u8>> {
+        let mut bytes = Cursor::new(Vec::new());
+        {
+            let mut zip = ZipWriter::new(&mut bytes);
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            for (path, content) in entries {
+                zip.start_file(path, options).unwrap();
+                zip.write_all(content.as_bytes()).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        bytes.set_position(0);
+        bytes
     }
 
     fn formatted_context(styles: &XlsxStyles) -> SheetFormatContext<'_> {
@@ -1378,6 +1417,103 @@ mod tests {
                 value: "text".to_owned(),
             }
         );
+    }
+
+    #[test]
+    fn typed_row_read_options_override_only_selected_worksheet_limit() {
+        let large_sheet = format!(
+            r#"<worksheet><sheetData><row><c r="A1"><v>1</v></c></row></sheetData><!--{}--></worksheet>"#,
+            "x".repeat(768)
+        );
+        let mut package = OoxmlPackage::with_limits(
+            xlsx_package(&[
+                (
+                    "_rels/.rels",
+                    r#"<Relationships><Relationship Id="rId1" Type="officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+                ),
+                (
+                    "xl/workbook.xml",
+                    r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+                ),
+                (
+                    "xl/_rels/workbook.xml.rels",
+                    r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+                ),
+                ("xl/worksheets/sheet1.xml", &large_sheet),
+            ]),
+            OoxmlLimits {
+                max_part_uncompressed_size: 512,
+                ..OoxmlLimits::default()
+            },
+        )
+        .unwrap();
+        let mut rows = Vec::new();
+
+        visit_rows_with_read_options(
+            &mut package,
+            XlsxReadOptions::new(XlsxSheetOptions::default()).with_worksheet_limits(OoxmlLimits {
+                max_part_uncompressed_size: 2 * 1024,
+                ..OoxmlLimits::default()
+            }),
+            XlsxValueMode::Raw,
+            |row| {
+                rows.push(row.clone());
+                Ok(XlsxRowControl::Continue)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].cells[0].value.csv_value(), "1");
+    }
+
+    #[test]
+    fn typed_row_read_options_leave_shared_strings_on_package_limits() {
+        let large_shared_strings =
+            format!(r#"<sst><si><t>{}</t></si></sst>"#, "shared".repeat(128));
+        let mut package = OoxmlPackage::with_limits(
+            xlsx_package(&[
+                (
+                    "_rels/.rels",
+                    r#"<Relationships><Relationship Id="rId1" Type="officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+                ),
+                (
+                    "xl/workbook.xml",
+                    r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+                ),
+                (
+                    "xl/_rels/workbook.xml.rels",
+                    r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+                ),
+                ("xl/sharedStrings.xml", &large_shared_strings),
+                (
+                    "xl/worksheets/sheet1.xml",
+                    r#"<worksheet><sheetData><row><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>"#,
+                ),
+            ]),
+            OoxmlLimits {
+                max_part_uncompressed_size: 512,
+                ..OoxmlLimits::default()
+            },
+        )
+        .unwrap();
+
+        let err = visit_rows_with_read_options(
+            &mut package,
+            XlsxReadOptions::new(XlsxSheetOptions::default()).with_worksheet_limits(OoxmlLimits {
+                max_part_uncompressed_size: 2 * 1024,
+                ..OoxmlLimits::default()
+            }),
+            XlsxValueMode::Raw,
+            |_| Ok(XlsxRowControl::Continue),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            OxdocError::PartTooLarge { path, limit: 512, .. }
+                if path == "xl/sharedStrings.xml"
+        ));
     }
 
     #[test]

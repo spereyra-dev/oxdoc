@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
+use crate::vfs::OoxmlLimits;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputWarning {
     pub path: String,
@@ -251,6 +253,38 @@ pub struct XlsxSheetOptions<'a> {
     pub sheet_name: Option<&'a str>,
     pub sheet_index: Option<usize>,
     pub include_hidden: bool,
+}
+
+/// Options for typed XLSX row extraction.
+///
+/// Use this when row extraction needs reader policy beyond worksheet selection,
+/// such as allowing one known-large worksheet without raising limits for the
+/// rest of the OOXML package.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct XlsxReadOptions<'a> {
+    pub sheet: XlsxSheetOptions<'a>,
+    pub worksheet_limits: Option<OoxmlLimits>,
+}
+
+impl<'a> XlsxReadOptions<'a> {
+    pub fn new(sheet: XlsxSheetOptions<'a>) -> Self {
+        Self {
+            sheet,
+            worksheet_limits: None,
+        }
+    }
+
+    pub fn with_worksheet_limits(mut self, limits: OoxmlLimits) -> Self {
+        self.worksheet_limits = Some(limits);
+        self
+    }
+}
+
+impl Default for XlsxReadOptions<'_> {
+    fn default() -> Self {
+        Self::new(XlsxSheetOptions::default())
+    }
 }
 
 /// A sparse XLSX worksheet row.

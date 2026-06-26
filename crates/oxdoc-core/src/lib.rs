@@ -28,8 +28,8 @@ pub use error::{OxdocError, Result};
 pub use models::{
     AuditSignal, DocumentAudit, DocumentInfo, DocumentType, DocxTable, DocxTableBlock,
     DocxTableCell, DocxTableRow, DocxTables, DocxVerticalMerge, Extraction, OutputWarning,
-    StructuredText, TextBlock, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxRow, XlsxRowControl,
-    XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
+    StructuredText, TextBlock, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxReadOptions, XlsxRow,
+    XlsxRowControl, XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
 };
 #[doc(hidden)]
 pub use parsers::docx::fuzz_extract_text as fuzz_docx_text;
@@ -179,6 +179,24 @@ where
     visit_xlsx_rows_from_reader(file, options, value_mode, visitor)
 }
 
+/// Visits one worksheet row at a time with typed XLSX read options.
+///
+/// This extends [`visit_xlsx_rows`] for callers that need to override read
+/// policy for the selected worksheet only. Workbook metadata, relationships,
+/// styles, shared strings, and later package reads keep the package defaults.
+pub fn visit_xlsx_rows_with_read_options<F>(
+    path: impl AsRef<Path>,
+    options: XlsxReadOptions<'_>,
+    value_mode: XlsxValueMode,
+    visitor: F,
+) -> Result<Extraction<()>>
+where
+    F: FnMut(&XlsxRow) -> Result<XlsxRowControl>,
+{
+    let file = File::open(path)?;
+    visit_xlsx_rows_from_reader_with_read_options(file, options, value_mode, visitor)
+}
+
 /// Reader-based counterpart to [`visit_xlsx_rows`].
 pub fn visit_xlsx_rows_from_reader<R, F>(
     reader: R,
@@ -192,6 +210,21 @@ where
 {
     let mut package = OoxmlPackage::new(reader)?;
     xlsx::visit_rows(&mut package, options, value_mode, visitor)
+}
+
+/// Reader-based counterpart to [`visit_xlsx_rows_with_read_options`].
+pub fn visit_xlsx_rows_from_reader_with_read_options<R, F>(
+    reader: R,
+    options: XlsxReadOptions<'_>,
+    value_mode: XlsxValueMode,
+    visitor: F,
+) -> Result<Extraction<()>>
+where
+    R: Read + Seek,
+    F: FnMut(&XlsxRow) -> Result<XlsxRowControl>,
+{
+    let mut package = OoxmlPackage::new(reader)?;
+    xlsx::visit_rows_with_read_options(&mut package, options, value_mode, visitor)
 }
 
 pub fn list_xlsx_sheets(path: impl AsRef<Path>) -> Result<Extraction<Vec<XlsxSheet>>> {
