@@ -139,6 +139,20 @@ fn extracts_pptx_text_to_stdout() {
 }
 
 #[test]
+fn extracts_pptx_text_from_stdin() {
+    let pptx = fixtures::build_package("pptx/text", "stdin-pptx.pptx");
+
+    let output = oxdoc_with_stdin(["extract", "text", "-"], &fs::read(&pptx).unwrap());
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("pptx_text.txt").trim_end()
+    );
+}
+
+#[test]
 fn extracts_pptx_text_as_json() {
     let pptx = fixtures::build_package("pptx/text", "fixture.pptx");
 
@@ -1408,6 +1422,149 @@ fn reads_audit_from_stdin() {
     let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
     assert_eq!(actual["file"], "<stdin>");
     assert_eq!(actual["document_type"], "pptx");
+}
+
+#[test]
+fn audits_multiple_files_as_json_array() {
+    let docx = fixtures::build_package("docx/basic", "audit-one.docx");
+    let pptx = fixtures::build_package("pptx/basic", "audit-two.pptx");
+
+    let output = oxdoc([
+        "audit",
+        docx.to_str().unwrap(),
+        pptx.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    let records = actual.as_array().unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["document_type"], "docx");
+    assert_eq!(records[1]["document_type"], "pptx");
+}
+
+#[test]
+fn audits_text_continues_after_partial_error() {
+    let docx = fixtures::build_package("docx/basic", "audit-text.docx");
+    let missing = unique_path("missing-audit-text.docx");
+
+    let output = oxdoc([
+        "audit",
+        missing.to_str().unwrap(),
+        docx.to_str().unwrap(),
+        "--format",
+        "text",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("missing-audit-text.docx"));
+    let text_stdout = stdout(&output);
+    assert!(text_stdout.contains("document_type: docx"));
+    assert!(text_stdout.contains("signal_count:"));
+}
+
+#[test]
+fn audit_single_missing_file_fails() {
+    let missing = unique_path("missing-single-audit.docx");
+
+    let output = oxdoc(["audit", missing.to_str().unwrap(), "--format", "json"]);
+
+    assert!(!output.status.success());
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("I/O error"));
+}
+
+#[test]
+fn audit_json_emits_empty_array_when_no_inputs_succeed() {
+    let first = unique_path("missing-audit-first.docx");
+    let second = unique_path("missing-audit-second.xlsx");
+
+    let output = oxdoc([
+        "audit",
+        first.to_str().unwrap(),
+        second.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("missing-audit-first.docx"));
+    assert!(stderr(&output).contains("missing-audit-second.xlsx"));
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual.as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn audit_text_errors_when_no_inputs_succeed() {
+    let first = unique_path("missing-audit-text-first.docx");
+    let second = unique_path("missing-audit-text-second.xlsx");
+
+    let output = oxdoc([
+        "audit",
+        first.to_str().unwrap(),
+        second.to_str().unwrap(),
+        "--format",
+        "text",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(stdout(&output).is_empty());
+    let error_output = stderr(&output);
+    assert!(error_output.contains("missing-audit-text-first.docx"));
+    assert!(error_output.contains("missing-audit-text-second.xlsx"));
+    assert!(error_output.contains("no input files were processed successfully"));
+}
+
+#[test]
+fn audits_multiple_files_as_jsonl_with_partial_errors() {
+    let docx = fixtures::build_package("docx/basic", "audit-jsonl.docx");
+    let missing = unique_path("missing-audit-jsonl.docx");
+
+    let output = oxdoc([
+        "audit",
+        docx.to_str().unwrap(),
+        missing.to_str().unwrap(),
+        "--format",
+        "jsonl",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["schema_version"], 1);
+    assert_eq!(records[0]["document_type"], "docx");
+    assert_eq!(records[0]["audit"]["document_type"], "docx");
+    assert!(records[0]["error"].is_null());
+    assert_eq!(records[1]["document_type"], "unknown");
+    assert!(records[1]["audit"].is_null());
+    assert!(
+        records[1]["error"]["code"]
+            .as_str()
+            .unwrap()
+            .starts_with('E')
+    );
+}
+
+#[test]
+fn audits_stdin_as_jsonl() {
+    let xlsx = fixtures::build_package("xlsx/basic", "audit-stdin.xlsx");
+
+    let output = oxdoc_with_stdin(
+        ["audit", "-", "--format", "jsonl"],
+        &fs::read(xlsx).unwrap(),
+    );
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["file"], "<stdin>");
+    assert_eq!(records[0]["document_type"], "xlsx");
+    assert_eq!(records[0]["audit"]["document_type"], "xlsx");
 }
 
 #[test]

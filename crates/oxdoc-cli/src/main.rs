@@ -41,9 +41,10 @@ enum Command {
         format: InfoFormat,
     },
     Audit {
-        file: PathBuf,
-        #[arg(long, value_enum, default_value_t = InfoFormat::Json)]
-        format: InfoFormat,
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+        #[arg(long, value_enum, default_value_t = AuditFormat::Json)]
+        format: AuditFormat,
     },
     Infer {
         #[command(subcommand)]
@@ -180,6 +181,13 @@ enum InfoFormat {
     Json,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum AuditFormat {
+    Text,
+    Json,
+    Jsonl,
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum WarningFormat {
     Text,
@@ -299,20 +307,8 @@ fn run() -> Result<(), CliError> {
                 InfoFormat::Text => print_info(&result.value),
             }
         }
-        Command::Audit { file, format } => {
-            let result = read_audit(&file)?;
-            emit_warnings(&result.warnings, warning_format);
-            match format {
-                InfoFormat::Json => {
-                    let payload = AuditPayload {
-                        oxdoc_version: env!("CARGO_PKG_VERSION"),
-                        audit: &result.value,
-                    };
-                    serde_json::to_writer_pretty(io::stdout().lock(), &payload)?;
-                    println!();
-                }
-                InfoFormat::Text => print_audit(&result.value),
-            }
+        Command::Audit { files, format } => {
+            audit_command(&files, format, warning_format)?;
         }
         Command::Infer {
             command:
@@ -495,6 +491,82 @@ fn extract_docx_tables(file: &Path) -> Result<oxdoc_core::Extraction<DocxTables>
         DocumentType::Xlsx => Err(CliError::InvalidArgument(
             "cannot extract DOCX tables from an XLSX workbook".to_owned(),
         )),
+    }
+}
+
+fn audit_command(
+    files: &[PathBuf],
+    format: AuditFormat,
+    warning_format: WarningFormat,
+) -> Result<(), CliError> {
+    let multiple = files.len() > 1;
+    let mut writer = io::stdout().lock();
+
+    if format == AuditFormat::Jsonl {
+        for file in files {
+            let record = audit_jsonl_record(file, warning_format);
+            serde_json::to_writer(&mut writer, &record)?;
+            writeln!(writer)?;
+        }
+        writer.flush()?;
+        return Ok(());
+    }
+
+    let mut payloads = Vec::new();
+    let mut wrote_text = false;
+    for file in files {
+        match read_audit(file) {
+            Ok(result) => {
+                emit_warnings(&result.warnings, warning_format);
+                match format {
+                    AuditFormat::Json => payloads.push(AuditPayload {
+                        oxdoc_version: env!("CARGO_PKG_VERSION"),
+                        audit: result.value,
+                    }),
+                    AuditFormat::Text => {
+                        if wrote_text {
+                            println!("\n---");
+                        }
+                        print_audit(&result.value);
+                        wrote_text = true;
+                    }
+                    AuditFormat::Jsonl => unreachable!("handled before extraction"),
+                }
+            }
+            Err(err) if multiple => emit_skipped_input_warning(file, &err, warning_format),
+            Err(err) => return Err(err),
+        }
+    }
+
+    if format == AuditFormat::Json {
+        if multiple {
+            serde_json::to_writer_pretty(&mut writer, &payloads)?;
+        } else if let Some(payload) = payloads.into_iter().next() {
+            serde_json::to_writer_pretty(&mut writer, &payload)?;
+        } else {
+            return Err(CliError::InvalidArgument(
+                "no input files were processed successfully".to_owned(),
+            ));
+        }
+        writeln!(writer)?;
+    } else if !wrote_text {
+        return Err(CliError::InvalidArgument(
+            "no input files were processed successfully".to_owned(),
+        ));
+    }
+
+    writer.flush()?;
+    Ok(())
+}
+
+fn audit_jsonl_record(file: &Path, warning_format: WarningFormat) -> AuditJsonlRecord {
+    let file_name = display_file_name(file);
+    match read_audit(file) {
+        Ok(result) => {
+            emit_warnings(&result.warnings, warning_format);
+            AuditJsonlRecord::success(file_name, result)
+        }
+        Err(err) => AuditJsonlRecord::error(file_name, err),
     }
 }
 
@@ -1280,10 +1352,55 @@ struct InfoPayload<'a> {
 }
 
 #[derive(Debug, serde::Serialize)]
-struct AuditPayload<'a> {
+struct AuditPayload {
     oxdoc_version: &'static str,
     #[serde(flatten)]
-    audit: &'a DocumentAudit,
+    audit: DocumentAudit,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct AuditJsonlRecord {
+    schema_version: u8,
+    file: String,
+    document_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audit: Option<DocumentAudit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<JsonlError>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<OwnedWarningPayload>,
+}
+
+impl AuditJsonlRecord {
+    fn success(file: String, extraction: oxdoc_core::Extraction<DocumentAudit>) -> Self {
+        let document_type = extraction.value.document_type.clone();
+        Self {
+            schema_version: 1,
+            file,
+            document_type,
+            audit: Some(extraction.value),
+            error: None,
+            warnings: extraction
+                .warnings
+                .iter()
+                .map(OwnedWarningPayload::from_output_warning)
+                .collect(),
+        }
+    }
+
+    fn error(file: String, error: CliError) -> Self {
+        Self {
+            schema_version: 1,
+            file,
+            document_type: "unknown".to_owned(),
+            audit: None,
+            error: Some(JsonlError {
+                code: error.code(),
+                message: error.to_string(),
+            }),
+            warnings: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, serde::Serialize)]

@@ -95,6 +95,47 @@ fn representative_audit_json_matches_schema() {
 }
 
 #[test]
+fn representative_audit_jsonl_record_matches_schema_shape() {
+    let schema = read_json_schema("oxdoc-audit-jsonl.schema.json");
+    let output = serde_json::json!({
+        "schema_version": 1,
+        "file": "report.docx",
+        "document_type": "docx",
+        "audit": {
+            "oxdoc_version": "1.1.0",
+            "file": "report.docx",
+            "document_type": "docx",
+            "metadata": {
+                "file": "report.docx",
+                "has_macros": false,
+                "custom_properties": {}
+            },
+            "signals": []
+        },
+        "warnings": [
+            {
+                "category": "parser",
+                "code": "W001",
+                "path": "word/document.xml",
+                "message": "stopped after malformed XML: parse error"
+            }
+        ]
+    });
+    let error_output = serde_json::json!({
+        "schema_version": 1,
+        "file": "missing.docx",
+        "document_type": "unknown",
+        "error": {
+            "code": "E001",
+            "message": "No such file or directory"
+        }
+    });
+
+    validate_object(&schema, &output);
+    validate_object(&schema, &error_output);
+}
+
+#[test]
 fn representative_all_sheets_manifest_matches_schema() {
     let schema = read_json_schema("oxdoc-all-sheets-manifest.schema.json");
     let output = serde_json::from_str(&read_snapshot("all_sheets_manifest.json")).unwrap();
@@ -198,6 +239,7 @@ fn schemas_have_stable_public_metadata() {
         "oxdoc-structured-text.schema.json",
         "oxdoc-docx-tables.schema.json",
         "oxdoc-audit.schema.json",
+        "oxdoc-audit-jsonl.schema.json",
         "oxdoc-all-sheets-manifest.schema.json",
         "oxdoc-xlsx-rows-jsonl.schema.json",
         "oxdoc-xlsx-schema.schema.json",

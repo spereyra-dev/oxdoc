@@ -14,9 +14,23 @@ Text output is also available:
 oxdoc audit report.docx --format text
 ```
 
+For batch ingestion, use JSONL:
+
+```bash
+oxdoc audit intake/*.docx --format jsonl
+```
+
+JSONL emits one record per input and continues after per-file failures. Success
+records contain an `audit` object; failure records contain an `error` object.
+This is intentionally narrower than a persistent batch manifest: it does not
+add hashes, file sizes, timings, or extracted artifacts.
+
 ## JSON Shape
 
-The versioned JSON Schema lives at [`schemas/v1/oxdoc-audit.schema.json`](schemas/v1/oxdoc-audit.schema.json).
+The single-document JSON Schema lives at
+[`schemas/v1/oxdoc-audit.schema.json`](schemas/v1/oxdoc-audit.schema.json).
+Each JSONL line is described by
+[`schemas/v1/oxdoc-audit-jsonl.schema.json`](schemas/v1/oxdoc-audit-jsonl.schema.json).
 
 ```json
 {
