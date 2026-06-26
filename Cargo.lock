@@ -824,6 +824,7 @@ dependencies = [
  "clap",
  "flate2",
  "oxdoc-core",
+ "oxdoc-tabular",
  "serde",
  "serde_json",
  "sha2",
@@ -854,6 +855,8 @@ dependencies = [
  "bytes",
  "oxdoc-core",
  "parquet",
+ "serde",
+ "serde_json",
  "thiserror",
  "zip",
 ]
