@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v1/oxdoc-audit-jsonl.schema.json",
+  "title": "oxdoc audit JSONL record",
+  "description": "Schema for each JSON object line emitted by `oxdoc audit --format jsonl` in oxdoc schema version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "file", "document_type"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "file": {
+      "type": "string"
+    },
+    "document_type": {
+      "type": "string",
+      "enum": ["docx", "pptx", "xlsx", "unknown"]
+    },
+    "audit": {
+      "type": "object",
+      "$ref": "oxdoc-audit.schema.json"
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "code", "path", "message"],
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": ["parser", "data", "custom"]
+          },
+          "code": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "required": ["audit"],
+      "not": {
+        "required": ["error"]
+      }
+    },
+    {
+      "required": ["error"],
+      "not": {
+        "required": ["audit"]
+      }
+    }
+  ]
+}

@@ -394,20 +394,21 @@ Optional fields are omitted from JSON when they are unavailable.
 ## Audit Document Signals
 
 ```bash
-oxdoc audit <FILE> [--format json|text]
+oxdoc audit <FILES>... [--format json|jsonl|text]
 ```
 
 Arguments:
 
 | Name | Required | Description |
 | --- | --- | --- |
-| `FILE` | yes | Path to a `.docx`, `.xlsx`, or `.pptx` OOXML package, or `-` to read from stdin. |
+| `FILES` | yes | One or more `.docx`, `.xlsx`, or `.pptx` OOXML packages, or `-` to read one package from stdin. |
 
 Options:
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--format json` | `json` | Emit structured audit JSON. |
+| `--format json` | `json` | Emit structured audit JSON; with multiple files, emit a JSON array. |
+| `--format jsonl` | `json` | Emit one success or error record per input file. |
 | `--format text` | `json` | Emit one field or signal per line. |
 
 Example:
@@ -417,3 +418,15 @@ oxdoc audit workbook.xlsx --format json
 ```
 
 Audit signals are factual findings, not a risk score. Current signals include macros, custom properties, hidden or protected XLSX workbooks, classified external relationships, embedded packages and OLE objects, suspicious relationship targets, and recoverable parser warnings.
+
+Batch audit example:
+
+```bash
+oxdoc audit intake/*.docx --format jsonl
+```
+
+JSONL audit continues after per-file failures and exits successfully after
+writing one record per input. Success records include `audit` and may include
+`warnings`; error records include `error` and use `document_type: "unknown"`
+when detection did not succeed. Warnings may also be emitted to stderr according
+to the global `--warnings` setting.
