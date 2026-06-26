@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use oxdoc_core::vfs::{OoxmlLimits, OoxmlPackage};
 use oxdoc_core::{
     DocumentType, DocxTableBlock, DocxVerticalMerge, OxdocError, XlsxCellValue, XlsxCsvOptions,
-    XlsxRowControl, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
+    XlsxReadOptions, XlsxRowControl, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
 };
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -679,6 +679,54 @@ fn visits_typed_xlsx_rows_from_reader_and_stops_early() {
     .unwrap();
 
     assert_eq!(visited, 1);
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn visits_typed_xlsx_rows_with_read_options_through_path_api() {
+    let file = fixtures::build_package("xlsx/basic", "read-options-path.xlsx");
+    let mut visited = 0;
+
+    let extraction = oxdoc_core::visit_xlsx_rows_with_read_options(
+        &file,
+        XlsxReadOptions::new(XlsxSheetOptions {
+            sheet_name: Some("Sales Q1"),
+            ..XlsxSheetOptions::default()
+        })
+        .with_worksheet_limits(OoxmlLimits::default()),
+        XlsxValueMode::Raw,
+        |_| {
+            visited += 1;
+            Ok(XlsxRowControl::Continue)
+        },
+    )
+    .unwrap();
+
+    assert_eq!(visited, 2);
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn visits_typed_xlsx_rows_with_read_options_from_reader() {
+    let file = fixtures::build_package("xlsx/basic", "read-options-reader.xlsx");
+    let reader = File::open(file).unwrap();
+    let mut rows = Vec::new();
+
+    let extraction = oxdoc_core::visit_xlsx_rows_from_reader_with_read_options(
+        reader,
+        XlsxReadOptions::new(XlsxSheetOptions {
+            sheet_index: Some(1),
+            ..XlsxSheetOptions::default()
+        }),
+        XlsxValueMode::Raw,
+        |row| {
+            rows.push(row.row_index);
+            Ok(XlsxRowControl::Stop)
+        },
+    )
+    .unwrap();
+
+    assert_eq!(rows, vec![0]);
     assert!(extraction.warnings.is_empty());
 }
 
