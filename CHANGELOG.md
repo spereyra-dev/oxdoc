@@ -6,7 +6,23 @@ The format is based on human-readable release notes.
 
 ## Unreleased
 
-No unreleased changes yet.
+### Added
+
+- Reusable XLSX schema inference and deterministic two-pass inferred Parquet
+  conversion in `oxdoc-tabular`.
+
+### Fixed
+
+- Coerce promoted inferred UTF-8 columns from formatted XLSX values so a type
+  conflict discovered during the inference pass remains writable under the
+  frozen schema.
+- Upgrade `quick-xml` and `crossbeam-epoch` to releases that address
+  RUSTSEC-2026-0194, RUSTSEC-2026-0195, and RUSTSEC-2026-0204.
+
+### Documentation
+
+- Documented the tabular schema promotion, coercion, late-conflict, and
+  two-pass conversion policies.
 
 ## 1.1.0 - 2026-05-15
 

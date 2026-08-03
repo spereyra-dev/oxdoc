@@ -98,9 +98,17 @@ two-pass workflow:
 3. convert rows under the frozen schema.
 
 A sampled schema cannot safely mutate after Parquet writing starts. Late
-conflicts must follow an explicit error or coercion policy. The experimental
-CLI inference policy should move into `oxdoc-tabular` before inferred Parquet
-output is exposed.
+conflicts now follow an explicit policy in `oxdoc-tabular`: full inference
+promotes incompatible observed types to UTF-8 and inferred conversion coerces
+those columns from formatted worksheet values. Explicit schemas remain strict.
+With sampled inference, a conflict found after the sample fails with row and
+column context unless the frozen type is already UTF-8; the schema never
+mutates after Parquet writing begins.
+
+The path and `Read + Seek` inferred writers implement the deterministic
+two-pass workflow. The first pass produces the same versioned report used by
+the CLI, the input is reopened or rewound, and the second pass writes bounded
+batches under the frozen schema.
 
 ## Large Worksheets
 
