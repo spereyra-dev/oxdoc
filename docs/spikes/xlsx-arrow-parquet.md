@@ -4,17 +4,18 @@ Issue: [#121](https://github.com/spereyra-dev/oxdoc/issues/121)
 
 ## Decision
 
-**GO for the separate-crate architecture. Production remains benchmark-gated.**
+**GO for the separate-crate architecture. Production gates are complete.**
 
 Arrow and Parquet must stay outside `oxdoc-core`. The spike uses an
 `oxdoc-tabular` workspace crate with explicit schemas, bounded Arrow
 `RecordBatch` production, and incremental Parquet row-group flushing.
 `oxdoc-core` and the default `oxdoc` CLI do not link Arrow or Parquet.
 
-The spike is intentionally `publish = false`. It proves the integration shape;
-it is not yet a stable public API.
+The crate is publishable with no default features. Schema inference stays
+lightweight, while the `parquet` feature opts consumers into Arrow and Parquet.
+The default CLI dependency graph does not enable that feature.
 
-## Prototype API
+## Public API
 
 ```rust
 let schema = TabularSchema::new(vec![
@@ -143,7 +144,7 @@ python -m pip install duckdb==1.4.3 pyarrow==22.0.0
 python scripts/tabular-ci.py --rows 10000
 ```
 
-Production work can proceed only when:
+The dedicated CI workflow now enforces these production gates:
 
 - explicit-schema files round-trip through DuckDB and PyArrow in CI;
 - inference matches the documented promotion matrix;
@@ -155,13 +156,13 @@ Production work can proceed only when:
 - worksheet limit overrides affect only the selected worksheet entry;
 - compile-time and artifact-size costs remain isolated to tabular consumers.
 
-The project should stop the integration if deterministic inference requires
+The integration should be reconsidered if deterministic inference requires
 schema mutation during writes, bounded memory requires abandoning the streaming
 row API, or either independent reader fails interoperability.
 
-## Follow-Ups
+## Completed Follow-Ups
 
-Production work should be divided into separate issues for:
+Production work was divided into separate issues:
 
 - [#128](https://github.com/spereyra-dev/oxdoc/issues/128): worksheet-specific
   XLSX read limits;

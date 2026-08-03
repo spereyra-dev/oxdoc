@@ -68,10 +68,12 @@ the project has enough release volume to maintain them.
 
 ## Crates.io Publishing
 
-The intended crates.io plan is to publish both crates once the 1.0 API and CLI contracts are ready for external consumers:
+The crates.io release order is:
 
 - Publish `oxdoc-core` first because it is the library crate.
-- Publish `oxdoc-cli` second because it depends on the matching `oxdoc-core` version.
+- Publish `oxdoc-tabular` second because it depends on typed XLSX APIs in the
+  matching `oxdoc-core` version.
+- Publish `oxdoc-cli` last because it depends on both crates.
 - Keep the CLI binary name as `oxdoc`, even though the crate package is `oxdoc-cli`.
 - Keep crate READMEs focused on package-specific installation and API/CLI usage.
 
@@ -79,6 +81,7 @@ Before publishing, run dry-runs from a clean checkout:
 
 ```bash
 cargo publish -p oxdoc-core --dry-run
+cargo publish -p oxdoc-tabular --dry-run
 cargo publish -p oxdoc-cli --dry-run
 ```
 
@@ -91,9 +94,13 @@ make memory-baselines
 make competitor-workbench
 ```
 
-If `oxdoc-core` has not been published yet, the `oxdoc-cli` dry-run may fail registry resolution during verification. In that case, publish `oxdoc-core` first, then rerun the `oxdoc-cli` dry-run before publishing the CLI crate.
+When the current workspace uses core APIs newer than the latest registry
+release, `cargo package -p oxdoc-tabular --no-verify` validates the package
+contents and manifest before the release. Full dry-run verification must be
+repeated after publishing the matching `oxdoc-core`, then before publishing
+`oxdoc-tabular`. Apply the same ordering to the CLI.
 
-Both crates must keep:
+All crates must keep:
 
 - MIT licensing through package metadata.
 - A crate-local `README.md`.

@@ -2,7 +2,7 @@
 name = "oxdoc-tabular"
 version = "0.1.0"
 authors.workspace = true
-description = "Experimental Arrow and Parquet adapter for oxdoc XLSX rows"
+description = "XLSX schema inference and optional Arrow/Parquet conversion for oxdoc"
 edition.workspace = true
 homepage.workspace = true
 keywords.workspace = true
@@ -10,13 +10,17 @@ categories.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-publish = false
+publish = true
+
+[features]
+default = []
+parquet = ["dep:arrow-array", "dep:arrow-schema", "dep:parquet"]
 
 [dependencies]
-arrow-array = "59.0.0"
-arrow-schema = "59.0.0"
+arrow-array = { version = "59.1.0", optional = true }
+arrow-schema = { version = "59.1.0", optional = true }
 oxdoc-core = { path = "../oxdoc-core", version = "1.1.0" }
-parquet = { version = "59.0.0", default-features = false, features = ["arrow"] }
+parquet = { version = "59.0.0", default-features = false, features = ["arrow"], optional = true }
 serde.workspace = true
 thiserror.workspace = true
 
@@ -24,3 +28,11 @@ thiserror.workspace = true
 bytes = "1"
 serde_json.workspace = true
 zip.workspace = true
+
+[[example]]
+name = "xlsx_to_parquet"
+required-features = ["parquet"]
+
+[[example]]
+name = "tabular_gate"
+required-features = ["parquet"]

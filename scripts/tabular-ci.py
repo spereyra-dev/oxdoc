@@ -125,7 +125,7 @@ def main() -> int:
 
     parquet = root / "dense.parquet"
     completed = run(
-        ["cargo", "run", "--release", "-p", "oxdoc-tabular", "--example", "tabular_gate", "--", str(root / "dense.xlsx"), str(parquet), str(args.rows)],
+        ["cargo", "run", "--release", "-p", "oxdoc-tabular", "--features", "parquet", "--example", "tabular_gate", "--", str(root / "dense.xlsx"), str(parquet), str(args.rows)],
         stdout=subprocess.PIPE,
     )
     report = json.loads(completed.stdout.strip().splitlines()[-1])
