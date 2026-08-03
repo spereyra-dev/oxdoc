@@ -10,7 +10,7 @@ COVERAGE_THRESHOLD ?= 95
 
 .PHONY: help all ci ci-rust prepare-commit pre-push scripts-test
 .PHONY: fmt fmt-check check clippy lint test doctest python-test coverage coverage-html coverage-lcov audit memory-baselines competitor-workbench
-.PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check install-tools clean clean-coverage
+.PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check batch-manifest-spike install-tools clean clean-coverage
 
 help:
 	@echo "oxdoc development targets"
@@ -98,6 +98,9 @@ memory-baselines:
 
 competitor-workbench:
 	python3 scripts/competitor-workbench.py --iterations 3 --output target/competitor-workbench/report.md --csv-output target/competitor-workbench/results.csv
+
+batch-manifest-spike:
+	python3 scripts/batch-manifest-spike.py
 
 build:
 	$(CARGO) build --workspace --all-features $(TARGET_FLAG)
