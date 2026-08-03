@@ -10,9 +10,9 @@ use oxdoc_core::{
     StructuredText, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxRow, XlsxRowControl,
     XlsxSheetOptions, XlsxValueMode,
 };
+use oxdoc_tabular::xlsx_schema;
 
 mod update;
-mod xlsx_schema;
 
 #[derive(Debug, Parser)]
 #[command(

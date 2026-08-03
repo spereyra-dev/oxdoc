@@ -1,10 +1,12 @@
 //! Experimental Arrow and Parquet conversion for typed XLSX rows.
 //!
 //! This crate deliberately keeps the columnar dependency stack outside
-//! `oxdoc-core`. Callers supply a schema and explicit zero-based worksheet
-//! column indexes; no schema inference or value coercion is performed.
+//! `oxdoc-core`. Callers can infer a stable logical schema before converting
+//! rows, then pass an explicit frozen schema into Arrow or Parquet writers.
 
-use std::io::{Read, Seek, Write};
+pub mod xlsx_schema;
+
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -19,6 +21,8 @@ use oxdoc_core::{
 use parquet::arrow::ArrowWriter;
 use thiserror::Error;
 
+use xlsx_schema::{XlsxLogicalType, XlsxSchemaReport};
+
 /// Logical types accepted by the experimental XLSX-to-Arrow converter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TabularType {
@@ -30,6 +34,19 @@ pub enum TabularType {
     Time,
     DateTime,
     Utf8,
+}
+
+/// Policy used when a worksheet value is written into an UTF-8 column.
+///
+/// Explicit schemas use [`Utf8CoercionPolicy::Strict`]. Two-pass inferred
+/// conversion uses [`Utf8CoercionPolicy::Formatted`] because incompatible
+/// inferred types are deliberately promoted to UTF-8.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Utf8CoercionPolicy {
+    /// Accept only XLSX string cells.
+    Strict,
+    /// Convert non-blank cells to their formatted worksheet representation.
+    Formatted,
 }
 
 impl TabularType {
@@ -167,6 +184,46 @@ pub struct ParquetStats {
     pub row_groups: usize,
 }
 
+/// Result of a deterministic inferred-schema Parquet conversion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InferredParquetStats {
+    pub inference: XlsxSchemaReport,
+    pub parquet: ParquetStats,
+}
+
+impl XlsxSchemaReport {
+    pub fn to_tabular_schema(&self) -> Result<TabularSchema> {
+        TabularSchema::new(
+            self.columns
+                .iter()
+                .map(|column| {
+                    Column::new(
+                        column.name.clone(),
+                        column.column_index,
+                        column.logical_type.into(),
+                        column.nullable,
+                    )
+                })
+                .collect(),
+        )
+    }
+}
+
+impl From<XlsxLogicalType> for TabularType {
+    fn from(value: XlsxLogicalType) -> Self {
+        match value {
+            XlsxLogicalType::Null => Self::Null,
+            XlsxLogicalType::Bool => Self::Bool,
+            XlsxLogicalType::Int64 => Self::Int64,
+            XlsxLogicalType::Float64 => Self::Float64,
+            XlsxLogicalType::Date => Self::Date,
+            XlsxLogicalType::Time => Self::Time,
+            XlsxLogicalType::Datetime => Self::DateTime,
+            XlsxLogicalType::Utf8 => Self::Utf8,
+        }
+    }
+}
+
 /// Visit bounded Arrow record batches converted from one worksheet.
 ///
 /// Date, time, and datetime columns require recognized XLSX number formats,
@@ -191,6 +248,28 @@ pub fn visit_xlsx_record_batches_from_reader<R, F>(
     options: XlsxSheetOptions<'_>,
     schema: &TabularSchema,
     batch_rows: usize,
+    visitor: F,
+) -> Result<Extraction<BatchStats>>
+where
+    R: Read + Seek,
+    F: FnMut(&RecordBatch) -> Result<()>,
+{
+    visit_xlsx_record_batches_from_reader_with_policy(
+        reader,
+        options,
+        schema,
+        batch_rows,
+        Utf8CoercionPolicy::Strict,
+        visitor,
+    )
+}
+
+fn visit_xlsx_record_batches_from_reader_with_policy<R, F>(
+    reader: R,
+    options: XlsxSheetOptions<'_>,
+    schema: &TabularSchema,
+    batch_rows: usize,
+    utf8_coercion: Utf8CoercionPolicy,
     mut visitor: F,
 ) -> Result<Extraction<BatchStats>>
 where
@@ -202,7 +281,8 @@ where
     }
 
     let arrow_schema = schema.arrow_schema();
-    let mut converter = BatchConverter::new(schema, Arc::clone(&arrow_schema), batch_rows);
+    let mut converter =
+        BatchConverter::new(schema, Arc::clone(&arrow_schema), batch_rows, utf8_coercion);
     let mut callback_error = None;
 
     let extraction =
@@ -250,6 +330,71 @@ where
     write_xlsx_parquet_from_reader(file, options, schema, batch_rows, writer)
 }
 
+/// Infer a worksheet schema, rewind the seekable input, and write Parquet using
+/// the frozen schema from the first pass.
+pub fn write_xlsx_parquet_with_inferred_schema<W>(
+    path: impl AsRef<Path>,
+    options: XlsxSheetOptions<'_>,
+    sample_rows: Option<usize>,
+    batch_rows: usize,
+    writer: W,
+) -> Result<Extraction<InferredParquetStats>>
+where
+    W: Write + Send,
+{
+    let path = path.as_ref();
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map_or_else(|| path.display().to_string(), str::to_owned);
+    let file = std::fs::File::open(path).map_err(OxdocError::from)?;
+    write_xlsx_parquet_from_seekable_with_inferred_schema(
+        file,
+        file_name,
+        options,
+        sample_rows,
+        batch_rows,
+        writer,
+    )
+}
+
+/// Reader-based counterpart to [`write_xlsx_parquet_with_inferred_schema`].
+pub fn write_xlsx_parquet_from_seekable_with_inferred_schema<R, W>(
+    mut reader: R,
+    file_name: impl Into<String>,
+    options: XlsxSheetOptions<'_>,
+    sample_rows: Option<usize>,
+    batch_rows: usize,
+    writer: W,
+) -> Result<Extraction<InferredParquetStats>>
+where
+    R: Read + Seek,
+    W: Write + Send,
+{
+    let inference =
+        xlsx_schema::infer_xlsx_schema_from_reader(&mut reader, file_name, options, sample_rows)?;
+    reader.seek(SeekFrom::Start(0)).map_err(OxdocError::from)?;
+    let schema = inference.value.to_tabular_schema()?;
+    let parquet = write_xlsx_parquet_from_reader_with_policy(
+        reader,
+        options,
+        &schema,
+        batch_rows,
+        Utf8CoercionPolicy::Formatted,
+        writer,
+    )?;
+    let mut warnings = inference.warnings;
+    warnings.extend(parquet.warnings);
+
+    Ok(Extraction::with_warnings(
+        InferredParquetStats {
+            inference: inference.value,
+            parquet: parquet.value,
+        },
+        warnings,
+    ))
+}
+
 /// Reader-based counterpart to [`write_xlsx_parquet`].
 pub fn write_xlsx_parquet_from_reader<R, W>(
     reader: R,
@@ -262,13 +407,41 @@ where
     R: Read + Seek,
     W: Write + Send,
 {
+    write_xlsx_parquet_from_reader_with_policy(
+        reader,
+        options,
+        schema,
+        batch_rows,
+        Utf8CoercionPolicy::Strict,
+        writer,
+    )
+}
+
+fn write_xlsx_parquet_from_reader_with_policy<R, W>(
+    reader: R,
+    options: XlsxSheetOptions<'_>,
+    schema: &TabularSchema,
+    batch_rows: usize,
+    utf8_coercion: Utf8CoercionPolicy,
+    writer: W,
+) -> Result<Extraction<ParquetStats>>
+where
+    R: Read + Seek,
+    W: Write + Send,
+{
     let mut parquet = ArrowWriter::try_new(writer, schema.arrow_schema(), None)?;
-    let extraction =
-        visit_xlsx_record_batches_from_reader(reader, options, schema, batch_rows, |batch| {
+    let extraction = visit_xlsx_record_batches_from_reader_with_policy(
+        reader,
+        options,
+        schema,
+        batch_rows,
+        utf8_coercion,
+        |batch| {
             parquet.write(batch)?;
             parquet.flush()?;
             Ok(())
-        })?;
+        },
+    )?;
     let row_groups = parquet.flushed_row_groups().len();
     parquet.close()?;
 
@@ -283,16 +456,23 @@ struct BatchConverter<'a> {
     schema: &'a TabularSchema,
     arrow_schema: SchemaRef,
     batch_rows: usize,
+    utf8_coercion: Utf8CoercionPolicy,
     buffers: Vec<ColumnBuffer>,
     stats: BatchStats,
 }
 
 impl<'a> BatchConverter<'a> {
-    fn new(schema: &'a TabularSchema, arrow_schema: SchemaRef, batch_rows: usize) -> Self {
+    fn new(
+        schema: &'a TabularSchema,
+        arrow_schema: SchemaRef,
+        batch_rows: usize,
+        utf8_coercion: Utf8CoercionPolicy,
+    ) -> Self {
         Self {
             schema,
             arrow_schema,
             batch_rows,
+            utf8_coercion,
             buffers: schema
                 .columns
                 .iter()
@@ -309,7 +489,7 @@ impl<'a> BatchConverter<'a> {
                 .binary_search_by_key(&column.index, |cell| cell.column_index)
                 .ok()
                 .map(|position| &row.cells[position].value);
-            buffer.push(row.row_index, column, value)?;
+            buffer.push(row.row_index, column, value, self.utf8_coercion)?;
         }
         self.stats.rows += 1;
 
@@ -383,6 +563,7 @@ impl ColumnBuffer {
         row_index: usize,
         column: &Column,
         value: Option<&XlsxCellValue>,
+        utf8_coercion: Utf8CoercionPolicy,
     ) -> Result<()> {
         if value.is_none() || matches!(value, Some(XlsxCellValue::Blank)) {
             if !column.nullable {
@@ -464,6 +645,10 @@ impl ColumnBuffer {
                 values.push(Some(value.clone()));
                 Ok(())
             }
+            (Self::Utf8(values), value) if utf8_coercion == Utf8CoercionPolicy::Formatted => {
+                values.push(Some(formatted_text(value)));
+                Ok(())
+            }
             (_, value) => Err(mismatch(row_index, column, value_kind(value))),
         }
     }
@@ -494,6 +679,26 @@ impl ColumnBuffer {
             }
             Self::Utf8(values) => Arc::new(StringArray::from(std::mem::take(values))),
         }
+    }
+}
+
+fn formatted_text(value: &XlsxCellValue) -> String {
+    match value {
+        XlsxCellValue::Blank => String::new(),
+        XlsxCellValue::String { value, .. } => value.clone(),
+        XlsxCellValue::Boolean {
+            value: Some(value), ..
+        } => value.to_string(),
+        XlsxCellValue::Boolean { raw, value: None } | XlsxCellValue::Error { raw } => raw.clone(),
+        XlsxCellValue::Number {
+            raw: _,
+            formatted: Some(formatted),
+        } => formatted.clone(),
+        XlsxCellValue::Number {
+            raw,
+            formatted: None,
+        } => raw.clone(),
+        _ => "unsupported XLSX value".to_owned(),
     }
 }
 
@@ -692,6 +897,139 @@ mod tests {
     }
 
     #[test]
+    fn infers_schema_from_path_and_reader() {
+        let input = temp_path("tabular-infer.xlsx");
+        fs::write(
+            &input,
+            workbook(&[("1", "alpha"), ("2", "beta")]).into_inner(),
+        )
+        .unwrap();
+
+        let path_report =
+            xlsx_schema::infer_xlsx_schema(&input, XlsxSheetOptions::default(), None).unwrap();
+        let reader_report = xlsx_schema::infer_xlsx_schema_from_reader(
+            workbook(&[("1", "alpha"), ("2", "beta")]),
+            "reader.xlsx",
+            XlsxSheetOptions::default(),
+            Some(1),
+        )
+        .unwrap();
+
+        assert!(path_report.value.file.ends_with("tabular-infer.xlsx"));
+        assert_eq!(
+            path_report.value.columns[0].logical_type,
+            XlsxLogicalType::Int64
+        );
+        assert_eq!(
+            path_report.value.columns[1].logical_type,
+            XlsxLogicalType::Utf8
+        );
+        assert_eq!(reader_report.value.file, "reader.xlsx");
+        assert_eq!(reader_report.value.scan.examined_rows, 1);
+        assert_eq!(
+            reader_report.value.warnings[0].code,
+            xlsx_schema::XlsxSchemaWarningCode::SampledResult
+        );
+        fs::remove_file(input).unwrap();
+    }
+
+    #[test]
+    fn converts_inferred_report_to_tabular_schema() {
+        let report = xlsx_schema::infer_xlsx_schema_from_reader(
+            workbook(&[("1", "alpha"), ("2", "beta")]),
+            "reader.xlsx",
+            XlsxSheetOptions::default(),
+            None,
+        )
+        .unwrap()
+        .value;
+
+        let schema = report.to_tabular_schema().unwrap();
+
+        assert_eq!(
+            schema.columns(),
+            &[
+                Column::new("A", 0, TabularType::Int64, false),
+                Column::new("B", 1, TabularType::Utf8, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn writes_parquet_with_inferred_schema_in_two_passes() {
+        let mut output = Vec::new();
+        let extraction = write_xlsx_parquet_from_seekable_with_inferred_schema(
+            workbook(&[("1", "alpha"), ("2", "beta"), ("3", "gamma")]),
+            "reader.xlsx",
+            XlsxSheetOptions::default(),
+            None,
+            2,
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(extraction.value.inference.scan.examined_rows, 3);
+        assert_eq!(
+            extraction.value.parquet,
+            ParquetStats {
+                rows: 3,
+                batches: 2,
+                row_groups: 2
+            }
+        );
+        let reader = SerializedFileReader::new(bytes::Bytes::from(output)).unwrap();
+        assert_eq!(reader.metadata().file_metadata().num_rows(), 3);
+    }
+
+    #[test]
+    fn inferred_utf8_columns_coerce_conflicting_formatted_values() {
+        let mut output = Vec::new();
+        let extraction = write_xlsx_parquet_from_seekable_with_inferred_schema(
+            workbook(&[("1", "alpha"), ("not-a-number", "beta")]),
+            "conflict.xlsx",
+            XlsxSheetOptions::default(),
+            None,
+            10,
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(
+            extraction.value.inference.columns[0].logical_type,
+            XlsxLogicalType::Utf8
+        );
+        assert_eq!(extraction.value.parquet.rows, 2);
+        assert!(
+            extraction
+                .value
+                .inference
+                .warnings
+                .iter()
+                .any(|warning| warning.code == xlsx_schema::XlsxSchemaWarningCode::TypeConflict)
+        );
+    }
+
+    #[test]
+    fn inferred_schema_path_wrapper_writes_parquet() {
+        let input = temp_path("tabular-inferred-path.xlsx");
+        fs::write(&input, workbook(&[("1", "alpha")]).into_inner()).unwrap();
+        let mut output = Vec::new();
+
+        let extraction = write_xlsx_parquet_with_inferred_schema(
+            &input,
+            XlsxSheetOptions::default(),
+            None,
+            10,
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(extraction.value.parquet.rows, 1);
+        assert!(!output.is_empty());
+        fs::remove_file(input).unwrap();
+    }
+
+    #[test]
     fn writes_one_parquet_row_group_per_batch() {
         let schema = test_schema();
         let mut output = Vec::new();
@@ -840,7 +1178,12 @@ mod tests {
             Column::new("text", 7, TabularType::Utf8, true),
         ])
         .unwrap();
-        let mut converter = BatchConverter::new(&schema, schema.arrow_schema(), 2);
+        let mut converter = BatchConverter::new(
+            &schema,
+            schema.arrow_schema(),
+            2,
+            Utf8CoercionPolicy::Strict,
+        );
         converter
             .push(&XlsxRow {
                 row_index: 4,
@@ -961,7 +1304,12 @@ mod tests {
         ] {
             let schema =
                 TabularSchema::new(vec![Column::new("value", 0, data_type, false)]).unwrap();
-            let mut converter = BatchConverter::new(&schema, schema.arrow_schema(), 1);
+            let mut converter = BatchConverter::new(
+                &schema,
+                schema.arrow_schema(),
+                1,
+                Utf8CoercionPolicy::Strict,
+            );
             assert!(matches!(
                 converter.push(&XlsxRow {
                     row_index: 7,
