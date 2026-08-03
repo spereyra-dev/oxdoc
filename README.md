@@ -288,6 +288,7 @@ Audit output reports factual document intake signals such as macros, custom prop
 .
 ├── crates
 │   ├── oxdoc-core
+│   ├── oxdoc-tabular
 │   └── oxdoc-cli
 ├── docs
 ├── .github
@@ -315,6 +316,12 @@ The command-line application. It owns:
 - Writing extraction data to stdout.
 - Writing recoverable warnings and hard errors to stderr.
 - Formatting JSON with `serde_json`.
+
+### `oxdoc-tabular`
+
+The experimental, unpublished Arrow and Parquet adapter. It owns reusable
+XLSX schema inference, explicit-schema conversion, and deterministic two-pass
+inferred conversion while keeping columnar dependencies out of `oxdoc-core`.
 
 ## Design Principles
 
