@@ -1,11 +1,19 @@
 # oxdoc-tabular
 
-Experimental XLSX-to-Arrow and Parquet adapter for `oxdoc`.
+Publishable XLSX schema and optional Arrow/Parquet adapter for `oxdoc`.
 
 The crate keeps Arrow and Parquet outside `oxdoc-core` and supports both
 explicit schemas and deterministic two-pass inferred conversion. Inferred
 conversion scans and freezes the schema, rewinds or reopens the workbook, and
 then writes bounded Arrow batches and Parquet row groups.
+
+Schema inference has no Arrow dependency. Enable the opt-in `parquet` feature
+only for conversion:
+
+```toml
+[dependencies]
+oxdoc-tabular = { version = "0.1.0", features = ["parquet"] }
+```
 
 ## Inferred conversion policy
 
@@ -39,6 +47,12 @@ fn main() -> oxdoc_tabular::Result<()> {
 }
 ```
 
-The crate remains unpublished and experimental. See
+`ParquetWriteOptions` controls batch/row-group size and forwards standard
+Parquet writer properties. `write_xlsx_parquet_to_path_atomic` writes to a
+unique adjacent temporary file and replaces the destination only after a
+successful close. Conversion reports are serializable, while `Error::code()`
+provides stable machine-readable categories.
+
+See
 [`docs/spikes/xlsx-arrow-parquet.md`](../../docs/spikes/xlsx-arrow-parquet.md)
-for architecture, measurements, and production gates.
+for architecture, measurements, and completed production gates.

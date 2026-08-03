@@ -2,6 +2,21 @@
 
 `oxdoc-core` exposes the reusable Rust API. The CLI is a consumer of this crate.
 
+`oxdoc-tabular` exposes XLSX schema inference without columnar dependencies.
+Its optional `parquet` feature adds bounded Arrow batches and Parquet output
+without adding Arrow or Parquet to `oxdoc-core` or the default CLI graph:
+
+```toml
+oxdoc-tabular = { version = "0.1.0", features = ["parquet"] }
+```
+
+Explicit conversion schemas are strict and report row/column context on type
+mismatches. Inferred conversion freezes a schema in a first pass and writes it
+in a second pass. `ParquetWriteOptions` controls batch/row-group size and
+writer properties; `write_xlsx_parquet_to_path_atomic` protects existing
+outputs from partial conversion failures. Stats implement `Serialize`, and
+`oxdoc_tabular::Error::code()` returns a stable category for automation.
+
 From 1.0 onward, public API changes follow semantic versioning.
 
 ## Public Functions

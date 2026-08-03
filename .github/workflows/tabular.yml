@@ -42,7 +42,7 @@ jobs:
       - name: Record clean build resources and artifact sizes
         run: |
           mkdir -p target/tabular-ci
-          /usr/bin/time -v cargo build --release -p oxdoc-tabular --example tabular_gate 2>&1 | tee target/tabular-ci/build-${{ matrix.rows }}.txt
+          /usr/bin/time -v cargo build --release -p oxdoc-tabular --features parquet --example tabular_gate 2>&1 | tee target/tabular-ci/build-${{ matrix.rows }}.txt
           du -sk target target/release/examples/tabular_gate | tee target/tabular-ci/sizes-${{ matrix.rows }}.txt
       - name: Run corpus, throughput, and interoperability gates
         run: /usr/bin/time -v python scripts/tabular-ci.py --rows ${{ matrix.rows }}

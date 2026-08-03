@@ -10,6 +10,10 @@ The format is based on human-readable release notes.
 
 - Reusable XLSX schema inference and deterministic two-pass inferred Parquet
   conversion in `oxdoc-tabular`.
+- Publishable `oxdoc-tabular` packaging with dependency-free-by-default schema
+  inference and opt-in Arrow/Parquet conversion.
+- Configurable Parquet writer properties, atomic path output, serializable
+  conversion reports, and stable tabular error categories.
 
 ### Fixed
 
