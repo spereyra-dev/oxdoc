@@ -1,20 +1,65 @@
 use std::fmt;
+use std::io::{Read, Seek};
+use std::path::Path;
 
-use oxdoc_core::{XlsxCellValue, XlsxRow, XlsxRowControl};
+use oxdoc_core::{
+    Extraction, Result as CoreResult, XlsxCellValue, XlsxRow, XlsxRowControl, XlsxSheetOptions,
+    XlsxValueMode,
+};
 use serde::Serialize;
 
-pub(crate) const XLSX_SCHEMA_VERSION: u8 = 1;
+pub const XLSX_SCHEMA_VERSION: u8 = 1;
+
+pub fn infer_xlsx_schema(
+    path: impl AsRef<Path>,
+    options: XlsxSheetOptions<'_>,
+    sample_rows: Option<usize>,
+) -> CoreResult<Extraction<XlsxSchemaReport>> {
+    let path = path.as_ref();
+    let file = std::fs::File::open(path)?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map_or_else(|| path.display().to_string(), str::to_owned);
+    infer_xlsx_schema_from_reader(file, file_name, options, sample_rows)
+}
+
+pub fn infer_xlsx_schema_from_reader<R: Read + Seek>(
+    reader: R,
+    file_name: impl Into<String>,
+    options: XlsxSheetOptions<'_>,
+    sample_rows: Option<usize>,
+) -> CoreResult<Extraction<XlsxSchemaReport>> {
+    let mut inferrer = match sample_rows {
+        Some(limit) => XlsxSchemaInferrer::sampled(limit),
+        None => XlsxSchemaInferrer::full_scan(),
+    };
+
+    let extraction = oxdoc_core::visit_xlsx_rows_from_reader(
+        reader,
+        options,
+        XlsxValueMode::Formatted,
+        |row| Ok(inferrer.observe_row(row)),
+    )?;
+    let report = inferrer.finish(
+        file_name.into(),
+        options.sheet_name.map(str::to_owned),
+        options.sheet_index,
+    );
+
+    Ok(Extraction::with_warnings(report, extraction.warnings))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum XlsxSchemaScanMode {
+pub enum XlsxSchemaScanMode {
     Full,
     Sampled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum XlsxLogicalType {
+pub enum XlsxLogicalType {
     Bool,
     Date,
     Datetime,
@@ -43,54 +88,54 @@ impl fmt::Display for XlsxLogicalType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum XlsxSchemaWarningCode {
+pub enum XlsxSchemaWarningCode {
     SampledResult,
     TypeConflict,
     Utf8Fallback,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct XlsxSchemaWarning {
-    pub(crate) code: XlsxSchemaWarningCode,
-    pub(crate) message: String,
+pub struct XlsxSchemaWarning {
+    pub code: XlsxSchemaWarningCode,
+    pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) column_index: Option<usize>,
+    pub column_index: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct XlsxSchemaColumn {
-    pub(crate) column_index: usize,
-    pub(crate) name: String,
-    pub(crate) logical_type: XlsxLogicalType,
-    pub(crate) nullable: bool,
-    pub(crate) observed_types: Vec<XlsxLogicalType>,
+pub struct XlsxSchemaColumn {
+    pub column_index: usize,
+    pub name: String,
+    pub logical_type: XlsxLogicalType,
+    pub nullable: bool,
+    pub observed_types: Vec<XlsxLogicalType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct XlsxSchemaScan {
-    pub(crate) mode: XlsxSchemaScanMode,
+pub struct XlsxSchemaScan {
+    pub mode: XlsxSchemaScanMode,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) sample_rows: Option<usize>,
-    pub(crate) examined_rows: usize,
+    pub sample_rows: Option<usize>,
+    pub examined_rows: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct XlsxSchemaReport {
-    pub(crate) schema_version: u8,
-    pub(crate) experimental: bool,
-    pub(crate) file: String,
+pub struct XlsxSchemaReport {
+    pub schema_version: u8,
+    pub experimental: bool,
+    pub file: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) sheet_name: Option<String>,
+    pub sheet_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) sheet_index: Option<usize>,
-    pub(crate) scan: XlsxSchemaScan,
-    pub(crate) header_policy: &'static str,
-    pub(crate) columns: Vec<XlsxSchemaColumn>,
-    pub(crate) warnings: Vec<XlsxSchemaWarning>,
+    pub sheet_index: Option<usize>,
+    pub scan: XlsxSchemaScan,
+    pub header_policy: &'static str,
+    pub columns: Vec<XlsxSchemaColumn>,
+    pub warnings: Vec<XlsxSchemaWarning>,
 }
 
 #[derive(Debug)]
-pub(crate) struct XlsxSchemaInferrer {
+pub struct XlsxSchemaInferrer {
     sample_rows: Option<usize>,
     examined_rows: usize,
     columns: Vec<ColumnState>,
@@ -98,11 +143,11 @@ pub(crate) struct XlsxSchemaInferrer {
 }
 
 impl XlsxSchemaInferrer {
-    pub(crate) fn full_scan() -> Self {
+    pub fn full_scan() -> Self {
         Self::new(None)
     }
 
-    pub(crate) fn sampled(sample_rows: usize) -> Self {
+    pub fn sampled(sample_rows: usize) -> Self {
         Self::new(Some(sample_rows))
     }
 
@@ -115,7 +160,7 @@ impl XlsxSchemaInferrer {
         }
     }
 
-    pub(crate) fn observe_row(&mut self, row: &XlsxRow) -> XlsxRowControl {
+    pub fn observe_row(&mut self, row: &XlsxRow) -> XlsxRowControl {
         if self
             .sample_rows
             .is_some_and(|limit| self.examined_rows >= limit)
@@ -194,7 +239,7 @@ impl XlsxSchemaInferrer {
         }
     }
 
-    pub(crate) fn finish(
+    pub fn finish(
         mut self,
         file: String,
         sheet_name: Option<String>,
