@@ -10,7 +10,7 @@ COVERAGE_THRESHOLD ?= 95
 
 .PHONY: help all ci ci-rust prepare-commit pre-push scripts-test
 .PHONY: fmt fmt-check check clippy lint test doctest python-test coverage coverage-html coverage-lcov audit memory-baselines competitor-workbench
-.PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check batch-manifest-spike install-tools clean clean-coverage
+.PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check batch-manifest-spike tabular-ci install-tools clean clean-coverage
 
 help:
 	@echo "oxdoc development targets"
@@ -101,6 +101,9 @@ competitor-workbench:
 
 batch-manifest-spike:
 	python3 scripts/batch-manifest-spike.py
+
+tabular-ci:
+	python3 scripts/tabular-ci.py
 
 build:
 	$(CARGO) build --workspace --all-features $(TARGET_FLAG)

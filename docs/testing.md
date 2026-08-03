@@ -81,6 +81,17 @@ make competitor-workbench
 Competitive results are not part of the merge gate because external tool
 availability and versions vary by machine.
 
+The tabular production gate is reproducible and enforced separately:
+
+```bash
+make tabular-ci
+```
+
+It generates the XLSX edge-case corpus, enforces Arrow/Parquet throughput
+ratios, and validates Parquet through pinned DuckDB and PyArrow readers. The
+dedicated weekly and path-filtered `tabular` workflow also reports peak RSS,
+build size, output size, and row-group counts at two corpus sizes.
+
 ## CI Checks
 
 Current CI runs:
