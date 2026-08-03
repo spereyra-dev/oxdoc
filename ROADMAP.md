@@ -46,6 +46,10 @@ This roadmap is intentionally practical: `oxdoc` should become a reliable, fast,
 - Add examples for library consumers.
 - Evaluate optional WASM and FFI boundaries after the Rust API is stable.
 
+The proposed generic cross-format batch manifest is not planned. Existing
+audit and extraction JSONL contracts remain operation-specific; see
+`docs/spikes/batch-manifest.md` for the decision and revisit criteria.
+
 ## Phase 5: Release Engineering
 
 - Publish versioned binaries for Linux, macOS, and Windows. Implemented through the GitHub Release workflow.

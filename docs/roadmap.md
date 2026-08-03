@@ -3,6 +3,10 @@
 The Arrow/Parquet architecture and benchmark spike is documented in
 [XLSX Arrow and Parquet Spike](spikes/xlsx-arrow-parquet.md).
 
+The generic batch-manifest proposal was evaluated and rejected in
+[Cross-format Batch Manifest Decision](spikes/batch-manifest.md); existing
+operation-specific JSONL contracts remain the supported batch boundary.
+
 The roadmap is intentionally practical: `oxdoc` should become a reliable, fast, embeddable OOXML extractor before it grows a large feature surface.
 
 ## Phase 0: OSS Baseline
