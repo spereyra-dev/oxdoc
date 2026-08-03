@@ -123,6 +123,26 @@ Large shared-string tables require a separate policy decision.
 
 ## Production Gates
 
+The reproducible gate harness lives in `scripts/tabular-ci.py` and runs in the
+dedicated `tabular` workflow. It generates dense, mixed, shared-string, sparse,
+late-conflict, long-string, and over-limit corpus cases; compares typed-row,
+Arrow, and Parquet throughput; and reads the result independently with DuckDB
+and PyArrow. Projection and filtered reads are part of the validation.
+
+The workflow runs 10,000-row and 50,000-row cases. `/usr/bin/time -v` reports
+clean-build and end-to-end peak RSS, while `du` reports target and executable
+sizes. The harness JSON records input rows, output bytes, throughput, ratios,
+batches, and row groups. Runtime gates require Arrow batching to reach 70% of
+the typed-row sink and Parquet writing to reach 40%; exact-value, null/type,
+projection, filtered-read, row-count, and over-limit assertions fail CI.
+
+Local reference runs should use the same isolated reader versions:
+
+```bash
+python -m pip install duckdb==1.4.3 pyarrow==22.0.0
+python scripts/tabular-ci.py --rows 10000
+```
+
 Production work can proceed only when:
 
 - explicit-schema files round-trip through DuckDB and PyArrow in CI;

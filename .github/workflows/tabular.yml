@@ -1,0 +1,48 @@
+name: tabular
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/tabular.yml
+      - crates/oxdoc-core/**
+      - crates/oxdoc-tabular/**
+      - scripts/tabular-ci.py
+      - Cargo.lock
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/tabular.yml
+      - crates/oxdoc-core/**
+      - crates/oxdoc-tabular/**
+      - scripts/tabular-ci.py
+      - Cargo.lock
+  schedule:
+    - cron: "31 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  interoperability:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rows: [10000, 50000]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install independent readers
+        run: python -m pip install duckdb==1.4.3 pyarrow==22.0.0
+      - name: Record clean build resources and artifact sizes
+        run: |
+          mkdir -p target/tabular-ci
+          /usr/bin/time -v cargo build --release -p oxdoc-tabular --example tabular_gate 2>&1 | tee target/tabular-ci/build-${{ matrix.rows }}.txt
+          du -sk target target/release/examples/tabular_gate | tee target/tabular-ci/sizes-${{ matrix.rows }}.txt
+      - name: Run corpus, throughput, and interoperability gates
+        run: /usr/bin/time -v python scripts/tabular-ci.py --rows ${{ matrix.rows }}
