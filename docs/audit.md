@@ -34,7 +34,7 @@ Each JSONL line is described by
 
 ```json
 {
-  "oxdoc_version": "1.1.0",
+  "oxdoc_version": "1.2.0",
   "file": "workbook.xlsx",
   "document_type": "xlsx",
   "metadata": {

@@ -102,7 +102,7 @@ fn representative_audit_jsonl_record_matches_schema_shape() {
         "file": "report.docx",
         "document_type": "docx",
         "audit": {
-            "oxdoc_version": "1.1.0",
+            "oxdoc_version": "1.2.0",
             "file": "report.docx",
             "document_type": "docx",
             "metadata": {
