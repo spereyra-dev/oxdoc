@@ -7,6 +7,13 @@ The generic batch-manifest proposal was evaluated and rejected in
 [Cross-format Batch Manifest Decision](spikes/batch-manifest.md); existing
 operation-specific JSONL contracts remain the supported batch boundary.
 
+The structured-data initiative tracked in issue #127 is complete. Issues
+#117–#125 and #128–#131 delivered typed XLSX streaming and JSONL, deterministic
+schema inference, worksheet-scoped limits, optional Arrow/Parquet conversion
+with DuckDB/PyArrow gates, structured DOCX tables, batch audit JSONL, and
+expanded factual audit signals. Issue #126 closed with a documented no-go
+decision rather than an implementation.
+
 The roadmap is intentionally practical: `oxdoc` should become a reliable, fast, embeddable OOXML extractor before it grows a large feature surface.
 
 ## Phase 0: OSS Baseline
@@ -44,6 +51,8 @@ Status: in progress.
 ## Phase 4: Public API
 
 - Stabilize `oxdoc-core` APIs for embedding in Rust applications.
+- Maintain the completed structured XLSX APIs and publishable, opt-in
+  `oxdoc-tabular` Arrow/Parquet adapter without changing the default CLI graph.
 - Document error types, warning behavior, and streaming sinks.
 - Add examples for library consumers.
 - Maintain the pure-Python CLI wrapper as the first data-team integration path.
@@ -54,7 +63,8 @@ Status: in progress.
 - Publish versioned binaries for Linux, macOS, and Windows. Implemented through the GitHub Release workflow.
 - Publish static Linux builds for `x86_64-unknown-linux-musl`. Implemented through the GitHub Release workflow.
 - Add signed checksums to GitHub Releases.
-- Publish `oxdoc-core` and `oxdoc-cli` to crates.io for 1.0.
+- Publish `oxdoc-core`, `oxdoc-tabular`, and `oxdoc-cli` to crates.io in
+  dependency order for the next release.
 
 ## Non-Goals
 

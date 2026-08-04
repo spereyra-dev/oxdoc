@@ -42,6 +42,9 @@ This roadmap is intentionally practical: `oxdoc` should become a reliable, fast,
 ## Phase 4: Public API
 
 - Stabilize `oxdoc-core` APIs for embedding in Rust applications.
+- Maintain the completed structured-data surface: streaming typed XLSX rows,
+  schema inference, worksheet-scoped limits, and the optional publishable
+  `oxdoc-tabular` Arrow/Parquet adapter.
 - Document error types, warning behavior, and streaming sinks.
 - Add examples for library consumers.
 - Evaluate optional WASM and FFI boundaries after the Rust API is stable.
@@ -55,7 +58,17 @@ audit and extraction JSONL contracts remain operation-specific; see
 - Publish versioned binaries for Linux, macOS, and Windows. Implemented through the GitHub Release workflow.
 - Publish static Linux builds for `x86_64-unknown-linux-musl`. Implemented through the GitHub Release workflow.
 - Add signed checksums to GitHub Releases.
-- Publish `oxdoc-core` and `oxdoc-cli` to crates.io for 1.0.
+- Publish `oxdoc-core`, `oxdoc-tabular`, and `oxdoc-cli` to crates.io in
+  dependency order for the next release.
+
+## Completed Structured Data Initiative
+
+Roadmap issue #127 is complete. Issues #117–#125 and #128–#131 delivered
+streaming typed XLSX rows and JSONL, schema inference, bounded optional
+Arrow/Parquet conversion with interoperability CI, structured DOCX tables,
+multi-file audit JSONL, and richer factual audit signals. Issue #126 concluded
+that a generic cross-format manifest should not be implemented; the existing
+operation-specific JSONL contracts remain the supported batch boundary.
 
 ## Non-Goals
 
