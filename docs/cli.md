@@ -379,7 +379,7 @@ Output shape:
 
 ```json
 {
-  "oxdoc_version": "1.1.0",
+  "oxdoc_version": "1.2.0",
   "file": "report.docx",
   "author": "Ada",
   "created_at": "2024-03-12T10:00:00Z",

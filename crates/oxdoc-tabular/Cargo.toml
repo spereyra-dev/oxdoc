@@ -19,7 +19,7 @@ parquet = ["dep:arrow-array", "dep:arrow-schema", "dep:parquet"]
 [dependencies]
 arrow-array = { version = "59.1.0", optional = true }
 arrow-schema = { version = "59.1.0", optional = true }
-oxdoc-core = { path = "../oxdoc-core", version = "1.1.0" }
+oxdoc-core = { path = "../oxdoc-core", version = "1.2.0" }
 parquet = { version = "59.1.0", default-features = false, features = ["arrow"], optional = true }
 serde.workspace = true
 thiserror.workspace = true
