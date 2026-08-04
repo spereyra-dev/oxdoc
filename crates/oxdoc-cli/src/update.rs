@@ -1,5 +1,6 @@
+use std::fmt::Write as _;
 use std::fs::{self, File};
-use std::io::{self};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -136,9 +137,26 @@ fn compute_sha256(path: &Path) -> Result<String, String> {
     let mut file =
         File::open(path).map_err(|e| format!("failed to open {}: {e}", path.display()))?;
     let mut hasher = Sha256::new();
-    io::copy(&mut file, &mut hasher)
-        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
-    Ok(format!("{:x}", hasher.finalize()))
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let bytes_read = file
+            .read(&mut buffer)
+            .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+    Ok(hex_digest(hasher.finalize()))
+}
+
+fn hex_digest(digest: impl AsRef<[u8]>) -> String {
+    let bytes = digest.as_ref();
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    output
 }
 
 fn verify_checksum(archive: &Path, archive_name: &str, checksums: &Path) -> Result<(), String> {
@@ -279,7 +297,7 @@ mod tests {
 
         // Compute actual SHA256
         use sha2::{Digest, Sha256};
-        let hash = format!("{:x}", Sha256::digest(content));
+        let hash = hex_digest(Sha256::digest(content));
         let checksums_content = format!("{hash}  test.tar.gz\n");
         let checksums_path = tmp.path().join("SHA256SUMS");
         std::fs::write(&checksums_path, checksums_content).unwrap();
