@@ -23,6 +23,14 @@ The format is based on human-readable release notes.
 - Upgrade `quick-xml` and `crossbeam-epoch` to releases that address
   RUSTSEC-2026-0194, RUSTSEC-2026-0195, and RUSTSEC-2026-0204.
 
+### Changed
+
+- Updated the Rust dependency graph to the latest stable releases compatible
+  with Rust 1.88, including SHA-2 0.11 and Parquet 59.1, and refreshed the
+  Python build backend and GitHub Actions installer pins.
+- Adapted updater checksum streaming to the SHA-2 0.11 API without
+  materializing release archives in memory.
+
 ### Documentation
 
 - Documented the tabular schema promotion, coercion, late-conflict, and
