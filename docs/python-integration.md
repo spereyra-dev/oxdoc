@@ -26,6 +26,24 @@ python/
   tests/
 ```
 
+## Installation and CLI dependency
+
+Install the published wrapper from PyPI:
+
+```bash
+python -m pip install oxdoc-python
+```
+
+`oxdoc-python` is pure Python and does **not** include the `oxdoc` executable.
+Install a compatible CLI separately using one of these supported paths:
+
+- macOS/Linux: `curl -fsSL https://raw.githubusercontent.com/spereyra-dev/oxdoc/main/install.sh | sh`
+- Any platform with Rust: `cargo install oxdoc-cli`
+- Linux, macOS, or Windows: download the matching archive from [GitHub Releases](https://github.com/spereyra-dev/oxdoc/releases)
+- Development from this checkout: `cargo build --release -p oxdoc-cli`
+
+Place the executable on `PATH`, or provide its path to `Oxdoc(binary=...)`.
+
 Install it locally for development:
 
 ```bash
@@ -86,3 +104,17 @@ make python-test
 ```
 
 The tests use fake `oxdoc` executables so they can cover subprocess failures, JSON parsing failures, and missing binary behavior without requiring Office fixtures.
+
+## PyPI release procedure
+
+PyPI publishing is intentionally manual. A maintainer must approve the package
+version, update `python/pyproject.toml`, and run the **Publish Python package**
+workflow from the approved release commit. Configure the repository's `pypi`
+GitHub environment with required maintainer reviewers and PyPI trusted
+publishing for the `oxdoc-python` project before its first release.
+
+The workflow builds both the wheel and source distribution, runs `twine check`,
+and verifies that the requested version matches package metadata before it can
+upload. It uses GitHub OIDC trusted publishing rather than a long-lived PyPI API
+token. Do not create a PyPI release until project ownership and the version have
+been explicitly approved by a maintainer.
