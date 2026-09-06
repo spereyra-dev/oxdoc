@@ -1,0 +1,39 @@
+name: Publish Python package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Maintainer-approved PyPI version to publish (must match python/pyproject.toml)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Build and publish oxdoc-python
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/oxdoc-python
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install build tooling
+        run: python -m pip install --upgrade build twine
+      - name: Verify approved version
+        env:
+          APPROVED_VERSION: ${{ inputs.version }}
+        run: |
+          python -c "import os, tomllib; metadata = tomllib.load(open('python/pyproject.toml', 'rb'))['project']; assert metadata['name'] == 'oxdoc-python'; assert metadata['version'] == os.environ['APPROVED_VERSION'], 'requested version does not match python/pyproject.toml'"
+      - name: Build distributions
+        run: python -m build python
+      - name: Validate distribution metadata
+        run: python -m twine check python/dist/*
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

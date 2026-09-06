@@ -26,9 +26,15 @@ The corpus is source-controlled OOXML:
 - `tests/fixtures/snapshots/` stores the expected text, CSV, and JSON outputs.
 - `tests/fixtures/tools/` stores optional generator scripts. CI consumes the checked-in fixtures and does not require these tools.
 
-The current corpus includes hand-authored package trees plus producer-generated fixtures from python-docx, openpyxl, and python-pptx. Every fixture must be generated from repository-authored content or another legally redistributable source, and every fixture needs provenance that states the producer, redistribution status, purpose, and sanitization.
+The current corpus includes hand-authored package trees plus producer-generated fixtures from python-docx, openpyxl, and python-pptx. Every fixture must be generated from repository-authored content or another legally redistributable source, and every fixture needs provenance that states the producer, redistribution status, purpose, and sanitization. The [producer compatibility corpus](compatibility-corpus.md) defines the fixture policy and distinguishes covered producers from planned coverage.
 
 Do not commit private Office files. Microsoft Office, LibreOffice, and Google Workspace exports are welcome only when the content was created for this repository and the provenance note makes redistribution status explicit.
+
+Validate the machine-readable application fixture matrix with:
+
+```bash
+make compatibility-corpus-check
+```
 
 ## Snapshot Tests
 
@@ -38,23 +44,34 @@ This repository uses versioned text snapshots instead of an extra snapshot depen
 
 ## Fuzzing
 
-Fuzzing is required for parser hardening. Planned approach:
+Fuzzing hardens the XML parser entry points that process untrusted OOXML parts.
+The `fuzz/` cargo-fuzz project currently covers DOCX document text, PPTX slide
+text, XLSX shared strings and worksheets, relationships, and metadata.
 
 ```bash
-cargo install cargo-fuzz
-cargo fuzz init
+cargo +nightly install cargo-fuzz --locked
+cd fuzz
+cargo +nightly fuzz run xlsx_sheet -- -max_total_time=300 -timeout=10 -rss_limit_mb=1024
 ```
 
-High-value fuzz targets:
+See [`fuzz/README.md`](../fuzz/README.md) for the complete target list, bounded
+local commands, minimization, and reproduction commands.
 
-- DOCX document XML parser.
-- XLSX shared string parser.
-- XLSX sheet parser.
-- PPTX slide text parser.
-- Relationship parser.
-- Metadata parser.
+The `fuzz` workflow compiles every harness on pull requests that change the
+fuzzing surface. It runs every target for five minutes every Monday and may be
+started manually with a 1--900 second budget. This keeps the normal Rust and
+docs contributor gates fast while continuously checking parser behavior. Each
+run has a wall-clock limit, a 1 GiB memory cap, a 10-second per-input timeout,
+and a 1 MiB input limit. Crash artifacts are retained only on failed workflow
+runs for 14 days.
 
-Fuzz failures should become regression tests when possible.
+Fuzz failures must become a focused unit, API, or fixture regression test when
+the behavior can be expressed deterministically. Retain the minimized input in
+`fuzz/regressions/<target>/<sha256>` only when it adds value beyond that test.
+Never commit raw corpus or crash artifacts, private Office files, secrets, or
+personal data. Minimize with `cargo fuzz tmin`, inspect and sanitize the result,
+then document the fixing issue or advisory and reproduction command in the PR.
+The scheduled workflow replays retained inputs as an additional corpus.
 
 ## Performance Workbenches
 

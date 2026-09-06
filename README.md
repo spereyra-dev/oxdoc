@@ -1,5 +1,10 @@
 # oxdoc
 
+[![Release](https://img.shields.io/github/v/release/spereyra-dev/oxdoc?display_name=tag)](https://github.com/spereyra-dev/oxdoc/releases/latest)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-2ea44f)](https://spereyra-dev.github.io/oxdoc/)
+[![crates.io](https://img.shields.io/crates/v/oxdoc-cli)](https://crates.io/crates/oxdoc-cli)
+[![CI](https://img.shields.io/github/actions/workflow/status/spereyra-dev/oxdoc/ci.yml?branch=main&label=CI)](https://github.com/spereyra-dev/oxdoc/actions/workflows/ci.yml)
+
 Fast OOXML extraction without rendering.
 
 `oxdoc` is a Rust workspace for extracting plain text, CSV, and metadata from Office Open XML containers such as `.docx`, `.xlsx`, and `.pptx`. It is built for automation: shell pipelines, CI jobs, serverless functions, ingestion systems, and embedding through a stable Rust API.
@@ -38,12 +43,13 @@ Then open:
 http://localhost:3000
 ```
 
-The `docs` GitHub Actions workflow validates that the Docsify site serves correctly, checks internal Markdown links, and verifies the published schema copies stay in sync. Publishing it through GitHub Pages requires enabling Pages for the repository in GitHub settings.
+The `docs` GitHub Actions workflow validates that the Docsify site serves correctly, checks internal Markdown links, and verifies the published schema copies stay in sync. The site is published through GitHub Pages from `main`/`docs`.
 
 Key documentation pages:
 
 - [Getting Started](docs/getting-started.md)
 - [Installation](docs/installation.md)
+- [GitHub Action](docs/github-action.md)
 - [CLI Reference](docs/cli.md)
 - [Library API](docs/library-api.md)
 - [Python Integration](docs/python-integration.md)
@@ -54,6 +60,7 @@ Key documentation pages:
 - [Peak Memory Baselines](docs/performance-memory-baselines.md)
 - [Competitive Workbench](docs/performance-competitors.md)
 - [Testing Strategy](docs/testing.md)
+- [Compatibility Playground](docs/compatibility-playground.md)
 - [Roadmap](docs/roadmap.md)
 - [Security](docs/security.md)
 
@@ -70,6 +77,10 @@ Install with Cargo:
 ```bash
 cargo install oxdoc-cli
 ```
+
+For Windows archives, checksum verification, and all installation options, see
+[Installation](docs/installation.md). The [distribution discoverability guide](docs/discoverability.md)
+records verified channels and the activation steps for channels that are not yet published.
 
 Or build the workspace from source:
 
@@ -117,7 +128,12 @@ Comparable tools covered by the workbench:
 | `xlsx2csv` | XLSX dense, sparse, and shared-string CSV extraction | Closest direct XLSX-to-CSV comparison. |
 | Mammoth | DOCX extraction | DOCX-focused converter; output shape differs from plain-text extraction. |
 
-See [Performance and Memory](docs/performance.md), [Peak Memory Baselines](docs/performance-memory-baselines.md), and [Competitive Workbench](docs/performance-competitors.md).
+Each GitHub Release also attaches a versioned benchmark bundle with raw Criterion
+output, peak-memory results, commands, and environment metadata. It is release
+evidence for its recorded runner rather than a universal leaderboard. See
+[Performance and Memory](docs/performance.md),
+[Versioned Benchmark Evidence](docs/release-process.md#versioned-benchmark-evidence),
+and [Competitive Workbench](docs/performance-competitors.md).
 
 ## CLI Usage
 

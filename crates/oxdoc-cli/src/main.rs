@@ -100,6 +100,11 @@ enum Command {
         #[command(subcommand)]
         command: InferCommand,
     },
+    /// Print local, non-sensitive environment and capability diagnostics
+    Diagnostics {
+        #[arg(long, value_enum, default_value_t = DiagnosticsFormat::Text)]
+        format: DiagnosticsFormat,
+    },
     /// Check for a newer release and install it
     Update {
         /// Only check if an update is available; do not download or install
@@ -236,6 +241,12 @@ enum AuditFormat {
     Text,
     Json,
     Jsonl,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum DiagnosticsFormat {
+    Text,
+    Json,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -388,6 +399,7 @@ fn run() -> Result<(), CliError> {
                 warning_format,
             )?;
         }
+        Command::Diagnostics { format } => diagnostics_command(format)?,
         Command::Update { check, version } => {
             match update::run(check, version).map_err(CliError::Update)? {
                 update::UpdateOutcome::AlreadyUpToDate { version } => {
@@ -405,6 +417,49 @@ fn run() -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+fn diagnostics_command(format: DiagnosticsFormat) -> Result<(), CliError> {
+    let diagnostics = DiagnosticsPayload::current();
+    match format {
+        DiagnosticsFormat::Text => print_diagnostics(&diagnostics),
+        DiagnosticsFormat::Json => {
+            serde_json::to_writer_pretty(io::stdout().lock(), &diagnostics)?;
+            println!();
+        }
+    }
+    Ok(())
+}
+
+fn print_diagnostics(diagnostics: &DiagnosticsPayload) {
+    let enabled_features = diagnostics.enabled_features.join(", ");
+    println!("oxdoc diagnostics");
+    println!("version: {}", diagnostics.oxdoc_version);
+    println!(
+        "platform: {}/{}, {}",
+        diagnostics.platform.os, diagnostics.platform.arch, diagnostics.platform.family
+    );
+    println!(
+        "enabled features: {}",
+        if diagnostics.enabled_features.is_empty() {
+            "none"
+        } else {
+            &enabled_features
+        }
+    );
+    println!("limits:");
+    println!(
+        "  max part uncompressed size: {} bytes",
+        diagnostics.limits.max_part_uncompressed_size
+    );
+    println!(
+        "  max part compression ratio: {}",
+        diagnostics.limits.max_part_compression_ratio
+    );
+    println!(
+        "  minimum compression ratio check size: {} bytes",
+        diagnostics.limits.min_ratio_check_size
+    );
 }
 
 fn extract_text_command(
@@ -1512,6 +1567,54 @@ struct AuditPayload {
     oxdoc_version: &'static str,
     #[serde(flatten)]
     audit: DocumentAudit,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct DiagnosticsPayload {
+    schema_version: u8,
+    oxdoc_version: &'static str,
+    platform: DiagnosticsPlatform,
+    enabled_features: Vec<&'static str>,
+    limits: DiagnosticsLimits,
+}
+
+impl DiagnosticsPayload {
+    fn current() -> Self {
+        let limits = oxdoc_core::vfs::OoxmlLimits::default();
+        Self {
+            schema_version: 1,
+            oxdoc_version: env!("CARGO_PKG_VERSION"),
+            platform: DiagnosticsPlatform {
+                os: std::env::consts::OS,
+                arch: std::env::consts::ARCH,
+                family: std::env::consts::FAMILY,
+            },
+            enabled_features: enabled_features(),
+            limits: DiagnosticsLimits {
+                max_part_uncompressed_size: limits.max_part_uncompressed_size,
+                max_part_compression_ratio: limits.max_part_compression_ratio,
+                min_ratio_check_size: limits.min_ratio_check_size,
+            },
+        }
+    }
+}
+
+fn enabled_features() -> Vec<&'static str> {
+    Vec::new()
+}
+
+#[derive(Debug, serde::Serialize)]
+struct DiagnosticsPlatform {
+    os: &'static str,
+    arch: &'static str,
+    family: &'static str,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct DiagnosticsLimits {
+    max_part_uncompressed_size: u64,
+    max_part_compression_ratio: u64,
+    min_ratio_check_size: u64,
 }
 
 #[derive(Debug, serde::Serialize)]

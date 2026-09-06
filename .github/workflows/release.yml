@@ -125,10 +125,43 @@ jobs:
           path: oxdoc-${{ env.RELEASE_TAG }}-${{ matrix.target }}.${{ matrix.archive_ext }}
           if-no-files-found: error
 
+  benchmarks:
+    name: Publish benchmark evidence
+    runs-on: ubuntu-latest
+    needs: validate
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release CLI
+        run: cargo build --locked --release -p oxdoc-cli
+      - name: Measure parser throughput
+        run: cargo bench --locked -p oxdoc-core --bench throughput
+      - name: Measure release CLI peak memory
+        run: python3 scripts/peak-memory-baselines.py --no-build --binary target/release/oxdoc --iterations 3 --output target/release-benchmarks/peak-memory.md
+      - name: Assemble and validate benchmark bundle
+        run: |
+          python3 scripts/release-benchmark-bundle.py \
+            --tag "$RELEASE_TAG" \
+            --output "target/release-benchmarks/oxdoc-$RELEASE_TAG-benchmarks" \
+            --memory-report target/release-benchmarks/peak-memory.md \
+            --criterion target/criterion
+          python3 scripts/release-benchmark-bundle.py --validate "target/release-benchmarks/oxdoc-$RELEASE_TAG-benchmarks"
+      - name: Archive benchmark bundle
+        run: tar -czf "oxdoc-$RELEASE_TAG-benchmarks.tar.gz" -C target/release-benchmarks "oxdoc-$RELEASE_TAG-benchmarks"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: oxdoc-${{ env.RELEASE_TAG }}-benchmarks
+          path: oxdoc-${{ env.RELEASE_TAG }}-benchmarks.tar.gz
+          if-no-files-found: error
+
   publish:
     name: Publish release
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, benchmarks]
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
       RELEASE_DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || false }}

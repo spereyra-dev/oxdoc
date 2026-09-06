@@ -53,6 +53,28 @@ JSON warning records include stable machine-readable fields:
 {"category":"parser","code":"W001","path":"word/document.xml","message":"stopped after malformed XML: ..."}
 ```
 
+## Local Diagnostics
+
+```bash
+oxdoc diagnostics [--format text|json]
+```
+
+Prints local, non-sensitive information useful in bug reports: the `oxdoc`
+version, operating-system platform, enabled build features, and default OOXML
+input limits. It accepts no document path, does not read document contents, and
+does not upload data.
+
+Use JSON when attaching command output to an issue:
+
+```bash
+oxdoc diagnostics --format json
+```
+
+The JSON object has `schema_version`, `oxdoc_version`, `platform`,
+`enabled_features`, and `limits` fields. `limits` reports the maximum
+uncompressed OOXML part size, maximum compression ratio, and minimum size at
+which compression-ratio checks apply.
+
 ## Extract DOCX or PPTX Text
 
 ```bash

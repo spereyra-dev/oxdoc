@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "python-docx-basic",
+      "format": "docx",
+      "path": "files/docx/python-docx-basic.docx",
+      "provenance": "provenance/docx-python-docx-basic.md",
+      "producer": "python-docx",
+      "producer_family": "Python OOXML library",
+      "producer_version": "1.2.0",
+      "capabilities": ["body text", "table text", "header text", "footer text", "metadata"],
+      "snapshot": "snapshots/docx_python_docx_text.txt",
+      "sha256": "ca4465cfdcf1fb57bb07833d22e7c8bad2b9bbbed8491185c3279f76619a71d9"
+    },
+    {
+      "id": "openpyxl-basic",
+      "format": "xlsx",
+      "path": "files/xlsx/openpyxl-basic.xlsx",
+      "provenance": "provenance/xlsx-openpyxl-basic.md",
+      "producer": "openpyxl",
+      "producer_family": "Python OOXML library",
+      "producer_version": "3.1.5",
+      "capabilities": ["strings", "numbers", "booleans", "CSV quoting", "hidden sheets", "metadata"],
+      "snapshot": "snapshots/xlsx_openpyxl_csv.txt",
+      "sha256": "e8dd0dbbf468c9eabf29f37cbb780a09a82a6064081e1620cf4eadc73a0d30c2"
+    },
+    {
+      "id": "python-pptx-basic",
+      "format": "pptx",
+      "path": "files/pptx/python-pptx-basic.pptx",
+      "provenance": "provenance/pptx-python-pptx-basic.md",
+      "producer": "python-pptx",
+      "producer_family": "Python OOXML library",
+      "producer_version": "1.0.2",
+      "capabilities": ["slide text", "paragraphs", "bullet text", "metadata"],
+      "snapshot": "snapshots/pptx_python_pptx_text.txt",
+      "sha256": "71b06062877a79d933a8234cb76bba7242efe64090c717cd7d5d9172931e2f56"
+    }
+  ],
+  "producer_coverage": [
+    {
+      "producer_family": "Microsoft Office",
+      "status": "planned",
+      "note": "No Microsoft Office-generated sample is checked in yet; do not infer compatibility from this row."
+    },
+    {
+      "producer_family": "LibreOffice",
+      "status": "planned",
+      "note": "No LibreOffice-generated sample is checked in yet; do not infer compatibility from this row."
+    },
+    {
+      "producer_family": "Google Workspace",
+      "status": "planned",
+      "note": "No Google Workspace export is checked in yet; do not infer compatibility from this row."
+    }
+  ]
+}

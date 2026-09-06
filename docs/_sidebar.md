@@ -2,6 +2,7 @@
   - [Overview](README.md)
   - [Getting Started](getting-started.md)
   - [Installation](installation.md)
+  - [GitHub Action](github-action.md)
   - [CLI Reference](cli.md)
 
 - **Usage**
@@ -13,6 +14,7 @@
   - [JSON Output](json-output.md)
   - [Library API](library-api.md)
   - [Python Integration](python-integration.md)
+  - [Compatibility Playground](compatibility-playground.md)
 
 - **Design**
   - [Architecture](architecture.md)
@@ -22,10 +24,12 @@
   - [Peak Memory Baselines](performance-memory-baselines.md)
   - [Competitive Workbench](performance-competitors.md)
   - [Testing Strategy](testing.md)
+  - [Compatibility Corpus](compatibility-corpus.md)
 
 - **Project**
   - [Contributing](contributing.md)
   - [Roadmap](roadmap.md)
+  - [Distribution Discoverability](discoverability.md)
   - [Release Process](release-process.md)
   - [1.0 Launch](launch-publicity.md)
   - [Security](security.md)

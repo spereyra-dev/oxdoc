@@ -19,6 +19,8 @@ Layout:
 - `files/` contains small application-generated OOXML binaries consumed as-is.
 - `snapshots/` contains the versioned expected outputs.
 - `provenance/` contains one note per fixture with source and redistribution status.
+- `compatibility-matrix.json` is the machine-checked producer/capability matrix
+  for application-generated fixtures.
 - `tools/` contains optional fixture generation scripts. CI does not require
   these tools.
 
@@ -45,6 +47,10 @@ Application-generated fixture matrix:
 | XLSX | `files/xlsx/openpyxl-basic.xlsx` | openpyxl 3.1.5 |
 | PPTX | `files/pptx/python-pptx-basic.pptx` | python-pptx 1.0.2 |
 
-Additional Microsoft Office, LibreOffice, or Google Workspace exports can be
-added when they are generated from repository-authored content and accompanied
-by explicit provenance and redistribution notes.
+The complete capability matrix and safe-submission rules are in
+[`docs/compatibility-corpus.md`](../../docs/compatibility-corpus.md). Additional
+Microsoft Office, LibreOffice, or Google Workspace exports can be added only
+when they are generated from repository-authored content and accompanied by
+explicit provenance, redistribution, sanitization, digest, snapshot, and
+integration-test records. Validate the checked-in application fixture manifest
+with `python3 scripts/check-compatibility-corpus.py` from the repository root.

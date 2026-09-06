@@ -2441,6 +2441,43 @@ fn rejects_package_larger_than_configured_uncompressed_limit() {
 }
 
 #[test]
+fn prints_local_diagnostics_as_text() {
+    let output = oxdoc(["diagnostics"]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual = stdout(&output);
+    assert!(actual.contains("oxdoc diagnostics"));
+    assert!(actual.contains(&format!("version: {}", env!("CARGO_PKG_VERSION"))));
+    assert!(actual.contains("platform: "));
+    assert!(actual.contains("enabled features: none"));
+    assert!(actual.contains("max part uncompressed size: 67108864 bytes"));
+    assert!(actual.contains("max part compression ratio: 200"));
+    assert!(actual.contains("minimum compression ratio check size: 4194304 bytes"));
+}
+
+#[test]
+fn prints_local_diagnostics_as_json() {
+    let output = oxdoc(["diagnostics", "--format", "json"]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual["schema_version"], 1);
+    assert_eq!(actual["oxdoc_version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(actual["platform"]["os"], std::env::consts::OS);
+    assert_eq!(actual["platform"]["arch"], std::env::consts::ARCH);
+    assert_eq!(actual["platform"]["family"], std::env::consts::FAMILY);
+    assert_eq!(actual["enabled_features"], serde_json::json!([]));
+    assert_eq!(
+        actual["limits"]["max_part_uncompressed_size"],
+        64 * 1024 * 1024
+    );
+    assert_eq!(actual["limits"]["max_part_compression_ratio"], 200);
+    assert_eq!(actual["limits"]["min_ratio_check_size"], 4 * 1024 * 1024);
+}
+
+#[test]
 fn update_with_current_version_runs_successfully() {
     let current = format!("v{}", env!("CARGO_PKG_VERSION"));
     let output = oxdoc(["update", "--version", &current]);
