@@ -21,6 +21,8 @@ jobs:
         run: cargo clippy --workspace --all-features --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace --all-features --all-targets
+      - name: Validate compatibility corpus
+        run: python3 scripts/check-compatibility-corpus.py
       - name: Doctest
         run: cargo test --doc --workspace --all-features
       - name: Install coverage tooling

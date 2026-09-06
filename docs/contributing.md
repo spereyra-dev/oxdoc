@@ -9,6 +9,9 @@ Contributions are welcome. The most useful contributions at this stage are focus
 - Open an issue first for parser semantics, CLI flags, public API changes, release/distribution work, or broad refactors.
 - Do not attach private or sensitive Office files.
 - Add fixture provenance for every checked-in package tree or binary fixture.
+- Follow the [compatibility corpus policy](compatibility-corpus.md): recreate
+  the minimal behavior with synthetic content; do not submit a redacted private
+  or third-party document.
 
 ## Contribution Protocol
 
@@ -90,6 +93,9 @@ npx docsify-cli@4 serve docs --port 3000
 - Release/distribution changes update [Release Process](release-process.md).
 - Large files and private documents are not committed.
 - Fixture changes include provenance and redistribution notes.
+- Application-generated compatibility fixtures update
+  `tests/fixtures/compatibility-matrix.json` and pass
+  `make compatibility-corpus-check`.
 - Security-sensitive findings are reported privately, not opened as public issues.
 
 ## Review and Merge Rules

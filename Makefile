@@ -8,7 +8,7 @@ BINARY_NAME := oxdoc
 DOCS_PORT ?= 3000
 COVERAGE_THRESHOLD ?= 95
 
-.PHONY: help all ci ci-rust prepare-commit pre-push scripts-test
+.PHONY: help all ci ci-rust prepare-commit pre-push scripts-test compatibility-corpus-check
 .PHONY: fmt fmt-check check clippy lint test doctest python-test coverage coverage-html coverage-lcov audit memory-baselines competitor-workbench
 .PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check batch-manifest-spike tabular-ci install-tools clean clean-coverage
 
@@ -33,6 +33,7 @@ help:
 	@echo "  make docs-check       Validate Docsify serves locally"
 	@echo "  make docs-links       Validate README and Docsify Markdown links"
 	@echo "  make scripts-test     Test release/install helper scripts"
+	@echo "  make compatibility-corpus-check Validate fixture provenance and digests"
 	@echo "  make build-release    Build optimized release binary"
 	@echo "  make build-musl       Build static Linux musl binary"
 	@echo "  make ci               Run the full local CI gate"
@@ -74,6 +75,9 @@ scripts-test:
 	python3 -m py_compile python/src/oxdoc/*.py python/tests/*.py
 	sh tests/install.sh
 	sh tests/homebrew_formula.sh
+
+compatibility-corpus-check:
+	python3 scripts/check-compatibility-corpus.py
 
 python-test:
 	PYTHONPATH=python/src python3 -m unittest discover -s python/tests

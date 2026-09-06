@@ -22,6 +22,7 @@
   - [Peak Memory Baselines](performance-memory-baselines.md)
   - [Competitive Workbench](performance-competitors.md)
   - [Testing Strategy](testing.md)
+  - [Compatibility Corpus](compatibility-corpus.md)
 
 - **Project**
   - [Contributing](contributing.md)
