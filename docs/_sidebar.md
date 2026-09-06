@@ -2,6 +2,7 @@
   - [Overview](README.md)
   - [Getting Started](getting-started.md)
   - [Installation](installation.md)
+  - [GitHub Action](github-action.md)
   - [CLI Reference](cli.md)
 
 - **Usage**
