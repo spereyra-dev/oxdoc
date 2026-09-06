@@ -26,9 +26,15 @@ The corpus is source-controlled OOXML:
 - `tests/fixtures/snapshots/` stores the expected text, CSV, and JSON outputs.
 - `tests/fixtures/tools/` stores optional generator scripts. CI consumes the checked-in fixtures and does not require these tools.
 
-The current corpus includes hand-authored package trees plus producer-generated fixtures from python-docx, openpyxl, and python-pptx. Every fixture must be generated from repository-authored content or another legally redistributable source, and every fixture needs provenance that states the producer, redistribution status, purpose, and sanitization.
+The current corpus includes hand-authored package trees plus producer-generated fixtures from python-docx, openpyxl, and python-pptx. Every fixture must be generated from repository-authored content or another legally redistributable source, and every fixture needs provenance that states the producer, redistribution status, purpose, and sanitization. The [producer compatibility corpus](compatibility-corpus.md) defines the fixture policy and distinguishes covered producers from planned coverage.
 
 Do not commit private Office files. Microsoft Office, LibreOffice, and Google Workspace exports are welcome only when the content was created for this repository and the provenance note makes redistribution status explicit.
+
+Validate the machine-readable application fixture matrix with:
+
+```bash
+make compatibility-corpus-check
+```
 
 ## Snapshot Tests
 
