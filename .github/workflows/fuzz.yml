@@ -1,0 +1,96 @@
+name: fuzz
+
+on:
+    pull_request:
+        paths:
+            - .github/workflows/fuzz.yml
+            - fuzz/**
+            - crates/oxdoc-core/**
+            - Cargo.lock
+            - Cargo.toml
+    push:
+        branches: [main]
+        paths:
+            - .github/workflows/fuzz.yml
+            - fuzz/**
+            - crates/oxdoc-core/**
+            - Cargo.lock
+            - Cargo.toml
+    schedule:
+        - cron: "43 5 * * 1"
+    workflow_dispatch:
+        inputs:
+            seconds:
+                description: Seconds to fuzz each target (maximum 900)
+                required: false
+                default: "300"
+
+permissions:
+    contents: read
+
+concurrency:
+    group: fuzz-${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    build-harnesses:
+        name: build fuzz harnesses
+        if: github.event_name == 'pull_request'
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v7
+            - uses: dtolnay/rust-toolchain@nightly
+            - name: Install cargo-fuzz
+              run: cargo install cargo-fuzz --locked
+            - name: Build all fuzz targets
+              working-directory: fuzz
+              run: cargo fuzz build
+
+    continuous-fuzz:
+        name: fuzz ${{ matrix.target }}
+        if: github.event_name != 'pull_request'
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        strategy:
+            fail-fast: false
+            matrix:
+                target:
+                    - docx_text
+                    - pptx_text
+                    - xlsx_shared_strings
+                    - xlsx_sheet
+                    - relationships
+                    - metadata
+        steps:
+            - uses: actions/checkout@v7
+            - uses: dtolnay/rust-toolchain@nightly
+            - name: Install cargo-fuzz
+              run: cargo install cargo-fuzz --locked
+            - name: Fuzz bounded input
+              working-directory: fuzz
+              env:
+                  FUZZ_SECONDS: ${{ inputs.seconds || '300' }}
+              run: |
+                  case "$FUZZ_SECONDS" in
+                    ''|*[!0-9]*) echo "seconds must be a positive integer" >&2; exit 2 ;;
+                  esac
+                  if [ "$FUZZ_SECONDS" -lt 1 ] || [ "$FUZZ_SECONDS" -gt 900 ]; then
+                    echo "seconds must be between 1 and 900" >&2
+                    exit 2
+                  fi
+                  mkdir -p "regressions/${{ matrix.target }}"
+                  timeout 18m cargo fuzz run "${{ matrix.target }}" "regressions/${{ matrix.target }}" -- \
+                    -max_total_time="$FUZZ_SECONDS" \
+                    -timeout=10 \
+                    -rss_limit_mb=1024 \
+                    -max_len=1048576 \
+                    -artifact_prefix="artifacts/${{ matrix.target }}/"
+            - name: Upload crash artifacts
+              if: ${{ failure() }}
+              uses: actions/upload-artifact@v7
+              with:
+                  name: fuzz-artifacts-${{ matrix.target }}
+                  path: fuzz/artifacts/${{ matrix.target }}/
+                  if-no-files-found: ignore
+                  retention-days: 14
