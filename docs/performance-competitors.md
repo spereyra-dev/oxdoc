@@ -52,7 +52,10 @@ The Make target writes:
 - Raw CSV rows: `target/competitor-workbench/results.csv`
 
 When publishing benchmark claims, include the generated report date, platform,
-architecture, Rust version, competitor versions, and exact command used.
+architecture, Rust version, competitor versions, and exact command used. These
+optional comparisons are not part of the versioned release benchmark asset:
+tools can be absent, their output semantics differ, and installed versions are
+outside this repository's lockfiles.
 
 ## Interpreting Results
 

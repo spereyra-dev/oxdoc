@@ -70,7 +70,8 @@ doctest:
 
 scripts-test:
 	sh -n install.sh tests/install.sh scripts/render-homebrew-formula.sh tests/homebrew_formula.sh
-	python3 -m py_compile scripts/peak-memory-baselines.py scripts/competitor-workbench.py
+	python3 -m py_compile scripts/peak-memory-baselines.py scripts/competitor-workbench.py scripts/release-benchmark-bundle.py
+	python3 scripts/release-benchmark-bundle.py --self-test
 	python3 -m py_compile python/src/oxdoc/*.py python/tests/*.py
 	sh tests/install.sh
 	sh tests/homebrew_formula.sh

@@ -2,6 +2,8 @@
 
 `oxdoc` can be installed from GitHub Release binaries or built from source.
 
+For CI jobs, use the checksum-verifying [GitHub Action](github-action.md).
+
 ## Requirements
 
 - `curl`, `tar`, and `shasum` or `sha256sum` for the shell installer.
