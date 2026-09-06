@@ -1,5 +1,10 @@
 # oxdoc
 
+[![Release](https://img.shields.io/github/v/release/spereyra-dev/oxdoc?display_name=tag)](https://github.com/spereyra-dev/oxdoc/releases/latest)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-2ea44f)](https://spereyra-dev.github.io/oxdoc/)
+[![crates.io](https://img.shields.io/crates/v/oxdoc-cli)](https://crates.io/crates/oxdoc-cli)
+[![CI](https://img.shields.io/github/actions/workflow/status/spereyra-dev/oxdoc/ci.yml?branch=main&label=CI)](https://github.com/spereyra-dev/oxdoc/actions/workflows/ci.yml)
+
 Fast OOXML extraction without rendering.
 
 `oxdoc` is a Rust workspace for extracting plain text, CSV, and metadata from Office Open XML containers such as `.docx`, `.xlsx`, and `.pptx`. It is built for automation: shell pipelines, CI jobs, serverless functions, ingestion systems, and embedding through a stable Rust API.
@@ -38,7 +43,7 @@ Then open:
 http://localhost:3000
 ```
 
-The `docs` GitHub Actions workflow validates that the Docsify site serves correctly, checks internal Markdown links, and verifies the published schema copies stay in sync. Publishing it through GitHub Pages requires enabling Pages for the repository in GitHub settings.
+The `docs` GitHub Actions workflow validates that the Docsify site serves correctly, checks internal Markdown links, and verifies the published schema copies stay in sync. The site is published through GitHub Pages from `main`/`docs`.
 
 Key documentation pages:
 
@@ -72,6 +77,10 @@ Install with Cargo:
 ```bash
 cargo install oxdoc-cli
 ```
+
+For Windows archives, checksum verification, and all installation options, see
+[Installation](docs/installation.md). The [distribution discoverability guide](docs/discoverability.md)
+records verified channels and the activation steps for channels that are not yet published.
 
 Or build the workspace from source:
 

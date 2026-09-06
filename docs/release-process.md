@@ -1,7 +1,7 @@
 # Release Process
 
 This page documents the release process for GitHub Release binaries, the shell
-installer, Homebrew tap updates, and future crates.io publishing.
+installer, crates.io publishing, and future Homebrew tap updates.
 
 ## Pre-Release Checklist
 
