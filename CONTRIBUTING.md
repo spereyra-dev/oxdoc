@@ -8,7 +8,10 @@ Thanks for helping improve `oxdoc`. The project is early, so small focused chang
 - Prefer streaming and bounded-memory designs.
 - Keep warnings recoverable and errors explicit.
 - Add tests for parser behavior, especially when fixing malformed OOXML input.
-- Do not add sample documents unless they are safe to redistribute.
+- Do not add sample documents unless they are safe to redistribute. Follow the
+  [compatibility corpus policy](docs/compatibility-corpus.md): create a
+  synthetic reproduction rather than redacting a personal, customer, or
+  third-party document.
 
 ## Contribution Protocol
 
@@ -49,6 +52,8 @@ Start with the issue's acceptance criteria and keep the PR limited to that slice
 - Link the issue or explain why no issue is needed.
 - Include a clear summary, risk notes, and the checks you ran.
 - Keep generated files, large binaries, and private documents out of the repo.
+- For fuzz findings, minimize and sanitize an input before retaining it under
+  `fuzz/regressions/`; do not commit raw corpora or crash artifacts.
 - Mark breaking changes, public API changes, or release/distribution changes clearly.
 - Use draft PRs for early feedback when the design is still moving.
 
@@ -60,8 +65,15 @@ Future fixture files should include a short note explaining:
 - Whether it is safe to redistribute.
 - What behavior the fixture is meant to cover.
 - Whether it was sanitized, minimized, or generated from repository-authored content.
+- Its SHA-256 digest, expected snapshot, and integration-test coverage when it
+  is an application-generated compatibility fixture.
 
 Never commit private, customer, confidential, or secret-bearing documents. Prefer a minimal reproduction generated specifically for this repository.
+
+For producer compatibility fixtures, also update
+`tests/fixtures/compatibility-matrix.json` and run
+`make compatibility-corpus-check`. Do not claim a producer is covered until the
+fixture is checked in and exercised by a regression test.
 
 ## Commit Style
 

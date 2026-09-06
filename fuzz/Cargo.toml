@@ -23,6 +23,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "pptx_text"
+path = "fuzz_targets/pptx_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "xlsx_shared_strings"
 path = "fuzz_targets/xlsx_shared_strings.rs"
 test = false
