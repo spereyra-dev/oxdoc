@@ -8,15 +8,20 @@ version = "0.1.0"
 description = "Thin Python wrapper for the oxdoc Office document extraction CLI"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
-authors = [{ name = "oxdoc contributors" }]
+license = { file = "LICENSE" }
+authors = [{ name = "Santiago Pereyra Marchetti" }]
 keywords = ["ooxml", "docx", "pptx", "xlsx", "data-ingestion"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Office/Business",
   "Topic :: Text Processing",
 ]
@@ -24,6 +29,12 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/spereyra-dev/oxdoc"
 Documentation = "https://spereyra-dev.github.io/oxdoc/"
+Repository = "https://github.com/spereyra-dev/oxdoc"
+Issues = "https://github.com/spereyra-dev/oxdoc/issues"
+Changelog = "https://github.com/spereyra-dev/oxdoc/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/oxdoc"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "LICENSE", "README.md", "pyproject.toml"]

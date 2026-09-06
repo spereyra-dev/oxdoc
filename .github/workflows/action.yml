@@ -1,0 +1,38 @@
+name: action
+
+on:
+  pull_request:
+    paths:
+      - action.yml
+      - install.sh
+      - .github/workflows/action.yml
+  push:
+    branches: [main]
+    paths:
+      - action.yml
+      - install.sh
+      - .github/workflows/action.yml
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Setup oxdoc (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./
+        id: oxdoc
+        with:
+          version: v0.1.0
+      - name: Verify installed release
+        shell: bash
+        run: |
+          test "${{ steps.oxdoc.outputs.version }}" = v0.1.0
+          test -d "${{ steps.oxdoc.outputs.path }}"
+          oxdoc --version

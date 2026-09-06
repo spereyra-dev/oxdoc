@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -139,11 +140,19 @@ class OxdocPythonWrapperTests(unittest.TestCase):
 
 def fake_oxdoc(source: str) -> str:
     directory = Path(tempfile.mkdtemp(prefix="oxdoc-python-test-"))
-    script = directory / "oxdoc-fake"
+    script = directory / "oxdoc-fake.py"
     script.write_text(
         "#!/usr/bin/env python3\n" + textwrap.dedent(source).strip() + "\n",
         encoding="utf-8",
     )
+    if os.name == "nt":
+        launcher = directory / "oxdoc-fake.cmd"
+        launcher.write_text(
+            f'@echo off\r\n"{sys.executable}" "{script}" %*\r\n',
+            encoding="utf-8",
+        )
+        return os.fspath(launcher)
+
     script.chmod(script.stat().st_mode | stat.S_IXUSR)
     return os.fspath(script)
 

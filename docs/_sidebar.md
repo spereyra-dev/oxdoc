@@ -2,6 +2,7 @@
   - [Overview](README.md)
   - [Getting Started](getting-started.md)
   - [Installation](installation.md)
+  - [GitHub Action](github-action.md)
   - [CLI Reference](cli.md)
 
 - **Usage**
@@ -13,6 +14,7 @@
   - [JSON Output](json-output.md)
   - [Library API](library-api.md)
   - [Python Integration](python-integration.md)
+  - [Compatibility Playground](compatibility-playground.md)
 
 - **Design**
   - [Architecture](architecture.md)

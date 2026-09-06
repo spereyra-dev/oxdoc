@@ -44,6 +44,7 @@ Key documentation pages:
 
 - [Getting Started](docs/getting-started.md)
 - [Installation](docs/installation.md)
+- [GitHub Action](docs/github-action.md)
 - [CLI Reference](docs/cli.md)
 - [Library API](docs/library-api.md)
 - [Python Integration](docs/python-integration.md)
@@ -54,6 +55,7 @@ Key documentation pages:
 - [Peak Memory Baselines](docs/performance-memory-baselines.md)
 - [Competitive Workbench](docs/performance-competitors.md)
 - [Testing Strategy](docs/testing.md)
+- [Compatibility Playground](docs/compatibility-playground.md)
 - [Roadmap](docs/roadmap.md)
 - [Security](docs/security.md)
 
@@ -117,7 +119,12 @@ Comparable tools covered by the workbench:
 | `xlsx2csv` | XLSX dense, sparse, and shared-string CSV extraction | Closest direct XLSX-to-CSV comparison. |
 | Mammoth | DOCX extraction | DOCX-focused converter; output shape differs from plain-text extraction. |
 
-See [Performance and Memory](docs/performance.md), [Peak Memory Baselines](docs/performance-memory-baselines.md), and [Competitive Workbench](docs/performance-competitors.md).
+Each GitHub Release also attaches a versioned benchmark bundle with raw Criterion
+output, peak-memory results, commands, and environment metadata. It is release
+evidence for its recorded runner rather than a universal leaderboard. See
+[Performance and Memory](docs/performance.md),
+[Versioned Benchmark Evidence](docs/release-process.md#versioned-benchmark-evidence),
+and [Competitive Workbench](docs/performance-competitors.md).
 
 ## CLI Usage
 

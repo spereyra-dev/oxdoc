@@ -23,3 +23,5 @@ jobs:
         run: make docs-links
       - name: Check published schema copies
         run: make docs-schemas-check
+      - name: Check compatibility playground fixtures and output
+        run: make docs-playground-check

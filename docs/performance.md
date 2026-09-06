@@ -98,7 +98,10 @@ Current cases:
 | `xlsx-shared-strings-spill` | Shared-string-heavy XLSX extraction past the spill-to-disk threshold. |
 | `xlsx-wide-sparse` | XLSX rows with sparse far-right cells that force row padding. |
 
-Published baseline numbers live in [Peak Memory Baselines](performance-memory-baselines.md).
+The checked-in [Peak Memory Baselines](performance-memory-baselines.md) are a
+historical local example, not a release-to-release series. Versioned release
+evidence is published as a release asset; see
+[Versioned Benchmark Evidence](release-process.md#versioned-benchmark-evidence).
 
 ## Competitive Workbench
 
@@ -134,4 +137,6 @@ These benchmarks are a stable starting baseline, not a complete performance mode
 - Corrupt-input behavior.
 - Larger real-world fixture classes once redistribution rights are clear.
 
-Benchmark results should be tracked in release notes once a baseline exists.
+Release benchmark bundles provide comparable evidence only when their recorded
+environments match; do not turn their measurements into universal performance
+claims.
