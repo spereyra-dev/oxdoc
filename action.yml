@@ -1,0 +1,70 @@
+name: Setup oxdoc
+description: Install a checksum-verified oxdoc GitHub Release binary.
+author: spereyra-dev
+
+inputs:
+  version:
+    description: Exact oxdoc release tag to install, for example v0.1.0.
+    required: true
+
+outputs:
+  version:
+    description: Installed oxdoc release tag.
+    value: ${{ steps.install-unix.outputs.version || steps.install-windows.outputs.version }}
+  path:
+    description: Directory added to PATH containing oxdoc.
+    value: ${{ steps.install-unix.outputs.path || steps.install-windows.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install oxdoc (Linux and macOS)
+      id: install-unix
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        OXDOC_VERSION: ${{ inputs.version }}
+        OXDOC_INSTALL_DIR: ${{ runner.temp }}/oxdoc/bin
+      run: |
+        set -euo pipefail
+        if ! printf '%s\n' "$OXDOC_VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+          echo "version must be an exact release tag such as v0.1.0" >&2
+          exit 1
+        fi
+        sh "$GITHUB_ACTION_PATH/install.sh"
+        printf '%s\n' "$OXDOC_INSTALL_DIR" >> "$GITHUB_PATH"
+        printf 'version=%s\n' "$OXDOC_VERSION" >> "$GITHUB_OUTPUT"
+        printf 'path=%s\n' "$OXDOC_INSTALL_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Install oxdoc (Windows)
+      id: install-windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        OXDOC_VERSION: ${{ inputs.version }}
+        OXDOC_INSTALL_DIR: ${{ runner.temp }}\oxdoc\bin
+      run: |
+        $ErrorActionPreference = 'Stop'
+        if ($env:OXDOC_VERSION -notmatch '^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
+          throw 'version must be an exact release tag such as v0.1.0'
+        }
+        $target = 'x86_64-pc-windows-msvc'
+        $archiveName = "oxdoc-$($env:OXDOC_VERSION)-$target.zip"
+        $releaseUrl = "https://github.com/spereyra-dev/oxdoc/releases/download/$($env:OXDOC_VERSION)"
+        $workDir = Join-Path $env:RUNNER_TEMP 'oxdoc-download'
+        $archive = Join-Path $workDir $archiveName
+        $checksums = Join-Path $workDir 'SHA256SUMS'
+        New-Item -ItemType Directory -Force -Path $workDir, $env:OXDOC_INSTALL_DIR | Out-Null
+        Invoke-WebRequest -Uri "$releaseUrl/$archiveName" -OutFile $archive
+        Invoke-WebRequest -Uri "$releaseUrl/SHA256SUMS" -OutFile $checksums
+        $expected = (Get-Content $checksums | Where-Object { $_ -match "\s$([regex]::Escape($archiveName))$" } | Select-Object -First 1).Split()[0]
+        if (-not $expected) { throw "SHA256SUMS does not contain $archiveName" }
+        $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+        if ($actual -ne $expected.ToLowerInvariant()) { throw "checksum mismatch for $archiveName" }
+        Expand-Archive -Path $archive -DestinationPath $workDir -Force
+        $binary = Join-Path $workDir "oxdoc-$($env:OXDOC_VERSION)-$target\oxdoc.exe"
+        if (-not (Test-Path $binary)) { throw 'release archive did not contain oxdoc.exe' }
+        Copy-Item $binary (Join-Path $env:OXDOC_INSTALL_DIR 'oxdoc.exe') -Force
+        Add-Content -Path $env:GITHUB_PATH -Value $env:OXDOC_INSTALL_DIR
+        "version=$($env:OXDOC_VERSION)" | Add-Content -Path $env:GITHUB_OUTPUT
+        "path=$($env:OXDOC_INSTALL_DIR)" | Add-Content -Path $env:GITHUB_OUTPUT

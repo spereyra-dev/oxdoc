@@ -44,6 +44,7 @@ Key documentation pages:
 
 - [Getting Started](docs/getting-started.md)
 - [Installation](docs/installation.md)
+- [GitHub Action](docs/github-action.md)
 - [CLI Reference](docs/cli.md)
 - [Library API](docs/library-api.md)
 - [Python Integration](docs/python-integration.md)
