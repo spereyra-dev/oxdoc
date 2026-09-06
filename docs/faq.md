@@ -24,6 +24,10 @@ The CLI writes warnings to stderr. The library returns warnings in `Extraction<T
 
 Only if it is safe to redistribute. Do not attach private, confidential, or customer documents. Prefer a minimal reproduction file.
 
+Before filing a bug, include `oxdoc diagnostics --format json`. It reports
+non-sensitive local version, platform, build capability, and input-limit
+information without reading a document or uploading data.
+
 ## Why Docsify?
 
 Docsify keeps the documentation source as Markdown and serves it as a static documentation site without a build step. That matches the project's current size and keeps contribution friction low.
