@@ -33,6 +33,8 @@ pub enum WarningCode {
     IgnoredWorkbookSheet,
     SharedStringIndexOutOfBounds,
     InvalidSharedStringIndex,
+    UnsupportedNumberFormat,
+    AmbiguousNumberFormat,
     Custom,
 }
 
@@ -43,6 +45,8 @@ impl WarningCode {
             WarningCode::IgnoredWorkbookSheet => "W002",
             WarningCode::SharedStringIndexOutOfBounds => "W003",
             WarningCode::InvalidSharedStringIndex => "W004",
+            WarningCode::UnsupportedNumberFormat => "W005",
+            WarningCode::AmbiguousNumberFormat => "W006",
             WarningCode::Custom => "W999",
         }
     }
@@ -81,12 +85,34 @@ impl OutputWarning {
         )
     }
 
+    pub fn unsupported_number_format(
+        path: impl Into<String>,
+        format_code: impl Into<String>,
+        ambiguous: bool,
+    ) -> Self {
+        let kind = if ambiguous {
+            "ambiguous"
+        } else {
+            "unsupported"
+        };
+        Self::new(
+            path,
+            format!(
+                "formatted value fell back to raw for {kind} number format '{}'",
+                format_code.into()
+            ),
+        )
+    }
+
     pub fn category(&self) -> WarningCategory {
         match self.code() {
             WarningCode::MalformedXml => WarningCategory::Parser,
             WarningCode::IgnoredWorkbookSheet
             | WarningCode::SharedStringIndexOutOfBounds
             | WarningCode::InvalidSharedStringIndex => WarningCategory::Data,
+            WarningCode::UnsupportedNumberFormat | WarningCode::AmbiguousNumberFormat => {
+                WarningCategory::Data
+            }
             WarningCode::Custom => WarningCategory::Custom,
         }
     }
@@ -107,6 +133,20 @@ impl OutputWarning {
             }
             message if message.starts_with("invalid shared string index '") => {
                 WarningCode::InvalidSharedStringIndex
+            }
+            message
+                if message.starts_with(
+                    "formatted value fell back to raw for unsupported number format '",
+                ) =>
+            {
+                WarningCode::UnsupportedNumberFormat
+            }
+            message
+                if message.starts_with(
+                    "formatted value fell back to raw for ambiguous number format '",
+                ) =>
+            {
+                WarningCode::AmbiguousNumberFormat
             }
             _ => WarningCode::Custom,
         }
@@ -478,6 +518,9 @@ mod tests {
         let sheet = OutputWarning::ignored_workbook_sheet("xl/workbook.xml");
         let shared = OutputWarning::shared_string_index_out_of_bounds("xl/sheet.xml", 7);
         let invalid = OutputWarning::invalid_shared_string_index("xl/sheet.xml", "abc");
+        let unsupported =
+            OutputWarning::unsupported_number_format("xl/sheet.xml", "0.00E+00", false);
+        let ambiguous = OutputWarning::unsupported_number_format("xl/sheet.xml", "# ?/?", true);
 
         assert_eq!(malformed.category(), WarningCategory::Parser);
         assert_eq!(malformed.code(), WarningCode::MalformedXml);
@@ -485,12 +528,16 @@ mod tests {
         assert_eq!(sheet.code(), WarningCode::IgnoredWorkbookSheet);
         assert_eq!(shared.code(), WarningCode::SharedStringIndexOutOfBounds);
         assert_eq!(invalid.code(), WarningCode::InvalidSharedStringIndex);
+        assert_eq!(unsupported.code(), WarningCode::UnsupportedNumberFormat);
+        assert_eq!(ambiguous.code(), WarningCode::AmbiguousNumberFormat);
         assert_eq!(WarningCategory::Parser.as_str(), "parser");
         assert_eq!(WarningCategory::Data.as_str(), "data");
         assert_eq!(WarningCode::MalformedXml.as_str(), "W001");
         assert_eq!(WarningCode::IgnoredWorkbookSheet.as_str(), "W002");
         assert_eq!(WarningCode::SharedStringIndexOutOfBounds.as_str(), "W003");
         assert_eq!(WarningCode::InvalidSharedStringIndex.as_str(), "W004");
+        assert_eq!(WarningCode::UnsupportedNumberFormat.as_str(), "W005");
+        assert_eq!(WarningCode::AmbiguousNumberFormat.as_str(), "W006");
     }
 
     #[test]

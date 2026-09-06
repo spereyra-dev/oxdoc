@@ -331,7 +331,12 @@ Notes:
 
 `--value-mode raw` is the default and emits the stored worksheet value exactly as represented in the sheet XML after string and boolean decoding. This keeps existing ingestion jobs stable.
 
-`--value-mode formatted` reads workbook styles when present and formats supported numeric cells in a locale-independent way. Dates use ISO output (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS`), time-only values use `HH:MM:SS`, percentages include `%`, and common decimal and currency formats use the decimal precision declared by the workbook. Unsupported formats fall back to the raw stored value.
+`--value-mode formatted` reads workbook styles when present and formats supported numeric cells using a deterministic, locale-independent policy. `raw` remains the default and is never changed by styles.
+
+- Dates use ISO output (`YYYY-MM-DD` or `YYYY-MM-DDTHH:MM:SS`); time-only values use `HH:MM:SS`, and elapsed-time formats such as `[h]:mm:ss` retain total hours.
+- Decimal, grouped-number, percentage, and currency formats honour the declared mandatory decimal places. Output always uses `.` as the decimal separator and never emits grouping separators. Currency output retains the format's currency symbol (for example, `€1234.50`), rather than converting currencies or applying a host locale.
+- Excel locale directives (for example `[$€-407]`) and display-only colours, padding, and literals do not change the invariant output. This produces the same result on every host, but does not reproduce localized month names or separators.
+- Scientific notation, fractions, text placeholders, and other unsupported formats fall back to the stored raw value and emit one worksheet warning per distinct format: `W005` for unsupported and `W006` for ambiguous formats.
 
 ## Extract Typed XLSX Rows
 

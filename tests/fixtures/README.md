@@ -33,6 +33,7 @@ Current fixtures:
 - `docx/malformed-table`
 - `corpus/xlsx/basic`
 - `corpus/xlsx/app-metadata`
+- `corpus/xlsx/formatted-locale`
 - `corpus/pptx/basic`
 - `corpus/pptx/text`
 - `files/docx/python-docx-basic.docx`

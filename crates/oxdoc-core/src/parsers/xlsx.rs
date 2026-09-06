@@ -151,9 +151,10 @@ struct SheetFormatContext<'a> {
 enum FormatKind {
     Date,
     Time,
+    ElapsedTime,
     DateTime,
     Percent(usize),
-    Currency(usize),
+    Currency(char, usize),
     Decimal(usize),
 }
 
@@ -828,9 +829,31 @@ fn push_typed_cell(
     } else if cell.value.is_empty() {
         XlsxCellValue::Blank
     } else {
-        let formatted = (format_context.value_mode == XlsxValueMode::Formatted)
-            .then(|| format_cell_value(&cell, format_context.styles, format_context.date_system))
-            .flatten();
+        let formatted = if format_context.value_mode == XlsxValueMode::Formatted {
+            match format_cell_value_detailed(
+                &cell,
+                format_context.styles,
+                format_context.date_system,
+            ) {
+                Ok(value) => value,
+                Err(failure) => {
+                    let warning = OutputWarning::unsupported_number_format(
+                        path,
+                        failure.format_code,
+                        failure.ambiguous,
+                    );
+                    if !warnings
+                        .iter()
+                        .any(|existing| existing.message == warning.message)
+                    {
+                        warnings.push(warning);
+                    }
+                    None
+                }
+            }
+        } else {
+            None
+        };
         XlsxCellValue::Number {
             raw: cell.value.clone(),
             formatted,
@@ -869,68 +892,107 @@ fn cell_state_from_element(
     }
 }
 
+#[cfg(test)]
 fn format_cell_value(
     cell: &CellState,
     styles: &XlsxStyles,
     date_system: DateSystem,
 ) -> Option<String> {
+    format_cell_value_detailed(cell, styles, date_system)
+        .ok()
+        .flatten()
+}
+
+#[derive(Debug)]
+struct FormatFailure {
+    format_code: String,
+    ambiguous: bool,
+}
+
+fn format_cell_value_detailed(
+    cell: &CellState,
+    styles: &XlsxStyles,
+    date_system: DateSystem,
+) -> std::result::Result<Option<String>, FormatFailure> {
     if matches!(
         cell.value_type.as_deref(),
         Some("s" | "b" | "str" | "inlineStr" | "e")
     ) {
-        return None;
+        return Ok(None);
     }
 
-    let value = cell.value.trim().parse::<f64>().ok()?;
-    let style_index = cell.style_index?;
-    let format_code = styles
+    let Ok(value) = cell.value.trim().parse::<f64>() else {
+        return Ok(None);
+    };
+    let Some(style_index) = cell.style_index else {
+        return Ok(None);
+    };
+    let Some(format_code) = styles
         .cell_formats
-        .get(style_index)?
-        .number_format
-        .as_deref()?;
-    let kind = classify_number_format(format_code)?;
+        .get(style_index)
+        .and_then(|format| format.number_format.as_deref())
+    else {
+        return Ok(None);
+    };
+    let kind = classify_number_format_detailed(format_code).map_err(|ambiguous| FormatFailure {
+        format_code: format_code.to_owned(),
+        ambiguous,
+    })?;
 
-    match kind {
+    Ok(match kind {
         FormatKind::Date => format_excel_datetime(value, date_system, false, true),
         FormatKind::Time => Some(format_time_fraction(value.fract())),
+        FormatKind::ElapsedTime => Some(format_elapsed_time(value)),
         FormatKind::DateTime => format_excel_datetime(value, date_system, true, true),
         FormatKind::Percent(decimals) => {
             Some(format!("{}%", format_number(value * 100.0, decimals, true)))
         }
-        FormatKind::Currency(decimals) => {
-            Some(format!("${}", format_number(value, decimals, true)))
+        FormatKind::Currency(symbol, decimals) => {
+            Some(format!("{symbol}{}", format_number(value, decimals, true)))
         }
         FormatKind::Decimal(decimals) => Some(format_number(value, decimals, true)),
-    }
+    })
 }
 
+#[cfg(test)]
 fn classify_number_format(format_code: &str) -> Option<FormatKind> {
+    classify_number_format_detailed(format_code).ok()
+}
+
+fn classify_number_format_detailed(format_code: &str) -> std::result::Result<FormatKind, bool> {
     let normalized = normalize_number_format(format_code);
-    if normalized.is_empty() || normalized.contains('?') || normalized.contains("e+") {
-        return None;
+    if normalized.is_empty() {
+        return Err(false);
+    }
+    if normalized.contains('?') || normalized.contains("e+") || normalized.contains('@') {
+        return Err(normalized.contains('?'));
     }
 
     let has_percent = normalized.contains('%');
-    let has_currency = normalized.contains('$');
+    let currency = normalized
+        .chars()
+        .find(|ch| matches!(ch, '$' | '€' | '£' | '¥' | '₹' | '₩' | '₽'));
     let has_time =
         normalized.chars().any(|ch| matches!(ch, 'h' | 's')) || normalized.contains("am/pm");
     let has_year_or_day = normalized.chars().any(|ch| matches!(ch, 'y' | 'd'));
     let has_date = has_year_or_day || (normalized.chars().any(|ch| ch == 'm') && !has_time);
 
-    if has_date && has_time {
-        Some(FormatKind::DateTime)
+    if normalized.contains("[h]") || normalized.contains("[m]") || normalized.contains("[s]") {
+        Ok(FormatKind::ElapsedTime)
+    } else if has_date && has_time {
+        Ok(FormatKind::DateTime)
     } else if has_date {
-        Some(FormatKind::Date)
+        Ok(FormatKind::Date)
     } else if has_time {
-        Some(FormatKind::Time)
+        Ok(FormatKind::Time)
     } else if has_percent {
-        Some(FormatKind::Percent(decimal_places(&normalized)))
-    } else if has_currency {
-        Some(FormatKind::Currency(decimal_places(&normalized)))
+        Ok(FormatKind::Percent(decimal_places(&normalized)))
+    } else if let Some(symbol) = currency {
+        Ok(FormatKind::Currency(symbol, decimal_places(&normalized)))
     } else if looks_decimal_format(&normalized) {
-        Some(FormatKind::Decimal(decimal_places(&normalized)))
+        Ok(FormatKind::Decimal(decimal_places(&normalized)))
     } else {
-        None
+        Err(false)
     }
 }
 
@@ -940,52 +1002,70 @@ fn normalize_number_format(format_code: &str) -> String {
     let mut chars = first_section.chars().peekable();
     let mut in_quote = false;
     let mut in_bracket = false;
-    let mut bracket_contains_currency = false;
+    let mut bracket = String::new();
 
     while let Some(ch) = chars.next() {
         match ch {
             '"' => in_quote = !in_quote,
             '[' => {
                 in_bracket = true;
-                bracket_contains_currency = false;
+                bracket.clear();
             }
             ']' => {
-                if bracket_contains_currency {
-                    normalized.push('$');
+                if bracket.eq_ignore_ascii_case("h")
+                    || bracket.eq_ignore_ascii_case("m")
+                    || bracket.eq_ignore_ascii_case("s")
+                {
+                    normalized.push('[');
+                    normalized.push_str(&bracket.to_ascii_lowercase());
+                    normalized.push(']');
+                } else if let Some(currency) = bracket
+                    .strip_prefix('$')
+                    .and_then(|value| value.split('-').next())
+                {
+                    normalized.push_str(currency);
                 }
                 in_bracket = false;
             }
             '\\' | '_' | '*' => {
                 chars.next();
             }
-            '$' if in_quote => normalized.push('$'),
-            '$' if in_bracket => bracket_contains_currency = true,
-            _ if in_quote || in_bracket => {}
+            '$' | '€' | '£' | '¥' | '₹' | '₩' | '₽' if in_quote => normalized.push(ch),
+            _ if in_bracket => bracket.push(ch),
+            _ if in_quote => {}
             _ => normalized.push(ch.to_ascii_lowercase()),
         }
     }
 
-    normalized.replace(',', "")
+    normalized
 }
 
 fn looks_decimal_format(format_code: &str) -> bool {
     format_code
         .chars()
-        .all(|ch| matches!(ch, '#' | '0' | '.' | '-' | ' '))
+        .all(|ch| matches!(ch, '#' | '0' | '.' | ',' | '-' | ' '))
         && format_code.chars().any(|ch| ch == '0')
 }
 
 fn decimal_places(format_code: &str) -> usize {
-    format_code
-        .split('.')
-        .nth(1)
-        .map(|tail| {
-            tail.chars()
-                .take_while(|ch| matches!(ch, '0' | '#'))
-                .filter(|ch| *ch == '0')
-                .count()
-        })
-        .unwrap_or(0)
+    let numeric = format_code
+        .chars()
+        .filter(|ch| matches!(ch, '#' | '0' | '.' | ','))
+        .collect::<String>();
+    let Some(separator) = numeric.rfind(['.', ',']) else {
+        return 0;
+    };
+    let fraction = &numeric[separator + 1..];
+    if fraction.is_empty() || !fraction.chars().all(|ch| matches!(ch, '#' | '0')) {
+        return 0;
+    }
+    let whole = &numeric[..separator];
+    // A lone separator in a pattern such as #,##0 is a thousands marker. A
+    // locale decimal marker is unambiguous when the integer side is 0.
+    if !whole.contains(['.', ',']) && whole.contains('#') {
+        return 0;
+    }
+    fraction.chars().filter(|ch| *ch == '0').count()
 }
 
 fn format_number(value: f64, decimals: usize, trim_negative_zero: bool) -> String {
@@ -1009,13 +1089,20 @@ fn format_excel_datetime(
         return None;
     }
 
-    let whole_days = serial.floor() as i64;
+    let mut whole_days = serial.floor() as i64;
     let fraction = serial - serial.floor();
+    let seconds = (fraction * 86_400.0).round() as i64;
+    if seconds == 86_400 {
+        whole_days += 1;
+    }
     let (year, month, day) = excel_serial_to_date(whole_days, date_system)?;
     let date = format!("{year:04}-{month:02}-{day:02}");
 
     if include_date && include_time {
-        Some(format!("{date}T{}", format_time_fraction(fraction)))
+        Some(format!(
+            "{date}T{}",
+            format_time_seconds(seconds.rem_euclid(86_400))
+        ))
     } else if include_date {
         Some(date)
     } else {
@@ -1039,10 +1126,19 @@ fn excel_serial_to_date(serial_days: i64, date_system: DateSystem) -> Option<(i3
 }
 
 fn format_time_fraction(fraction: f64) -> String {
-    let mut seconds = (fraction.rem_euclid(1.0) * 86_400.0).round() as i64;
-    if seconds == 86_400 {
-        seconds = 0;
-    }
+    let seconds = (fraction.rem_euclid(1.0) * 86_400.0).round() as i64 % 86_400;
+    format_time_seconds(seconds)
+}
+
+fn format_elapsed_time(value: f64) -> String {
+    let seconds = (value.abs() * 86_400.0).round() as i64;
+    let hours = seconds / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    let seconds = seconds % 60;
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
+}
+
+fn format_time_seconds(seconds: i64) -> String {
     let hours = seconds / 3_600;
     let minutes = (seconds % 3_600) / 60;
     let seconds = seconds % 60;
@@ -1740,11 +1836,11 @@ mod tests {
         );
         assert_eq!(
             classify_number_format(r#"[$$-409]#,##0.00"#),
-            Some(super::FormatKind::Currency(2))
+            Some(super::FormatKind::Currency('$', 2))
         );
         assert_eq!(
             classify_number_format("\"$\"#,##0.00"),
-            Some(super::FormatKind::Currency(2))
+            Some(super::FormatKind::Currency('$', 2))
         );
         assert_eq!(
             classify_number_format(r#"yyyy-mm-dd h:mm"#),
@@ -1828,6 +1924,79 @@ mod tests {
         );
 
         assert_eq!(format_number(-0.0001, 2, true), "0.00");
+    }
+
+    #[test]
+    fn formats_locale_markers_currency_and_elapsed_time_invariantly() {
+        let styles = XlsxStyles {
+            cell_formats: vec![
+                CellFormat {
+                    number_format: Some("[$€-407] #.##0,00".to_owned()),
+                },
+                CellFormat {
+                    number_format: Some("[$£-809]#,##0.000".to_owned()),
+                },
+                CellFormat {
+                    number_format: Some("[h]:mm:ss".to_owned()),
+                },
+            ],
+        };
+        let cell = |value: &str, style_index| CellState {
+            value: value.to_owned(),
+            style_index: Some(style_index),
+            ..CellState::default()
+        };
+
+        assert_eq!(
+            format_cell_value(&cell("1234.5", 0), &styles, DateSystem::Excel1900).as_deref(),
+            Some("€1234.50")
+        );
+        assert_eq!(
+            format_cell_value(&cell("9.5", 1), &styles, DateSystem::Excel1900).as_deref(),
+            Some("£9.500")
+        );
+        assert_eq!(
+            format_cell_value(&cell("1.5", 2), &styles, DateSystem::Excel1900).as_deref(),
+            Some("36:00:00")
+        );
+    }
+
+    #[test]
+    fn warns_once_per_unsupported_or_ambiguous_format() {
+        let styles = XlsxStyles {
+            cell_formats: vec![
+                CellFormat {
+                    number_format: Some("0.00E+00".to_owned()),
+                },
+                CellFormat {
+                    number_format: Some("# ?/?".to_owned()),
+                },
+            ],
+        };
+        let xml = r#"<worksheet><sheetData><row><c s="0"><v>1</v></c><c s="0"><v>2</v></c><c s="1"><v>0.5</v></c></row></sheetData></worksheet>"#;
+        let mut shared_strings = SharedStringStore::empty();
+        let mut sink = CollectRows::default();
+
+        let extraction = parse_sheet_rows(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            &formatted_context(&styles),
+            &mut sink,
+        )
+        .unwrap();
+
+        assert_eq!(
+            sink.rows[0]
+                .cells
+                .iter()
+                .map(|cell| cell.value.csv_value())
+                .collect::<Vec<_>>(),
+            vec!["1", "2", "0.5"]
+        );
+        assert_eq!(extraction.warnings.len(), 2);
+        assert_eq!(extraction.warnings[0].code().as_str(), "W005");
+        assert_eq!(extraction.warnings[1].code().as_str(), "W006");
     }
 
     #[test]
