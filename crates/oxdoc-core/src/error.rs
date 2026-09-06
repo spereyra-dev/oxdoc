@@ -9,6 +9,7 @@ pub enum OxdocErrorCode {
     MissingPart,
     UnsupportedEncryptedPart,
     PartTooLarge,
+    PackageTooLarge,
     SuspiciousZipEntry,
     SuspiciousRelationshipTarget,
     MissingCoreRelations,
@@ -24,6 +25,7 @@ impl OxdocErrorCode {
             OxdocErrorCode::MissingPart => "E003",
             OxdocErrorCode::UnsupportedEncryptedPart => "E004",
             OxdocErrorCode::PartTooLarge => "E005",
+            OxdocErrorCode::PackageTooLarge => "E011",
             OxdocErrorCode::SuspiciousZipEntry => "E006",
             OxdocErrorCode::SuspiciousRelationshipTarget => "E007",
             OxdocErrorCode::MissingCoreRelations => "E008",
@@ -49,6 +51,9 @@ pub enum OxdocError {
 
     #[error("OOXML part is too large: {path} is {size} bytes; limit is {limit} bytes")]
     PartTooLarge { path: String, size: u64, limit: u64 },
+
+    #[error("OOXML package is too large: {size} bytes; limit is {limit} bytes")]
+    PackageTooLarge { size: u64, limit: u64 },
 
     #[error("suspicious OOXML ZIP entry: {path}: {reason}")]
     SuspiciousZipEntry { path: String, reason: String },
@@ -82,6 +87,7 @@ impl OxdocError {
             OxdocError::MissingPart(_) => OxdocErrorCode::MissingPart,
             OxdocError::UnsupportedEncryptedPart(_) => OxdocErrorCode::UnsupportedEncryptedPart,
             OxdocError::PartTooLarge { .. } => OxdocErrorCode::PartTooLarge,
+            OxdocError::PackageTooLarge { .. } => OxdocErrorCode::PackageTooLarge,
             OxdocError::SuspiciousZipEntry { .. } => OxdocErrorCode::SuspiciousZipEntry,
             OxdocError::SuspiciousRelationshipTarget { .. } => {
                 OxdocErrorCode::SuspiciousRelationshipTarget
@@ -128,6 +134,11 @@ mod tests {
                 },
                 OxdocErrorCode::PartTooLarge,
                 "E005",
+            ),
+            (
+                OxdocError::PackageTooLarge { size: 2, limit: 1 },
+                OxdocErrorCode::PackageTooLarge,
+                "E011",
             ),
             (
                 OxdocError::SuspiciousZipEntry {

@@ -1733,6 +1733,7 @@ fn rejects_zip_bomb_like_compression_ratios() {
     let mut package = OoxmlPackage::with_limits(
         file,
         OoxmlLimits {
+            max_package_uncompressed_size: 256 * 1024 * 1024,
             max_part_uncompressed_size: 64 * 1024,
             max_part_compression_ratio: 2,
             min_ratio_check_size: 1,

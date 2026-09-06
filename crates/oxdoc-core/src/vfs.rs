@@ -9,9 +9,12 @@ use crate::{OxdocError, Result};
 const DEFAULT_MAX_PART_UNCOMPRESSED_SIZE: u64 = 64 * 1024 * 1024;
 const DEFAULT_MAX_PART_COMPRESSION_RATIO: u64 = 200;
 const DEFAULT_MIN_RATIO_CHECK_SIZE: u64 = 4 * 1024 * 1024;
+const DEFAULT_MAX_PACKAGE_UNCOMPRESSED_SIZE: u64 = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OoxmlLimits {
+    /// Maximum combined uncompressed size of all ZIP entries in a package.
+    pub max_package_uncompressed_size: u64,
     pub max_part_uncompressed_size: u64,
     pub max_part_compression_ratio: u64,
     pub min_ratio_check_size: u64,
@@ -20,6 +23,7 @@ pub struct OoxmlLimits {
 impl Default for OoxmlLimits {
     fn default() -> Self {
         Self {
+            max_package_uncompressed_size: DEFAULT_MAX_PACKAGE_UNCOMPRESSED_SIZE,
             max_part_uncompressed_size: DEFAULT_MAX_PART_UNCOMPRESSED_SIZE,
             max_part_compression_ratio: DEFAULT_MAX_PART_COMPRESSION_RATIO,
             min_ratio_check_size: DEFAULT_MIN_RATIO_CHECK_SIZE,
@@ -38,10 +42,17 @@ impl<R: Read + Seek> OoxmlPackage<R> {
     }
 
     pub fn with_limits(reader: R, limits: OoxmlLimits) -> Result<Self> {
-        Ok(Self {
-            archive: ZipArchive::new(reader)?,
-            limits,
-        })
+        let archive = ZipArchive::new(reader)?;
+        if archive
+            .decompressed_size()
+            .is_some_and(|size| size > u128::from(limits.max_package_uncompressed_size))
+        {
+            return Err(OxdocError::PackageTooLarge {
+                size: archive.decompressed_size().unwrap_or(u128::from(u64::MAX)) as u64,
+                limit: limits.max_package_uncompressed_size,
+            });
+        }
+        Ok(Self { archive, limits })
     }
 
     pub fn with_entry<T>(
