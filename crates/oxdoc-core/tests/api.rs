@@ -581,6 +581,33 @@ fn extracts_formatted_xlsx_csv_through_public_api() {
 }
 
 #[test]
+fn extracts_locale_format_fixture_with_deterministic_warnings() {
+    let file = fixtures::build_package("xlsx/formatted-locale", "formatted-locale.xlsx");
+    let mut csv = Vec::new();
+
+    let extraction = oxdoc_core::extract_xlsx_csv_with_value_mode(
+        &file,
+        XlsxCsvOptions::default(),
+        XlsxValueMode::Formatted,
+        &mut csv,
+    )
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(csv).unwrap(),
+        fixtures::read_snapshot("xlsx_formatted_locale_csv.txt")
+    );
+    assert_eq!(
+        extraction
+            .warnings
+            .iter()
+            .map(|warning| warning.code().as_str())
+            .collect::<Vec<_>>(),
+        vec!["W005", "W006"]
+    );
+}
+
+#[test]
 fn visits_typed_xlsx_rows_through_path_api() {
     let file = create_ooxml(
         "typed-rows-path.xlsx",
@@ -1892,6 +1919,7 @@ fn fixture_provenance_notes_are_present() {
         "xlsx-basic.md",
         "xlsx-app-metadata.md",
         "xlsx-openpyxl-basic.md",
+        "xlsx-formatted-locale.md",
         "pptx-basic.md",
         "pptx-text.md",
         "pptx-python-pptx-basic.md",
