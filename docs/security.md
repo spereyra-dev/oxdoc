@@ -49,10 +49,11 @@ When `cargo audit` reports a vulnerable transitive dependency:
 - Malformed ZIP/XML input should return errors or warnings, not panic.
 - Required encrypted ZIP parts fail with `UnsupportedEncryptedPart`; password-protected Office documents are not decrypted.
 - Required ZIP parts fail before reading when their uncompressed size exceeds 64 MiB.
+- CLI package input is capped at 64 MiB and combined uncompressed ZIP entries at 256 MiB by default; documented global CLI flags can tighten or raise both limits.
 - Required ZIP parts fail as suspicious when they are at least 4 MiB and their uncompressed-to-compressed ratio exceeds 200:1.
 - Relationship targets must stay inside the OOXML package root and must not use external URLs, URI schemes, Windows drive prefixes, NUL bytes, or backslashes.
 - Fuzzing targets should be added for high-risk parser paths.
-- Large inputs should not require loading the full document into memory unless explicitly documented.
+- Large file inputs are not loaded into memory by the CLI. Stdin is bounded in-memory buffering and is never spilled to a temporary file; XLSX shared-string parsing may use its existing bounded temporary spill store.
 - Sensitive sample files should not be attached to public issues.
 
 ## Supported Versions

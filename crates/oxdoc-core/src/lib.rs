@@ -42,7 +42,7 @@ pub use parsers::pptx::fuzz_extract_text as fuzz_pptx_text;
 #[doc(hidden)]
 pub use parsers::xlsx::{fuzz_parse_shared_strings, fuzz_parse_sheet};
 use parsers::{docx, metadata, pptx, xlsx};
-use vfs::OoxmlPackage;
+use vfs::{OoxmlLimits, OoxmlPackage};
 
 pub fn extract_docx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {
     let file = File::open(path)?;
@@ -50,7 +50,14 @@ pub fn extract_docx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {
 }
 
 pub fn extract_docx_text_from_reader<R: Read + Seek>(reader: R) -> Result<Extraction<String>> {
-    let mut package = OoxmlPackage::new(reader)?;
+    extract_docx_text_from_reader_with_limits(reader, OoxmlLimits::default())
+}
+
+pub fn extract_docx_text_from_reader_with_limits<R: Read + Seek>(
+    reader: R,
+    limits: OoxmlLimits,
+) -> Result<Extraction<String>> {
+    let mut package = OoxmlPackage::with_limits(reader, limits)?;
     docx::extract_text(&mut package)
 }
 
@@ -62,7 +69,14 @@ pub fn extract_docx_structured_text(path: impl AsRef<Path>) -> Result<Extraction
 pub fn extract_docx_structured_text_from_reader<R: Read + Seek>(
     reader: R,
 ) -> Result<Extraction<StructuredText>> {
-    let mut package = OoxmlPackage::new(reader)?;
+    extract_docx_structured_text_from_reader_with_limits(reader, OoxmlLimits::default())
+}
+
+pub fn extract_docx_structured_text_from_reader_with_limits<R: Read + Seek>(
+    reader: R,
+    limits: OoxmlLimits,
+) -> Result<Extraction<StructuredText>> {
+    let mut package = OoxmlPackage::with_limits(reader, limits)?;
     docx::extract_structured_text(&mut package)
 }
 
@@ -74,7 +88,14 @@ pub fn extract_docx_tables(path: impl AsRef<Path>) -> Result<Extraction<DocxTabl
 pub fn extract_docx_tables_from_reader<R: Read + Seek>(
     reader: R,
 ) -> Result<Extraction<DocxTables>> {
-    let mut package = OoxmlPackage::new(reader)?;
+    extract_docx_tables_from_reader_with_limits(reader, OoxmlLimits::default())
+}
+
+pub fn extract_docx_tables_from_reader_with_limits<R: Read + Seek>(
+    reader: R,
+    limits: OoxmlLimits,
+) -> Result<Extraction<DocxTables>> {
+    let mut package = OoxmlPackage::with_limits(reader, limits)?;
     docx::extract_tables(&mut package)
 }
 
@@ -84,7 +105,14 @@ pub fn extract_pptx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {
 }
 
 pub fn extract_pptx_text_from_reader<R: Read + Seek>(reader: R) -> Result<Extraction<String>> {
-    let mut package = OoxmlPackage::new(reader)?;
+    extract_pptx_text_from_reader_with_limits(reader, OoxmlLimits::default())
+}
+
+pub fn extract_pptx_text_from_reader_with_limits<R: Read + Seek>(
+    reader: R,
+    limits: OoxmlLimits,
+) -> Result<Extraction<String>> {
+    let mut package = OoxmlPackage::with_limits(reader, limits)?;
     pptx::extract_text(&mut package)
 }
 
@@ -96,7 +124,14 @@ pub fn extract_pptx_structured_text(path: impl AsRef<Path>) -> Result<Extraction
 pub fn extract_pptx_structured_text_from_reader<R: Read + Seek>(
     reader: R,
 ) -> Result<Extraction<StructuredText>> {
-    let mut package = OoxmlPackage::new(reader)?;
+    extract_pptx_structured_text_from_reader_with_limits(reader, OoxmlLimits::default())
+}
+
+pub fn extract_pptx_structured_text_from_reader_with_limits<R: Read + Seek>(
+    reader: R,
+    limits: OoxmlLimits,
+) -> Result<Extraction<StructuredText>> {
+    let mut package = OoxmlPackage::with_limits(reader, limits)?;
     pptx::extract_structured_text(&mut package)
 }
 
@@ -133,7 +168,23 @@ pub fn extract_xlsx_csv_from_reader_with_value_mode<R: Read + Seek, W: Write>(
     value_mode: XlsxValueMode,
     writer: W,
 ) -> Result<Extraction<()>> {
-    let mut package = OoxmlPackage::new(reader)?;
+    extract_xlsx_csv_from_reader_with_value_mode_and_limits(
+        reader,
+        options,
+        value_mode,
+        writer,
+        OoxmlLimits::default(),
+    )
+}
+
+pub fn extract_xlsx_csv_from_reader_with_value_mode_and_limits<R: Read + Seek, W: Write>(
+    reader: R,
+    options: XlsxCsvOptions<'_>,
+    value_mode: XlsxValueMode,
+    writer: W,
+    limits: OoxmlLimits,
+) -> Result<Extraction<()>> {
+    let mut package = OoxmlPackage::with_limits(reader, limits)?;
     xlsx::write_csv(&mut package, options, value_mode, writer)
 }
 
@@ -208,7 +259,27 @@ where
     R: Read + Seek,
     F: FnMut(&XlsxRow) -> Result<XlsxRowControl>,
 {
-    let mut package = OoxmlPackage::new(reader)?;
+    visit_xlsx_rows_from_reader_with_limits(
+        reader,
+        options,
+        value_mode,
+        visitor,
+        OoxmlLimits::default(),
+    )
+}
+
+pub fn visit_xlsx_rows_from_reader_with_limits<R, F>(
+    reader: R,
+    options: XlsxSheetOptions<'_>,
+    value_mode: XlsxValueMode,
+    visitor: F,
+    limits: OoxmlLimits,
+) -> Result<Extraction<()>>
+where
+    R: Read + Seek,
+    F: FnMut(&XlsxRow) -> Result<XlsxRowControl>,
+{
+    let mut package = OoxmlPackage::with_limits(reader, limits)?;
     xlsx::visit_rows(&mut package, options, value_mode, visitor)
 }
 
@@ -250,7 +321,19 @@ pub fn list_xlsx_sheets_from_reader_with_hidden<R: Read + Seek>(
     reader: R,
     include_hidden: bool,
 ) -> Result<Extraction<Vec<XlsxSheet>>> {
-    let mut package = OoxmlPackage::new(reader)?;
+    list_xlsx_sheets_from_reader_with_hidden_and_limits(
+        reader,
+        include_hidden,
+        OoxmlLimits::default(),
+    )
+}
+
+pub fn list_xlsx_sheets_from_reader_with_hidden_and_limits<R: Read + Seek>(
+    reader: R,
+    include_hidden: bool,
+    limits: OoxmlLimits,
+) -> Result<Extraction<Vec<XlsxSheet>>> {
+    let mut package = OoxmlPackage::with_limits(reader, limits)?;
     xlsx::list_sheets(&mut package, include_hidden)
 }
 
@@ -282,7 +365,15 @@ pub fn read_info_from_reader<R: Read + Seek>(
     reader: R,
     file_name: impl Into<String>,
 ) -> Result<Extraction<DocumentInfo>> {
-    let mut package = OoxmlPackage::new(reader)?;
+    read_info_from_reader_with_limits(reader, file_name, OoxmlLimits::default())
+}
+
+pub fn read_info_from_reader_with_limits<R: Read + Seek>(
+    reader: R,
+    file_name: impl Into<String>,
+    limits: OoxmlLimits,
+) -> Result<Extraction<DocumentInfo>> {
+    let mut package = OoxmlPackage::with_limits(reader, limits)?;
     metadata::read_info(&mut package, file_name.into())
 }
 
@@ -302,6 +393,14 @@ pub fn read_audit_from_reader<R: Read + Seek>(
     reader: R,
     file_name: impl Into<String>,
 ) -> Result<Extraction<DocumentAudit>> {
-    let mut package = OoxmlPackage::new(reader)?;
+    read_audit_from_reader_with_limits(reader, file_name, OoxmlLimits::default())
+}
+
+pub fn read_audit_from_reader_with_limits<R: Read + Seek>(
+    reader: R,
+    file_name: impl Into<String>,
+    limits: OoxmlLimits,
+) -> Result<Extraction<DocumentAudit>> {
+    let mut package = OoxmlPackage::with_limits(reader, limits)?;
     parsers::audit::read_audit(&mut package, file_name.into())
 }

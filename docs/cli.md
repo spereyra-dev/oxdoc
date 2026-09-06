@@ -27,6 +27,25 @@ oxdoc --help
 | --- | --- | --- |
 | `--quiet`, `-q` | false | Suppress recoverable warnings. |
 | `--warnings text\|json\|none` | `text` | Choose warning output format. `json` emits one JSON object per warning to stderr. `none` suppresses warnings. |
+| `--max-input-size <BYTES>` | `67108864` (64 MiB) | Maximum compressed package size; also bounds the in-memory stdin buffer. |
+| `--max-package-uncompressed-size <BYTES>` | `268435456` (256 MiB) | Maximum combined uncompressed ZIP entry size. |
+| `--max-part-size <BYTES>` | `67108864` (64 MiB) | Maximum uncompressed size of one OOXML part. |
+| `--max-compression-ratio <N>` | `200` | Maximum allowed uncompressed-to-compressed ratio for checked parts. |
+
+All resource values are positive integer byte counts. The defaults are secure and
+preserve ordinary-document compatibility. Limit failures are typed: `E014` is an
+input-package-size failure, `E011` is an uncompressed-package-size failure, and
+the existing `E005`/`E006` errors cover an oversized part and a suspicious ZIP
+entry respectively.
+
+For serverless or multi-tenant deployments, set `--max-input-size` to the
+request-body limit and set package and part limits to one invocation's memory
+budget. File inputs are streamed from disk; stdin is deliberately buffered only
+up to `--max-input-size` because ZIP central-directory access requires a seekable
+source. The CLI never creates temporary files or spills stdin to a temporary
+directory. XLSX shared-string parsing retains its existing bounded spill-to-disk
+implementation for large workbooks; this release does not change that library
+temporary-file behavior.
 
 JSON warning records include stable machine-readable fields:
 

@@ -2386,6 +2386,61 @@ fn update_check_only_runs_successfully() {
 }
 
 #[test]
+fn rejects_stdin_larger_than_configured_input_limit() {
+    let output = oxdoc_with_stdin(
+        ["--max-input-size", "4", "extract", "text", "-"],
+        b"malicious oversized input",
+    );
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("error[E014]"));
+    assert!(stderr(&output).contains("limit is 4 bytes"));
+}
+
+#[test]
+fn rejects_ooxml_part_larger_than_configured_limit() {
+    let docx = create_ooxml(
+        "resource-limit.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                "<w:document xmlns:w=\"w\"><w:body><w:p><w:r><w:t>boundary</w:t></w:r></w:p></w:body></w:document>",
+            ),
+        ],
+    );
+
+    let output = oxdoc([
+        "--max-part-size",
+        "10",
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("error[E005]"));
+}
+
+#[test]
+fn rejects_package_larger_than_configured_uncompressed_limit() {
+    let docx = fixtures::build_package("docx/basic", "package-resource-limit.docx");
+    let output = oxdoc([
+        "--max-package-uncompressed-size",
+        "10",
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+    ]);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("error[E011]"));
+}
+
+#[test]
 fn update_with_current_version_runs_successfully() {
     let current = format!("v{}", env!("CARGO_PKG_VERSION"));
     let output = oxdoc(["update", "--version", &current]);
