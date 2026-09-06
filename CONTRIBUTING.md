@@ -52,6 +52,8 @@ Start with the issue's acceptance criteria and keep the PR limited to that slice
 - Link the issue or explain why no issue is needed.
 - Include a clear summary, risk notes, and the checks you ran.
 - Keep generated files, large binaries, and private documents out of the repo.
+- For fuzz findings, minimize and sanitize an input before retaining it under
+  `fuzz/regressions/`; do not commit raw corpora or crash artifacts.
 - Mark breaking changes, public API changes, or release/distribution changes clearly.
 - Use draft PRs for early feedback when the design is still moving.
 
