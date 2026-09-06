@@ -1,6 +1,6 @@
 # Installation
 
-`oxdoc` can be installed from GitHub Release binaries or built from source.
+`oxdoc` can be installed from GitHub Release binaries, crates.io, or source.
 
 ## Requirements
 
@@ -51,10 +51,11 @@ shasum -a 256 -c SHA256SUMS
 
 On Linux, `sha256sum -c SHA256SUMS` works too.
 
-## Homebrew
+## Homebrew (not yet published)
 
-The recommended Homebrew path is a tap. Once `spereyra-dev/homebrew-tap` is
-published, users install with:
+The project does not currently publish a Homebrew tap or formula, so there is
+no supported `brew install` command yet. When the tap is published, users will
+install with:
 
 ```bash
 brew tap spereyra-dev/tap
@@ -71,8 +72,6 @@ The formula builds from the tagged source with Cargo, which is the usual
 Homebrew path for Rust CLIs.
 
 ## Cargo
-
-After crates.io publication:
 
 ```bash
 cargo install oxdoc-cli
@@ -144,4 +143,7 @@ Then open:
 http://localhost:3000
 ```
 
-The repository includes a `docs` GitHub Actions workflow that validates the Docsify site, checks internal Markdown links, and confirms the published schema copies match `schemas/v1/`. Publishing the site through GitHub Pages requires enabling Pages for the repository in GitHub settings.
+The repository includes a `docs` GitHub Actions workflow that validates the Docsify site, checks internal Markdown links, and confirms the published schema copies match `schemas/v1/`. The site is published through GitHub Pages from `main`/`docs`.
+
+For the current distribution channel status and maintainer activation steps, see
+[Distribution Discoverability](discoverability.md).

@@ -12,7 +12,7 @@ From GitHub Releases on macOS/Linux:
 curl -fsSL https://raw.githubusercontent.com/spereyra-dev/oxdoc/main/install.sh | sh
 ```
 
-From crates.io after publication:
+From crates.io:
 
 ```bash
 cargo install oxdoc-cli

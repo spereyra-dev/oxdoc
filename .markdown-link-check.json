@@ -5,6 +5,9 @@
     },
     {
       "pattern": "^https://spereyra-dev.github.io/oxdoc/?$"
+    },
+    {
+      "pattern": "^https://crates.io/crates/oxdoc-cli/?$"
     }
   ]
 }
