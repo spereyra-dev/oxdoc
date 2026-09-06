@@ -137,10 +137,35 @@ oxdoc extract text contrato.docx --format json
 }
 ```
 
+## Visible-content policies
+
+The `DocxTextOptions` Rust type configures `extract_docx_text_with_options`
+and `extract_docx_structured_text_with_options` (and their reader variants).
+`Default`
+preserves the historical behavior exactly: hidden text, comments, and related
+parts are included; `Final` revisions are used; list markers are absent.
+
+The equivalent `oxdoc extract text` flags are:
+
+| Policy | Rust option | CLI flag | Default |
+| --- | --- | --- | --- |
+| Hidden runs | `include_hidden_text` | `--exclude-hidden-text` | included |
+| Comments part | `include_comments` | `--exclude-comments` | included |
+| Revisions | `revision_mode` | `--revisions final\|original\|all` | `final` |
+| Related parts | `include_related_parts` | `--exclude-related-parts` | included |
+| List markers | `include_list_markers` | `--include-list-markers` | omitted |
+
+`final` emits insertions and moved-to content; `original` emits deletions and
+moved-from content; `all` emits both in document order. Generated list markers
+are the stable plain-text prefix `- ` for paragraphs with `w:numPr`; numbering
+formats and indentation are intentionally not rendered. `--exclude-related-parts`
+takes precedence over `--exclude-comments`: no related part is read. Otherwise
+`--exclude-comments` omits only the comments relationship, leaving headers,
+footers, footnotes, and endnotes intact.
+
 ## Planned Improvements
 
 - Section-aware ordering for headers and footers.
-- Optional policy controls for hidden text, generated list markers, comments, related parts, and more detailed revision semantics.
 
 ## Non-Goals
 
