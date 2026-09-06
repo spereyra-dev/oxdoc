@@ -59,5 +59,6 @@ oxdoc audit report.docx --format json
 - CLI users should read [CLI Reference](cli.md).
 - Rust users should read [Library API](library-api.md).
 - Python users should read [Python Integration](python-integration.md).
+- Evaluate supported input/output behavior in the [Compatibility Playground](compatibility-playground.md).
 - Contributors should read [Architecture](architecture.md), [Testing Strategy](testing.md), and [Contributing](contributing.md).
 - Project planning lives in [Roadmap](roadmap.md).
