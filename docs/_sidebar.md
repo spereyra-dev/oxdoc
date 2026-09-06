@@ -13,6 +13,7 @@
   - [JSON Output](json-output.md)
   - [Library API](library-api.md)
   - [Python Integration](python-integration.md)
+  - [Compatibility Playground](compatibility-playground.md)
 
 - **Design**
   - [Architecture](architecture.md)
