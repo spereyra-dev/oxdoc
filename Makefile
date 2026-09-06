@@ -10,7 +10,7 @@ COVERAGE_THRESHOLD ?= 95
 
 .PHONY: help all ci ci-rust prepare-commit pre-push scripts-test
 .PHONY: fmt fmt-check check clippy lint test doctest python-test coverage coverage-html coverage-lcov audit memory-baselines competitor-workbench
-.PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check batch-manifest-spike tabular-ci install-tools clean clean-coverage
+.PHONY: build build-release release build-musl musl docs docs-serve docs-check docs-links docs-schemas-check docs-playground-check batch-manifest-spike tabular-ci install-tools clean clean-coverage
 
 help:
 	@echo "oxdoc development targets"
@@ -32,6 +32,7 @@ help:
 	@echo "  make docs             Serve Docsify locally"
 	@echo "  make docs-check       Validate Docsify serves locally"
 	@echo "  make docs-links       Validate README and Docsify Markdown links"
+	@echo "  make docs-playground-check Verify compatibility playground fixtures and generated output"
 	@echo "  make scripts-test     Test release/install helper scripts"
 	@echo "  make build-release    Build optimized release binary"
 	@echo "  make build-musl       Build static Linux musl binary"
@@ -39,7 +40,7 @@ help:
 
 all: ci
 
-ci: ci-rust scripts-test docs-check docs-links docs-schemas-check build-release
+ci: ci-rust scripts-test docs-check docs-links docs-schemas-check docs-playground-check build-release
 	@echo "All CI checks passed."
 
 ci-rust: fmt-check check clippy test doctest coverage
@@ -140,6 +141,9 @@ docs-links:
 
 docs-schemas-check:
 	@diff -ru schemas/v1 docs/schemas/v1
+
+docs-playground-check:
+	python3 scripts/compatibility-playground.py --check
 
 install-tools:
 	$(CARGO) install cargo-llvm-cov --locked

@@ -55,6 +55,7 @@ Key documentation pages:
 - [Peak Memory Baselines](docs/performance-memory-baselines.md)
 - [Competitive Workbench](docs/performance-competitors.md)
 - [Testing Strategy](docs/testing.md)
+- [Compatibility Playground](docs/compatibility-playground.md)
 - [Roadmap](docs/roadmap.md)
 - [Security](docs/security.md)
 
