@@ -3,8 +3,10 @@ use std::io::{self, Cursor, Read, Write};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::OnceLock;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use oxdoc_core::vfs::OoxmlLimits;
 use oxdoc_core::{
     AuditSignal, DocumentAudit, DocumentInfo, DocumentType, DocxRevisionMode, DocxTables,
     DocxTextOptions, OutputWarning, OxdocError, StructuredText, XlsxCell, XlsxCellValue,
@@ -13,6 +15,42 @@ use oxdoc_core::{
 use oxdoc_tabular::xlsx_schema;
 
 mod update;
+
+#[derive(Debug, Clone, Copy)]
+struct CliLimits {
+    max_input_size: u64,
+    ooxml: OoxmlLimits,
+}
+
+impl CliLimits {
+    fn new(
+        max_input_size: u64,
+        max_package_uncompressed_size: u64,
+        max_part_size: u64,
+        max_compression_ratio: u64,
+    ) -> Result<Self, CliError> {
+        if max_input_size == 0
+            || max_package_uncompressed_size == 0
+            || max_part_size == 0
+            || max_compression_ratio == 0
+        {
+            return Err(CliError::InvalidArgument(
+                "resource limits must be greater than zero".to_owned(),
+            ));
+        }
+        Ok(Self {
+            max_input_size,
+            ooxml: OoxmlLimits {
+                max_package_uncompressed_size,
+                max_part_uncompressed_size: max_part_size,
+                max_part_compression_ratio: max_compression_ratio,
+                ..OoxmlLimits::default()
+            },
+        })
+    }
+}
+
+static CLI_LIMITS: OnceLock<CliLimits> = OnceLock::new();
 
 #[derive(Debug, Parser)]
 #[command(
@@ -25,6 +63,18 @@ struct Cli {
     quiet: bool,
     #[arg(long, global = true, value_enum, default_value_t = WarningFormat::Text)]
     warnings: WarningFormat,
+    /// Maximum compressed input size in bytes (also bounds stdin buffering).
+    #[arg(long, global = true, default_value_t = 64 * 1024 * 1024u64)]
+    max_input_size: u64,
+    /// Maximum combined uncompressed ZIP entry size in bytes.
+    #[arg(long, global = true, default_value_t = 256 * 1024 * 1024u64)]
+    max_package_uncompressed_size: u64,
+    /// Maximum uncompressed size of one OOXML part in bytes.
+    #[arg(long, global = true, default_value_t = 64 * 1024 * 1024u64)]
+    max_part_size: u64,
+    /// Maximum uncompressed-to-compressed ratio for checked OOXML parts.
+    #[arg(long, global = true, default_value_t = 200u64)]
+    max_compression_ratio: u64,
     #[command(subcommand)]
     command: Command,
 }
@@ -49,6 +99,11 @@ enum Command {
     Infer {
         #[command(subcommand)]
         command: InferCommand,
+    },
+    /// Print local, non-sensitive environment and capability diagnostics
+    Diagnostics {
+        #[arg(long, value_enum, default_value_t = DiagnosticsFormat::Text)]
+        format: DiagnosticsFormat,
     },
     /// Check for a newer release and install it
     Update {
@@ -233,6 +288,12 @@ enum AuditFormat {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
+enum DiagnosticsFormat {
+    Text,
+    Json,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
 enum WarningFormat {
     Text,
     Json,
@@ -266,6 +327,13 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
+    let limits = CliLimits::new(
+        cli.max_input_size,
+        cli.max_package_uncompressed_size,
+        cli.max_part_size,
+        cli.max_compression_ratio,
+    )?;
+    let _ = CLI_LIMITS.set(limits);
     let warning_format = if cli.quiet {
         WarningFormat::None
     } else {
@@ -382,6 +450,7 @@ fn run() -> Result<(), CliError> {
                 warning_format,
             )?;
         }
+        Command::Diagnostics { format } => diagnostics_command(format)?,
         Command::Update { check, version } => {
             match update::run(check, version).map_err(CliError::Update)? {
                 update::UpdateOutcome::AlreadyUpToDate { version } => {
@@ -399,6 +468,49 @@ fn run() -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+fn diagnostics_command(format: DiagnosticsFormat) -> Result<(), CliError> {
+    let diagnostics = DiagnosticsPayload::current();
+    match format {
+        DiagnosticsFormat::Text => print_diagnostics(&diagnostics),
+        DiagnosticsFormat::Json => {
+            serde_json::to_writer_pretty(io::stdout().lock(), &diagnostics)?;
+            println!();
+        }
+    }
+    Ok(())
+}
+
+fn print_diagnostics(diagnostics: &DiagnosticsPayload) {
+    let enabled_features = diagnostics.enabled_features.join(", ");
+    println!("oxdoc diagnostics");
+    println!("version: {}", diagnostics.oxdoc_version);
+    println!(
+        "platform: {}/{}, {}",
+        diagnostics.platform.os, diagnostics.platform.arch, diagnostics.platform.family
+    );
+    println!(
+        "enabled features: {}",
+        if diagnostics.enabled_features.is_empty() {
+            "none"
+        } else {
+            &enabled_features
+        }
+    );
+    println!("limits:");
+    println!(
+        "  max part uncompressed size: {} bytes",
+        diagnostics.limits.max_part_uncompressed_size
+    );
+    println!(
+        "  max part compression ratio: {}",
+        diagnostics.limits.max_part_compression_ratio
+    );
+    println!(
+        "  minimum compression ratio check size: {} bytes",
+        diagnostics.limits.min_ratio_check_size
+    );
 }
 
 fn extract_text_command(
@@ -984,15 +1096,29 @@ enum Input {
     Stdin(Vec<u8>),
 }
 
+fn cli_limits() -> CliLimits {
+    *CLI_LIMITS
+        .get()
+        .expect("CLI limits are initialized before input is read")
+}
+
 impl Input {
     fn extract_docx_text_with_options(
         &self,
         options: DocxTextOptions,
     ) -> oxdoc_core::Result<oxdoc_core::Extraction<String>> {
         match self {
-            Input::Path(path) => oxdoc_core::extract_docx_text_with_options(path, options),
+            Input::Path(path) => oxdoc_core::extract_docx_text_from_reader_with_options_and_limits(
+                File::open(path)?,
+                options,
+                cli_limits().ooxml,
+            ),
             Input::Stdin(bytes) => {
-                oxdoc_core::extract_docx_text_from_reader_with_options(Cursor::new(bytes), options)
+                oxdoc_core::extract_docx_text_from_reader_with_options_and_limits(
+                    Cursor::new(bytes),
+                    options,
+                    cli_limits().ooxml,
+                )
             }
         }
     }
@@ -1010,12 +1136,17 @@ impl Input {
     ) -> oxdoc_core::Result<oxdoc_core::Extraction<StructuredText>> {
         match self {
             Input::Path(path) => {
-                oxdoc_core::extract_docx_structured_text_with_options(path, options)
+                oxdoc_core::extract_docx_structured_text_from_reader_with_options_and_limits(
+                    File::open(path)?,
+                    options,
+                    cli_limits().ooxml,
+                )
             }
             Input::Stdin(bytes) => {
-                oxdoc_core::extract_docx_structured_text_from_reader_with_options(
+                oxdoc_core::extract_docx_structured_text_from_reader_with_options_and_limits(
                     Cursor::new(bytes),
                     options,
+                    cli_limits().ooxml,
                 )
             }
         }
@@ -1023,8 +1154,14 @@ impl Input {
 
     fn extract_docx_tables(&self) -> oxdoc_core::Result<oxdoc_core::Extraction<DocxTables>> {
         match self {
-            Input::Path(path) => oxdoc_core::extract_docx_tables(path),
-            Input::Stdin(bytes) => oxdoc_core::extract_docx_tables_from_reader(Cursor::new(bytes)),
+            Input::Path(path) => oxdoc_core::extract_docx_tables_from_reader_with_limits(
+                File::open(path)?,
+                cli_limits().ooxml,
+            ),
+            Input::Stdin(bytes) => oxdoc_core::extract_docx_tables_from_reader_with_limits(
+                Cursor::new(bytes),
+                cli_limits().ooxml,
+            ),
         }
     }
 
@@ -1032,9 +1169,15 @@ impl Input {
         &self,
     ) -> oxdoc_core::Result<oxdoc_core::Extraction<StructuredText>> {
         match self {
-            Input::Path(path) => oxdoc_core::extract_pptx_structured_text(path),
+            Input::Path(path) => oxdoc_core::extract_pptx_structured_text_from_reader_with_limits(
+                File::open(path)?,
+                cli_limits().ooxml,
+            ),
             Input::Stdin(bytes) => {
-                oxdoc_core::extract_pptx_structured_text_from_reader(Cursor::new(bytes))
+                oxdoc_core::extract_pptx_structured_text_from_reader_with_limits(
+                    Cursor::new(bytes),
+                    cli_limits().ooxml,
+                )
             }
         }
     }
@@ -1047,14 +1190,23 @@ impl Input {
     ) -> oxdoc_core::Result<oxdoc_core::Extraction<()>> {
         match self {
             Input::Path(path) => {
-                oxdoc_core::extract_xlsx_csv_with_value_mode(path, options, value_mode, writer)
+                oxdoc_core::extract_xlsx_csv_from_reader_with_value_mode_and_limits(
+                    File::open(path)?,
+                    options,
+                    value_mode,
+                    writer,
+                    cli_limits().ooxml,
+                )
             }
-            Input::Stdin(bytes) => oxdoc_core::extract_xlsx_csv_from_reader_with_value_mode(
-                Cursor::new(bytes),
-                options,
-                value_mode,
-                writer,
-            ),
+            Input::Stdin(bytes) => {
+                oxdoc_core::extract_xlsx_csv_from_reader_with_value_mode_and_limits(
+                    Cursor::new(bytes),
+                    options,
+                    value_mode,
+                    writer,
+                    cli_limits().ooxml,
+                )
+            }
         }
     }
 
@@ -1068,12 +1220,19 @@ impl Input {
         F: FnMut(&XlsxRow) -> oxdoc_core::Result<XlsxRowControl>,
     {
         match self {
-            Input::Path(path) => oxdoc_core::visit_xlsx_rows(path, options, value_mode, visitor),
-            Input::Stdin(bytes) => oxdoc_core::visit_xlsx_rows_from_reader(
+            Input::Path(path) => oxdoc_core::visit_xlsx_rows_from_reader_with_limits(
+                File::open(path)?,
+                options,
+                value_mode,
+                visitor,
+                cli_limits().ooxml,
+            ),
+            Input::Stdin(bytes) => oxdoc_core::visit_xlsx_rows_from_reader_with_limits(
                 Cursor::new(bytes),
                 options,
                 value_mode,
                 visitor,
+                cli_limits().ooxml,
             ),
         }
     }
@@ -1083,10 +1242,15 @@ impl Input {
         include_hidden: bool,
     ) -> oxdoc_core::Result<oxdoc_core::Extraction<Vec<oxdoc_core::XlsxSheet>>> {
         match self {
-            Input::Path(path) => oxdoc_core::list_xlsx_sheets_with_hidden(path, include_hidden),
-            Input::Stdin(bytes) => oxdoc_core::list_xlsx_sheets_from_reader_with_hidden(
+            Input::Path(path) => oxdoc_core::list_xlsx_sheets_from_reader_with_hidden_and_limits(
+                File::open(path)?,
+                include_hidden,
+                cli_limits().ooxml,
+            ),
+            Input::Stdin(bytes) => oxdoc_core::list_xlsx_sheets_from_reader_with_hidden_and_limits(
                 Cursor::new(bytes),
                 include_hidden,
+                cli_limits().ooxml,
             ),
         }
     }
@@ -1096,8 +1260,16 @@ impl Input {
         file_name: String,
     ) -> oxdoc_core::Result<oxdoc_core::Extraction<DocumentInfo>> {
         match self {
-            Input::Path(path) => oxdoc_core::read_info(path),
-            Input::Stdin(bytes) => oxdoc_core::read_info_from_reader(Cursor::new(bytes), file_name),
+            Input::Path(path) => oxdoc_core::read_info_from_reader_with_limits(
+                File::open(path)?,
+                file_name,
+                cli_limits().ooxml,
+            ),
+            Input::Stdin(bytes) => oxdoc_core::read_info_from_reader_with_limits(
+                Cursor::new(bytes),
+                file_name,
+                cli_limits().ooxml,
+            ),
         }
     }
 
@@ -1106,10 +1278,16 @@ impl Input {
         file_name: String,
     ) -> oxdoc_core::Result<oxdoc_core::Extraction<DocumentAudit>> {
         match self {
-            Input::Path(path) => oxdoc_core::read_audit(path),
-            Input::Stdin(bytes) => {
-                oxdoc_core::read_audit_from_reader(Cursor::new(bytes), file_name)
-            }
+            Input::Path(path) => oxdoc_core::read_audit_from_reader_with_limits(
+                File::open(path)?,
+                file_name,
+                cli_limits().ooxml,
+            ),
+            Input::Stdin(bytes) => oxdoc_core::read_audit_from_reader_with_limits(
+                Cursor::new(bytes),
+                file_name,
+                cli_limits().ooxml,
+            ),
         }
     }
 
@@ -1124,9 +1302,28 @@ impl Input {
 fn read_input(file: &Path) -> Result<Input, CliError> {
     if file == Path::new("-") {
         let mut bytes = Vec::new();
-        io::stdin().lock().read_to_end(&mut bytes)?;
+        let limit = cli_limits().max_input_size;
+        io::stdin()
+            .lock()
+            .take(limit.saturating_add(1))
+            .read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > limit {
+            return Err(CliError::InputTooLarge {
+                size: bytes.len() as u64,
+                limit,
+            });
+        }
         Ok(Input::Stdin(bytes))
     } else {
+        let size = fs::metadata(file)
+            .map_err(|err| CliError::Core(OxdocError::Io(err)))?
+            .len();
+        if size > cli_limits().max_input_size {
+            return Err(CliError::InputTooLarge {
+                size,
+                limit: cli_limits().max_input_size,
+            });
+        }
         Ok(Input::Path(file.to_owned()))
     }
 }
@@ -1197,6 +1394,7 @@ enum CliError {
     Io(std::io::Error),
     Json(serde_json::Error),
     Update(String),
+    InputTooLarge { size: u64, limit: u64 },
 }
 
 impl CliError {
@@ -1207,6 +1405,7 @@ impl CliError {
             CliError::Io(_) => "E011",
             CliError::Json(_) => "E012",
             CliError::Update(_) => "E013",
+            CliError::InputTooLarge { .. } => "E014",
         }
     }
 }
@@ -1219,6 +1418,12 @@ impl std::fmt::Display for CliError {
             CliError::Io(err) => write!(f, "{err}"),
             CliError::Json(err) => write!(f, "{err}"),
             CliError::Update(message) => write!(f, "{message}"),
+            CliError::InputTooLarge { size, limit } => {
+                write!(
+                    f,
+                    "input package is too large: {size} bytes; limit is {limit} bytes"
+                )
+            }
         }
     }
 }
@@ -1231,6 +1436,7 @@ impl std::error::Error for CliError {
             CliError::Io(err) => Some(err),
             CliError::Json(err) => Some(err),
             CliError::Update(_) => None,
+            CliError::InputTooLarge { .. } => None,
         }
     }
 }
@@ -1429,6 +1635,54 @@ struct AuditPayload {
     oxdoc_version: &'static str,
     #[serde(flatten)]
     audit: DocumentAudit,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct DiagnosticsPayload {
+    schema_version: u8,
+    oxdoc_version: &'static str,
+    platform: DiagnosticsPlatform,
+    enabled_features: Vec<&'static str>,
+    limits: DiagnosticsLimits,
+}
+
+impl DiagnosticsPayload {
+    fn current() -> Self {
+        let limits = oxdoc_core::vfs::OoxmlLimits::default();
+        Self {
+            schema_version: 1,
+            oxdoc_version: env!("CARGO_PKG_VERSION"),
+            platform: DiagnosticsPlatform {
+                os: std::env::consts::OS,
+                arch: std::env::consts::ARCH,
+                family: std::env::consts::FAMILY,
+            },
+            enabled_features: enabled_features(),
+            limits: DiagnosticsLimits {
+                max_part_uncompressed_size: limits.max_part_uncompressed_size,
+                max_part_compression_ratio: limits.max_part_compression_ratio,
+                min_ratio_check_size: limits.min_ratio_check_size,
+            },
+        }
+    }
+}
+
+fn enabled_features() -> Vec<&'static str> {
+    Vec::new()
+}
+
+#[derive(Debug, serde::Serialize)]
+struct DiagnosticsPlatform {
+    os: &'static str,
+    arch: &'static str,
+    family: &'static str,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct DiagnosticsLimits {
+    max_part_uncompressed_size: u64,
+    max_part_compression_ratio: u64,
+    min_ratio_check_size: u64,
 }
 
 #[derive(Debug, serde::Serialize)]
