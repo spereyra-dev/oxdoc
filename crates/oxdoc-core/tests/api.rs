@@ -5,8 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use oxdoc_core::vfs::{OoxmlLimits, OoxmlPackage};
 use oxdoc_core::{
-    DocumentType, DocxTableBlock, DocxVerticalMerge, OxdocError, XlsxCellValue, XlsxCsvOptions,
-    XlsxReadOptions, XlsxRowControl, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
+    DocumentType, DocxRevisionMode, DocxTableBlock, DocxTextOptions, DocxVerticalMerge, OxdocError,
+    XlsxCellValue, XlsxCsvOptions, XlsxReadOptions, XlsxRowControl, XlsxSheetOptions,
+    XlsxSheetVisibility, XlsxValueMode,
 };
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -39,6 +40,26 @@ fn extracts_docx_text_from_read_seek_reader() {
         fixtures::read_snapshot("docx_basic_text.txt").trim_end()
     );
     assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn applies_docx_text_options_through_public_api() {
+    let file = fixtures::build_package("docx/policies", "policies.docx");
+    let default = oxdoc_core::extract_docx_text(&file).unwrap();
+    assert_eq!(default.value, "List item\nHiddenInserted\nComment\n");
+
+    let extraction = oxdoc_core::extract_docx_text_with_options(
+        &file,
+        DocxTextOptions {
+            include_hidden_text: false,
+            include_comments: false,
+            revision_mode: DocxRevisionMode::Original,
+            include_related_parts: false,
+            include_list_markers: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(extraction.value, "- List item\nDeleted\n");
 }
 
 #[test]

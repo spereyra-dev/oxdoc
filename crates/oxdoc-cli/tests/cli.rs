@@ -26,6 +26,25 @@ fn extracts_text_to_stdout() {
 }
 
 #[test]
+fn applies_docx_visible_content_flags() {
+    let docx = fixtures::build_package("docx/policies", "policies-cli.docx");
+    let output = oxdoc([
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+        "--exclude-hidden-text",
+        "--exclude-comments",
+        "--exclude-related-parts",
+        "--revisions",
+        "original",
+        "--include-list-markers",
+    ]);
+
+    assert!(output.status.success());
+    assert_eq!(stdout(&output), "- List item\nDeleted\n");
+}
+
+#[test]
 fn extracts_text_as_json() {
     let docx = fixtures::build_package("docx/basic", "fixture.docx");
 

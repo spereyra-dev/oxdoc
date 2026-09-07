@@ -5,9 +5,9 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::models::{
-    DocxTableBlock as PublicDocxTableBlock, DocxTableCell as PublicDocxTableCell,
-    DocxTableRow as PublicDocxTableRow, DocxTables, Extraction, OutputWarning, StructuredText,
-    TextBlock,
+    DocxRevisionMode, DocxTableBlock as PublicDocxTableBlock, DocxTableCell as PublicDocxTableCell,
+    DocxTableRow as PublicDocxTableRow, DocxTables, DocxTextOptions, Extraction, OutputWarning,
+    StructuredText, TextBlock,
 };
 use crate::parsers::find_office_document_path;
 use crate::parsers::{
@@ -19,14 +19,18 @@ use crate::{OxdocError, Result};
 
 pub(crate) fn extract_text<R: Read + Seek>(
     package: &mut OoxmlPackage<R>,
+    options: DocxTextOptions,
 ) -> Result<Extraction<String>> {
     let document_path = find_office_document_path(package, "word/document.xml")?;
-    let document = extract_part_text(package, &document_path)?;
+    let document = extract_part_text(package, &document_path, options)?;
     let relationships_path = rels_path_for(&document_path);
 
     let mut text = document.value;
     let mut warnings = document.warnings;
 
+    if !options.include_related_parts {
+        return Ok(Extraction::with_warnings(text, warnings));
+    }
     let relationships_xml = match package.read_to_string(&relationships_path) {
         Ok(xml) => xml,
         Err(OxdocError::MissingPart(_)) => return Ok(Extraction::with_warnings(text, warnings)),
@@ -34,7 +38,7 @@ pub(crate) fn extract_text<R: Read + Seek>(
     };
 
     for relationship in parse_relationships(&relationships_xml, &relationships_path)? {
-        if !is_related_docx_text_part(relationship.relationship_type.as_deref()) {
+        if !is_related_docx_text_part(relationship.relationship_type.as_deref(), options) {
             continue;
         }
 
@@ -43,7 +47,7 @@ pub(crate) fn extract_text<R: Read + Seek>(
             &relationship,
             &relationships_path,
         )?;
-        match extract_part_text(package, &part_path) {
+        match extract_part_text(package, &part_path, options) {
             Ok(part) => {
                 append_related_text(&mut text, &part.value);
                 warnings.extend(part.warnings);
@@ -61,13 +65,23 @@ pub(crate) fn extract_text<R: Read + Seek>(
 
 pub(crate) fn extract_structured_text<R: Read + Seek>(
     package: &mut OoxmlPackage<R>,
+    options: DocxTextOptions,
 ) -> Result<Extraction<StructuredText>> {
     let document_path = find_office_document_path(package, "word/document.xml")?;
-    let document = extract_part_text(package, &document_path)?;
+    let document = extract_part_text(package, &document_path, options)?;
     let mut blocks = Vec::new();
     push_text_block(&mut blocks, "main", &document_path, document.value);
     let mut warnings = document.warnings;
 
+    if !options.include_related_parts {
+        return Ok(Extraction::with_warnings(
+            StructuredText {
+                document_type: "docx".to_owned(),
+                blocks,
+            },
+            warnings,
+        ));
+    }
     let relationships_path = rels_path_for(&document_path);
     let relationships_xml = match package.read_to_string(&relationships_path) {
         Ok(xml) => xml,
@@ -85,7 +99,7 @@ pub(crate) fn extract_structured_text<R: Read + Seek>(
 
     for relationship in parse_relationships(&relationships_xml, &relationships_path)? {
         let Some(part_type) =
-            related_docx_text_part_type(relationship.relationship_type.as_deref())
+            related_docx_text_part_type(relationship.relationship_type.as_deref(), options)
         else {
             continue;
         };
@@ -95,7 +109,7 @@ pub(crate) fn extract_structured_text<R: Read + Seek>(
             &relationship,
             &relationships_path,
         )?;
-        match extract_part_text(package, &part_path) {
+        match extract_part_text(package, &part_path, options) {
             Ok(part) => {
                 push_text_block(&mut blocks, part_type, &part_path, part.value);
                 warnings.extend(part.warnings);
@@ -119,12 +133,22 @@ pub(crate) fn extract_structured_text<R: Read + Seek>(
 
 pub(crate) fn extract_tables<R: Read + Seek>(
     package: &mut OoxmlPackage<R>,
+    options: DocxTextOptions,
 ) -> Result<Extraction<DocxTables>> {
     let document_path = find_office_document_path(package, "word/document.xml")?;
-    let document = extract_part_tables(package, &document_path, "main")?;
+    let document = extract_part_tables(package, &document_path, "main", options)?;
     let mut tables = public_tables_for_part(document.value, "main", &document_path);
     let mut warnings = document.warnings;
 
+    if !options.include_related_parts {
+        return Ok(Extraction::with_warnings(
+            DocxTables {
+                document_type: "docx".to_owned(),
+                tables,
+            },
+            warnings,
+        ));
+    }
     let relationships_path = rels_path_for(&document_path);
     let relationships_xml = match package.read_to_string(&relationships_path) {
         Ok(xml) => xml,
@@ -142,7 +166,7 @@ pub(crate) fn extract_tables<R: Read + Seek>(
 
     for relationship in parse_relationships(&relationships_xml, &relationships_path)? {
         let Some(part_type) =
-            related_docx_text_part_type(relationship.relationship_type.as_deref())
+            related_docx_text_part_type(relationship.relationship_type.as_deref(), options)
         else {
             continue;
         };
@@ -152,7 +176,7 @@ pub(crate) fn extract_tables<R: Read + Seek>(
             &relationship,
             &relationships_path,
         )?;
-        match extract_part_tables(package, &part_path, part_type) {
+        match extract_part_tables(package, &part_path, part_type, options) {
             Ok(part) => {
                 tables.extend(public_tables_for_part(part.value, part_type, &part_path));
                 warnings.extend(part.warnings);
@@ -177,10 +201,11 @@ pub(crate) fn extract_tables<R: Read + Seek>(
 fn extract_part_text<R: Read + Seek>(
     package: &mut OoxmlPackage<R>,
     path: &str,
+    options: DocxTextOptions,
 ) -> Result<Extraction<String>> {
     package.with_entry(path, |entry| {
         let reader = BufReader::new(entry);
-        extract_xml_text(reader, path)
+        extract_xml_text(reader, path, options)
     })
 }
 
@@ -188,18 +213,22 @@ fn extract_part_tables<R: Read + Seek>(
     package: &mut OoxmlPackage<R>,
     path: &str,
     _part_type: &str,
+    options: DocxTextOptions,
 ) -> Result<Extraction<Vec<DocxTable>>> {
     package.with_entry(path, |entry| {
         let reader = BufReader::new(entry);
-        parse_xml_tables(reader, path)
+        parse_xml_tables(reader, path, options)
     })
 }
 
-fn is_related_docx_text_part(relationship_type: Option<&str>) -> bool {
-    related_docx_text_part_type(relationship_type).is_some()
+fn is_related_docx_text_part(relationship_type: Option<&str>, options: DocxTextOptions) -> bool {
+    related_docx_text_part_type(relationship_type, options).is_some()
 }
 
-fn related_docx_text_part_type(relationship_type: Option<&str>) -> Option<&'static str> {
+fn related_docx_text_part_type(
+    relationship_type: Option<&str>,
+    options: DocxTextOptions,
+) -> Option<&'static str> {
     let kind = relationship_type?;
     if kind.ends_with("/header") {
         Some("header")
@@ -209,7 +238,7 @@ fn related_docx_text_part_type(relationship_type: Option<&str>) -> Option<&'stat
         Some("footnotes")
     } else if kind.ends_with("/endnotes") {
         Some("endnotes")
-    } else if kind.ends_with("/comments") {
+    } else if options.include_comments && kind.ends_with("/comments") {
         Some("comments")
     } else {
         None
@@ -308,14 +337,21 @@ fn public_vertical_merge(value: DocxVerticalMerge) -> crate::models::DocxVertica
     }
 }
 
-fn extract_xml_text<R: BufRead>(source: R, path: &str) -> Result<Extraction<String>> {
+fn extract_xml_text<R: BufRead>(
+    source: R,
+    path: &str,
+    options: DocxTextOptions,
+) -> Result<Extraction<String>> {
     let mut reader = Reader::from_reader(source);
     reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
     let mut text = String::new();
     let mut warnings = Vec::new();
     let mut in_text_node = false;
-    let mut deleted_revision_depth = 0usize;
+    let mut excluded_revision_depth = 0usize;
+    let mut run_hidden = Vec::new();
+    let mut list_paragraph = false;
+    let mut list_marker_emitted = false;
     let mut table_contexts = Vec::new();
     let mut pending_cell_paragraph_separator = false;
     let mut decoded = String::new();
@@ -323,8 +359,19 @@ fn extract_xml_text<R: BufRead>(source: R, path: &str) -> Result<Extraction<Stri
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) => {
-                if is_deleted_revision(element.name().as_ref()) {
-                    deleted_revision_depth += 1;
+                if is_excluded_revision(element.name().as_ref(), options.revision_mode) {
+                    excluded_revision_depth += 1;
+                } else if name_eq(element.name().as_ref(), b"r") {
+                    run_hidden.push(false);
+                } else if name_eq(element.name().as_ref(), b"vanish") {
+                    if let Some(hidden) = run_hidden.last_mut() {
+                        *hidden = true;
+                    }
+                } else if name_eq(element.name().as_ref(), b"numPr") {
+                    list_paragraph = true;
+                } else if name_eq(element.name().as_ref(), b"p") {
+                    list_paragraph = false;
+                    list_marker_emitted = false;
                 } else if name_eq(element.name().as_ref(), b"tbl") {
                     if in_table_cell(&table_contexts) {
                         flush_cell_paragraph_separator(
@@ -343,47 +390,77 @@ fn extract_xml_text<R: BufRead>(source: R, path: &str) -> Result<Extraction<Stri
                 {
                     table.start_cell(&mut text);
                     pending_cell_paragraph_separator = false;
-                } else if deleted_revision_depth == 0 && name_eq(element.name().as_ref(), b"t") {
+                } else if excluded_revision_depth == 0
+                    && (options.include_hidden_text || !run_hidden.last().copied().unwrap_or(false))
+                    && is_docx_text_element(element.name().as_ref(), options.revision_mode)
+                {
+                    if options.include_list_markers && list_paragraph && !list_marker_emitted {
+                        push_text(&mut text, "- ", &mut pending_cell_paragraph_separator);
+                        list_marker_emitted = true;
+                    }
                     in_text_node = true;
                 }
             }
-            Ok(Event::Empty(element)) if deleted_revision_depth == 0 => {
-                if name_eq(element.name().as_ref(), b"tab") {
+            Ok(Event::Empty(element)) if excluded_revision_depth == 0 => {
+                if name_eq(element.name().as_ref(), b"vanish") {
+                    if let Some(hidden) = run_hidden.last_mut() {
+                        *hidden = true;
+                    }
+                } else if name_eq(element.name().as_ref(), b"numPr") {
+                    list_paragraph = true;
+                } else if name_eq(element.name().as_ref(), b"tab")
+                    && (options.include_hidden_text || !run_hidden.last().copied().unwrap_or(false))
+                {
                     flush_cell_paragraph_separator(
                         &mut text,
                         &mut pending_cell_paragraph_separator,
                     );
                     text.push('\t');
-                } else if name_eq(element.name().as_ref(), b"br")
-                    || name_eq(element.name().as_ref(), b"cr")
+                } else if (name_eq(element.name().as_ref(), b"br")
+                    || name_eq(element.name().as_ref(), b"cr"))
+                    && (options.include_hidden_text || !run_hidden.last().copied().unwrap_or(false))
                 {
                     pending_cell_paragraph_separator = false;
                     push_newline(&mut text);
                 }
             }
-            Ok(Event::Text(value)) if in_text_node => {
+            Ok(Event::Text(value))
+                if in_text_node
+                    && (options.include_hidden_text
+                        || !run_hidden.last().copied().unwrap_or(false)) =>
+            {
                 decoded.clear();
                 append_decoded_xml_text(value.as_ref(), &mut decoded);
                 push_text(&mut text, &decoded, &mut pending_cell_paragraph_separator);
             }
-            Ok(Event::CData(value)) if in_text_node => {
+            Ok(Event::CData(value))
+                if in_text_node
+                    && (options.include_hidden_text
+                        || !run_hidden.last().copied().unwrap_or(false)) =>
+            {
                 decoded.clear();
                 append_decoded_xml_text(value.as_ref(), &mut decoded);
                 push_text(&mut text, &decoded, &mut pending_cell_paragraph_separator);
             }
-            Ok(Event::GeneralRef(value)) if in_text_node => {
+            Ok(Event::GeneralRef(value))
+                if in_text_node
+                    && (options.include_hidden_text
+                        || !run_hidden.last().copied().unwrap_or(false)) =>
+            {
                 decoded.clear();
                 append_decoded_xml_reference(value.as_ref(), &mut decoded);
                 push_text(&mut text, &decoded, &mut pending_cell_paragraph_separator);
             }
             Ok(Event::End(element)) => {
-                if name_eq(element.name().as_ref(), b"t") {
+                if is_docx_text_element(element.name().as_ref(), options.revision_mode) {
                     in_text_node = false;
-                } else if is_deleted_revision(element.name().as_ref()) {
-                    deleted_revision_depth = deleted_revision_depth.saturating_sub(1);
+                } else if is_excluded_revision(element.name().as_ref(), options.revision_mode) {
+                    excluded_revision_depth = excluded_revision_depth.saturating_sub(1);
                     in_text_node = false;
+                } else if name_eq(element.name().as_ref(), b"r") {
+                    run_hidden.pop();
                 } else if name_eq(element.name().as_ref(), b"p") {
-                    if deleted_revision_depth == 0 {
+                    if excluded_revision_depth == 0 {
                         if in_table_cell(&table_contexts) {
                             pending_cell_paragraph_separator = !text.is_empty();
                         } else {
@@ -459,7 +536,11 @@ enum DocxCellBlock {
     Table(DocxTable),
 }
 
-fn parse_xml_tables<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<DocxTable>>> {
+fn parse_xml_tables<R: BufRead>(
+    source: R,
+    path: &str,
+    options: DocxTextOptions,
+) -> Result<Extraction<Vec<DocxTable>>> {
     let mut reader = Reader::from_reader(source);
     reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
@@ -467,7 +548,7 @@ fn parse_xml_tables<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<
     let mut table_stack = Vec::<DocxTableBuilder>::new();
     let mut paragraph = None::<String>;
     let mut in_text_node = false;
-    let mut deleted_revision_depth = 0usize;
+    let mut excluded_revision_depth = 0usize;
     let mut warnings = Vec::new();
     let mut decoded = String::new();
     let mut malformed = false;
@@ -475,9 +556,9 @@ fn parse_xml_tables<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) => {
-                if is_deleted_revision(element.name().as_ref()) {
+                if is_excluded_revision(element.name().as_ref(), options.revision_mode) {
                     mark_current_row_deleted(&mut table_stack);
-                    deleted_revision_depth += 1;
+                    excluded_revision_depth += 1;
                 } else if name_eq(element.name().as_ref(), b"tbl") {
                     table_stack.push(DocxTableBuilder::default());
                 } else if name_eq(element.name().as_ref(), b"gridCol") {
@@ -510,15 +591,15 @@ fn parse_xml_tables<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<
                     && current_table_has_cell(&table_stack)
                 {
                     paragraph = Some(String::new());
-                } else if deleted_revision_depth == 0
+                } else if excluded_revision_depth == 0
                     && paragraph.is_some()
                     && name_eq(element.name().as_ref(), b"t")
                 {
                     in_text_node = true;
                 }
             }
-            Ok(Event::Empty(element)) if deleted_revision_depth == 0 => {
-                if is_deleted_revision(element.name().as_ref()) {
+            Ok(Event::Empty(element)) if excluded_revision_depth == 0 => {
+                if is_excluded_revision(element.name().as_ref(), options.revision_mode) {
                     mark_current_row_deleted(&mut table_stack);
                 } else if name_eq(element.name().as_ref(), b"gridCol") {
                     count_grid_column(&mut table_stack);
@@ -544,21 +625,21 @@ fn parse_xml_tables<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<
                     }
                 }
             }
-            Ok(Event::Text(value)) if in_text_node && deleted_revision_depth == 0 => {
+            Ok(Event::Text(value)) if in_text_node && excluded_revision_depth == 0 => {
                 decoded.clear();
                 append_decoded_xml_text(value.as_ref(), &mut decoded);
                 if let Some(paragraph) = paragraph.as_mut() {
                     paragraph.push_str(&decoded);
                 }
             }
-            Ok(Event::CData(value)) if in_text_node && deleted_revision_depth == 0 => {
+            Ok(Event::CData(value)) if in_text_node && excluded_revision_depth == 0 => {
                 decoded.clear();
                 append_decoded_xml_text(value.as_ref(), &mut decoded);
                 if let Some(paragraph) = paragraph.as_mut() {
                     paragraph.push_str(&decoded);
                 }
             }
-            Ok(Event::GeneralRef(value)) if in_text_node && deleted_revision_depth == 0 => {
+            Ok(Event::GeneralRef(value)) if in_text_node && excluded_revision_depth == 0 => {
                 decoded.clear();
                 append_decoded_xml_reference(value.as_ref(), &mut decoded);
                 if let Some(paragraph) = paragraph.as_mut() {
@@ -568,8 +649,8 @@ fn parse_xml_tables<R: BufRead>(source: R, path: &str) -> Result<Extraction<Vec<
             Ok(Event::End(element)) => {
                 if name_eq(element.name().as_ref(), b"t") {
                     in_text_node = false;
-                } else if is_deleted_revision(element.name().as_ref()) {
-                    deleted_revision_depth = deleted_revision_depth.saturating_sub(1);
+                } else if is_excluded_revision(element.name().as_ref(), options.revision_mode) {
+                    excluded_revision_depth = excluded_revision_depth.saturating_sub(1);
                     in_text_node = false;
                 } else if name_eq(element.name().as_ref(), b"p") {
                     if let Some(paragraph) = paragraph.take()
@@ -722,8 +803,16 @@ fn mark_current_row_deleted(tables: &mut [DocxTableBuilder]) {
     }
 }
 
-fn is_deleted_revision(name: &[u8]) -> bool {
-    name_eq(name, b"del") || name_eq(name, b"moveFrom")
+fn is_excluded_revision(name: &[u8], mode: DocxRevisionMode) -> bool {
+    match mode {
+        DocxRevisionMode::Final => name_eq(name, b"del") || name_eq(name, b"moveFrom"),
+        DocxRevisionMode::Original => name_eq(name, b"ins") || name_eq(name, b"moveTo"),
+        DocxRevisionMode::All => false,
+    }
+}
+
+fn is_docx_text_element(name: &[u8], mode: DocxRevisionMode) -> bool {
+    name_eq(name, b"t") || (!matches!(mode, DocxRevisionMode::Final) && name_eq(name, b"delText"))
 }
 
 fn apply_row_grid_offset(
@@ -841,8 +930,16 @@ fn apply_cell_vertical_merge(
 
 #[doc(hidden)]
 pub fn fuzz_extract_text(xml: &[u8]) -> Result<()> {
-    let _ = extract_xml_text(Cursor::new(xml), "word/document.xml")?;
-    let _ = parse_xml_tables(Cursor::new(xml), "word/document.xml")?;
+    let _ = extract_xml_text(
+        Cursor::new(xml),
+        "word/document.xml",
+        DocxTextOptions::default(),
+    )?;
+    let _ = parse_xml_tables(
+        Cursor::new(xml),
+        "word/document.xml",
+        DocxTextOptions::default(),
+    )?;
     Ok(())
 }
 
@@ -920,6 +1017,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{DocxCellBlock, DocxVerticalMerge, extract_xml_text, parse_xml_tables};
+    use crate::models::{DocxRevisionMode, DocxTextOptions};
 
     fn fixture_path(path: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -952,17 +1050,52 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let result = extract_xml_text(
+            Cursor::new(xml.as_bytes()),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.value, "Hola\tMundo\nSegundo & final\n");
         assert!(result.warnings.is_empty());
     }
 
     #[test]
+    fn applies_visible_content_policies() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+          <w:p><w:pPr><w:numPr/></w:pPr><w:r><w:t>listed</w:t></w:r></w:p>
+          <w:p><w:r><w:rPr><w:vanish/></w:rPr><w:t>hidden</w:t></w:r><w:del><w:r><w:delText>old</w:delText></w:r></w:del><w:ins><w:r><w:t>new</w:t></w:r></w:ins></w:p>
+        </w:body></w:document>"#;
+        let default = extract_xml_text(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(default.value, "listed\nhiddennew\n");
+
+        let options = DocxTextOptions {
+            include_hidden_text: false,
+            include_comments: true,
+            revision_mode: DocxRevisionMode::Original,
+            include_related_parts: true,
+            include_list_markers: true,
+        };
+        let result = extract_xml_text(Cursor::new(xml), "word/document.xml", options).unwrap();
+        assert_eq!(result.value, "- listed\nold\n");
+    }
+
+    #[test]
     fn returns_partial_text_after_malformed_xml() {
         let xml = br#"<w:document><w:p><w:r><w:t>Hola</w:t></w:r></w:p><"#;
 
-        let result = extract_xml_text(Cursor::new(xml.as_slice()), "word/document.xml").unwrap();
+        let result = extract_xml_text(
+            Cursor::new(xml.as_slice()),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.value, "Hola\n");
         assert_eq!(result.warnings.len(), 1);
@@ -979,8 +1112,18 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
-        let empty = extract_xml_text(Cursor::new(b"<w:document/>"), "word/document.xml").unwrap();
+        let result = extract_xml_text(
+            Cursor::new(xml.as_bytes()),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
+        let empty = extract_xml_text(
+            Cursor::new(b"<w:document/>"),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.value, "A < B\nC\n");
         assert!(empty.value.is_empty());
@@ -996,7 +1139,12 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let result = extract_xml_text(
+            Cursor::new(xml.as_bytes()),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.value, "Drawing text\n");
     }
@@ -1023,7 +1171,12 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let result = extract_xml_text(
+            Cursor::new(xml.as_bytes()),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.value, "A\tB\nC one C two\tD\n");
     }
@@ -1050,7 +1203,12 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let result = extract_xml_text(
+            Cursor::new(xml.as_bytes()),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.value, "Outer Inner\tSibling\n");
     }
@@ -1069,7 +1227,12 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let result = extract_xml_text(
+            Cursor::new(xml.as_bytes()),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.value, "Keep inserted\n");
     }
@@ -1097,7 +1260,12 @@ mod tests {
             </w:document>
         "#;
 
-        let result = extract_xml_text(Cursor::new(xml.as_bytes()), "word/document.xml").unwrap();
+        let result = extract_xml_text(
+            Cursor::new(xml.as_bytes()),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.value, "List item\n2026-04-14\nHidden text\n");
     }
@@ -1135,7 +1303,12 @@ mod tests {
             </w:document>
         "#;
 
-        let result = parse_xml_tables(Cursor::new(xml), "word/document.xml").unwrap();
+        let result = parse_xml_tables(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert!(result.warnings.is_empty());
         assert_eq!(result.value.len(), 1);
@@ -1181,7 +1354,12 @@ mod tests {
             </w:document>
         "#;
 
-        let result = parse_xml_tables(Cursor::new(xml), "word/document.xml").unwrap();
+        let result = parse_xml_tables(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
         let outer = &result.value[0];
         let first_cell = &outer.rows[0].cells[0];
 
@@ -1227,7 +1405,12 @@ mod tests {
             </w:document>
         "#;
 
-        let result = parse_xml_tables(Cursor::new(xml), "word/document.xml").unwrap();
+        let result = parse_xml_tables(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(
             result.value[0].rows[0].cells[0].blocks,
@@ -1247,7 +1430,12 @@ mod tests {
             </w:hdr>
         "#;
 
-        let result = parse_xml_tables(Cursor::new(xml), "word/header1.xml").unwrap();
+        let result = parse_xml_tables(
+            Cursor::new(xml),
+            "word/header1.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert!(result.warnings.is_empty());
         assert_eq!(
@@ -1260,7 +1448,12 @@ mod tests {
     fn fixture_table_semantics_match_structural_parser_contract() {
         let xml = read_fixture("table-semantics/document.xml");
 
-        let result = parse_xml_tables(Cursor::new(xml), "word/document.xml").unwrap();
+        let result = parse_xml_tables(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.warnings.len(), 2);
         assert!(
@@ -1311,7 +1504,12 @@ mod tests {
     fn fixture_malformed_table_returns_closed_prefix_and_warning() {
         let xml = read_fixture("malformed-table/document.xml");
 
-        let result = parse_xml_tables(Cursor::new(xml), "word/document.xml").unwrap();
+        let result = parse_xml_tables(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.value.len(), 1);
         assert_eq!(result.value[0].rows.len(), 1);
@@ -1340,7 +1538,8 @@ mod tests {
 
         for (path, expected) in parts {
             let xml = read_fixture(path);
-            let result = parse_xml_tables(Cursor::new(xml), path).unwrap();
+            let result =
+                parse_xml_tables(Cursor::new(xml), path, DocxTextOptions::default()).unwrap();
 
             assert_eq!(result.value.len(), 1, "{path}");
             assert_eq!(
@@ -1369,7 +1568,12 @@ mod tests {
                   <
         "#;
 
-        let result = parse_xml_tables(Cursor::new(xml.as_slice()), "word/header1.xml").unwrap();
+        let result = parse_xml_tables(
+            Cursor::new(xml.as_slice()),
+            "word/header1.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.value.len(), 2);
         assert_eq!(
