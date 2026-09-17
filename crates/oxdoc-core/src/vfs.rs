@@ -109,9 +109,17 @@ impl<R: Read + Seek> OoxmlPackage<R> {
         (0..self.archive.len())
             .filter_map(|index| {
                 self.archive.by_index(index).ok().and_then(|entry| {
-                    entry
-                        .enclosed_name()
-                        .and_then(|path| path.to_str().map(str::to_owned))
+                    entry.enclosed_name().and_then(|path| {
+                        // Rebuild with forward slashes: `PathBuf::to_str`
+                        // yields platform separators (backslashes on Windows),
+                        // which would break OOXML part lookups.
+                        let name = path
+                            .components()
+                            .map(|component| component.as_os_str().to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .join("/");
+                        (!name.is_empty()).then_some(name)
+                    })
                 })
             })
             .collect()

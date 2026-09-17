@@ -6,7 +6,9 @@ use quick_xml::events::Event;
 
 use crate::Result;
 use crate::models::{DocumentInfo, Extraction, OutputWarning};
-use crate::parsers::{append_decoded_xml_reference, append_decoded_xml_text, attr_value, name_eq};
+use crate::parsers::{
+    append_decoded_xml_reference, append_decoded_xml_text, attr_value, local_name, name_eq,
+};
 use crate::vfs::OoxmlPackage;
 
 const MACRO_PARTS: &[&str] = &[
@@ -160,7 +162,7 @@ fn parse_core<R: BufRead>(source: R, path: &str) -> Result<Extraction<CoreProps>
             Ok(Event::End(element))
                 if current_field
                     .as_deref()
-                    .is_some_and(|field| name_eq(element.name().as_ref(), field)) =>
+                    .is_some_and(|field| name_eq(element.name().as_ref(), local_name(field))) =>
             {
                 current_field = None;
             }
@@ -221,7 +223,7 @@ fn parse_app<R: BufRead>(source: R, path: &str) -> Result<Extraction<AppProps>> 
             Ok(Event::End(element))
                 if current_field
                     .as_deref()
-                    .is_some_and(|field| name_eq(element.name().as_ref(), field)) =>
+                    .is_some_and(|field| name_eq(element.name().as_ref(), local_name(field))) =>
             {
                 current_field = None;
             }
