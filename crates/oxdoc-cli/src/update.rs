@@ -279,13 +279,21 @@ mod tests {
 
     #[test]
     fn detects_target_for_current_platform() {
-        // Should not error on CI/dev machines (Linux x86_64 or macOS arm64/x86_64)
+        // Linux and macOS have release artifacts; other platforms (e.g.
+        // Windows) are intentionally unsupported for self-update.
         let result = detect_target();
-        assert!(
-            result.is_ok(),
-            "detect_target() failed on this platform: {:?}",
-            result
-        );
+        match std::env::consts::OS {
+            "linux" | "macos" => assert!(
+                result.is_ok(),
+                "detect_target() failed on this platform: {:?}",
+                result
+            ),
+            _ => assert!(
+                result.is_err(),
+                "detect_target() unexpectedly succeeded on this platform: {:?}",
+                result
+            ),
+        }
     }
 
     #[test]
@@ -421,8 +429,16 @@ mod tests {
 
         std::thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
+                use std::io::Read as _;
+                // Consume the request before responding; otherwise Windows
+                // aborts the connection (WSAECONNABORTED) while the client
+                // still has unread data in flight.
+                let mut request = [0_u8; 1024];
+                let _ = stream.read(&mut request);
                 let response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
                 let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+                let _ = stream.shutdown(std::net::Shutdown::Write);
             }
         });
 
@@ -441,9 +457,16 @@ mod tests {
 
         std::thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
+                use std::io::Read as _;
+                // Consume the request before responding; otherwise Windows
+                // aborts the connection (WSAECONNABORTED) mid-read.
+                let mut request = [0_u8; 1024];
+                let _ = stream.read(&mut request);
                 let response =
                     "HTTP/1.1 200 OK\r\nContent-Length: 21\r\n\r\n{\"tag_name\":\"v1.2.3\"}";
                 let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+                let _ = stream.shutdown(std::net::Shutdown::Write);
             }
         });
 

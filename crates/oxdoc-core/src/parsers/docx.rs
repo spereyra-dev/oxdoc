@@ -361,18 +361,18 @@ fn extract_xml_text<R: BufRead>(
             Ok(Event::Start(element)) => {
                 if is_excluded_revision(element.name().as_ref(), options.revision_mode) {
                     excluded_revision_depth += 1;
-                } else if name_eq(element.name().as_ref(), b"r") {
+                } else if name_eq(element.name().as_ref(), "r") {
                     run_hidden.push(false);
-                } else if name_eq(element.name().as_ref(), b"vanish") {
+                } else if name_eq(element.name().as_ref(), "vanish") {
                     if let Some(hidden) = run_hidden.last_mut() {
                         *hidden = true;
                     }
-                } else if name_eq(element.name().as_ref(), b"numPr") {
+                } else if name_eq(element.name().as_ref(), "numPr") {
                     list_paragraph = true;
-                } else if name_eq(element.name().as_ref(), b"p") {
+                } else if name_eq(element.name().as_ref(), "p") {
                     list_paragraph = false;
                     list_marker_emitted = false;
-                } else if name_eq(element.name().as_ref(), b"tbl") {
+                } else if name_eq(element.name().as_ref(), "tbl") {
                     if in_table_cell(&table_contexts) {
                         flush_cell_paragraph_separator(
                             &mut text,
@@ -381,12 +381,12 @@ fn extract_xml_text<R: BufRead>(
                     }
                     table_contexts.push(TableContext::default());
                 } else if let Some(table) = table_contexts.last_mut()
-                    && name_eq(element.name().as_ref(), b"tr")
+                    && name_eq(element.name().as_ref(), "tr")
                 {
                     table.start_row();
                     pending_cell_paragraph_separator = false;
                 } else if let Some(table) = table_contexts.last_mut()
-                    && name_eq(element.name().as_ref(), b"tc")
+                    && name_eq(element.name().as_ref(), "tc")
                 {
                     table.start_cell(&mut text);
                     pending_cell_paragraph_separator = false;
@@ -402,13 +402,13 @@ fn extract_xml_text<R: BufRead>(
                 }
             }
             Ok(Event::Empty(element)) if excluded_revision_depth == 0 => {
-                if name_eq(element.name().as_ref(), b"vanish") {
+                if name_eq(element.name().as_ref(), "vanish") {
                     if let Some(hidden) = run_hidden.last_mut() {
                         *hidden = true;
                     }
-                } else if name_eq(element.name().as_ref(), b"numPr") {
+                } else if name_eq(element.name().as_ref(), "numPr") {
                     list_paragraph = true;
-                } else if name_eq(element.name().as_ref(), b"tab")
+                } else if name_eq(element.name().as_ref(), "tab")
                     && (options.include_hidden_text || !run_hidden.last().copied().unwrap_or(false))
                 {
                     flush_cell_paragraph_separator(
@@ -416,8 +416,8 @@ fn extract_xml_text<R: BufRead>(
                         &mut pending_cell_paragraph_separator,
                     );
                     text.push('\t');
-                } else if (name_eq(element.name().as_ref(), b"br")
-                    || name_eq(element.name().as_ref(), b"cr"))
+                } else if (name_eq(element.name().as_ref(), "br")
+                    || name_eq(element.name().as_ref(), "cr"))
                     && (options.include_hidden_text || !run_hidden.last().copied().unwrap_or(false))
                 {
                     pending_cell_paragraph_separator = false;
@@ -457,9 +457,9 @@ fn extract_xml_text<R: BufRead>(
                 } else if is_excluded_revision(element.name().as_ref(), options.revision_mode) {
                     excluded_revision_depth = excluded_revision_depth.saturating_sub(1);
                     in_text_node = false;
-                } else if name_eq(element.name().as_ref(), b"r") {
+                } else if name_eq(element.name().as_ref(), "r") {
                     run_hidden.pop();
-                } else if name_eq(element.name().as_ref(), b"p") {
+                } else if name_eq(element.name().as_ref(), "p") {
                     if excluded_revision_depth == 0 {
                         if in_table_cell(&table_contexts) {
                             pending_cell_paragraph_separator = !text.is_empty();
@@ -467,12 +467,12 @@ fn extract_xml_text<R: BufRead>(
                             push_newline(&mut text);
                         }
                     }
-                } else if name_eq(element.name().as_ref(), b"tc") {
+                } else if name_eq(element.name().as_ref(), "tc") {
                     if let Some(table) = table_contexts.last_mut() {
                         table.end_cell();
                     }
                     pending_cell_paragraph_separator = false;
-                } else if name_eq(element.name().as_ref(), b"tr") {
+                } else if name_eq(element.name().as_ref(), "tr") {
                     let nested_table = table_contexts.len() > 1;
                     if let Some(table) = table_contexts.last_mut()
                         && table.finish_row()
@@ -484,7 +484,7 @@ fn extract_xml_text<R: BufRead>(
                             push_newline(&mut text);
                         }
                     }
-                } else if name_eq(element.name().as_ref(), b"tbl") {
+                } else if name_eq(element.name().as_ref(), "tbl") {
                     table_contexts.pop();
                 }
             }
@@ -559,41 +559,41 @@ fn parse_xml_tables<R: BufRead>(
                 if is_excluded_revision(element.name().as_ref(), options.revision_mode) {
                     mark_current_row_deleted(&mut table_stack);
                     excluded_revision_depth += 1;
-                } else if name_eq(element.name().as_ref(), b"tbl") {
+                } else if name_eq(element.name().as_ref(), "tbl") {
                     table_stack.push(DocxTableBuilder::default());
-                } else if name_eq(element.name().as_ref(), b"gridCol") {
+                } else if name_eq(element.name().as_ref(), "gridCol") {
                     count_grid_column(&mut table_stack);
-                } else if name_eq(element.name().as_ref(), b"tr") {
+                } else if name_eq(element.name().as_ref(), "tr") {
                     if let Some(table) = table_stack.last_mut() {
                         table.start_row();
                     }
-                } else if name_eq(element.name().as_ref(), b"trPr") {
+                } else if name_eq(element.name().as_ref(), "trPr") {
                     if let Some(table) = table_stack.last_mut() {
                         table.row_properties_depth += 1;
                     }
-                } else if name_eq(element.name().as_ref(), b"tc") {
+                } else if name_eq(element.name().as_ref(), "tc") {
                     if let Some(table) = table_stack.last_mut() {
                         table.start_cell();
                     }
-                } else if name_eq(element.name().as_ref(), b"tcPr") {
+                } else if name_eq(element.name().as_ref(), "tcPr") {
                     if let Some(table) = table_stack.last_mut() {
                         table.cell_properties_depth += 1;
                     }
-                } else if name_eq(element.name().as_ref(), b"gridBefore")
-                    || name_eq(element.name().as_ref(), b"gridAfter")
+                } else if name_eq(element.name().as_ref(), "gridBefore")
+                    || name_eq(element.name().as_ref(), "gridAfter")
                 {
                     apply_row_grid_offset(&mut table_stack, &element, path, &mut warnings);
-                } else if name_eq(element.name().as_ref(), b"gridSpan") {
+                } else if name_eq(element.name().as_ref(), "gridSpan") {
                     apply_cell_grid_span(&mut table_stack, &element, path, &mut warnings);
-                } else if name_eq(element.name().as_ref(), b"vMerge") {
+                } else if name_eq(element.name().as_ref(), "vMerge") {
                     apply_cell_vertical_merge(&mut table_stack, &element, path, &mut warnings);
-                } else if name_eq(element.name().as_ref(), b"p")
+                } else if name_eq(element.name().as_ref(), "p")
                     && current_table_has_cell(&table_stack)
                 {
                     paragraph = Some(String::new());
                 } else if excluded_revision_depth == 0
                     && paragraph.is_some()
-                    && name_eq(element.name().as_ref(), b"t")
+                    && name_eq(element.name().as_ref(), "t")
                 {
                     in_text_node = true;
                 }
@@ -601,25 +601,25 @@ fn parse_xml_tables<R: BufRead>(
             Ok(Event::Empty(element)) if excluded_revision_depth == 0 => {
                 if is_excluded_revision(element.name().as_ref(), options.revision_mode) {
                     mark_current_row_deleted(&mut table_stack);
-                } else if name_eq(element.name().as_ref(), b"gridCol") {
+                } else if name_eq(element.name().as_ref(), "gridCol") {
                     count_grid_column(&mut table_stack);
-                } else if name_eq(element.name().as_ref(), b"gridBefore")
-                    || name_eq(element.name().as_ref(), b"gridAfter")
+                } else if name_eq(element.name().as_ref(), "gridBefore")
+                    || name_eq(element.name().as_ref(), "gridAfter")
                 {
                     apply_row_grid_offset(&mut table_stack, &element, path, &mut warnings);
-                } else if name_eq(element.name().as_ref(), b"gridSpan") {
+                } else if name_eq(element.name().as_ref(), "gridSpan") {
                     apply_cell_grid_span(&mut table_stack, &element, path, &mut warnings);
-                } else if name_eq(element.name().as_ref(), b"vMerge") {
+                } else if name_eq(element.name().as_ref(), "vMerge") {
                     apply_cell_vertical_merge(&mut table_stack, &element, path, &mut warnings);
-                } else if name_eq(element.name().as_ref(), b"p") {
+                } else if name_eq(element.name().as_ref(), "p") {
                     if let Some(cell) = current_cell_mut(&mut table_stack) {
                         cell.blocks.push(DocxCellBlock::Paragraph(String::new()));
                     }
                 } else if let Some(paragraph) = paragraph.as_mut() {
-                    if name_eq(element.name().as_ref(), b"tab") {
+                    if name_eq(element.name().as_ref(), "tab") {
                         paragraph.push('\t');
-                    } else if name_eq(element.name().as_ref(), b"br")
-                        || name_eq(element.name().as_ref(), b"cr")
+                    } else if name_eq(element.name().as_ref(), "br")
+                        || name_eq(element.name().as_ref(), "cr")
                     {
                         paragraph.push('\n');
                     }
@@ -647,34 +647,34 @@ fn parse_xml_tables<R: BufRead>(
                 }
             }
             Ok(Event::End(element)) => {
-                if name_eq(element.name().as_ref(), b"t") {
+                if name_eq(element.name().as_ref(), "t") {
                     in_text_node = false;
                 } else if is_excluded_revision(element.name().as_ref(), options.revision_mode) {
                     excluded_revision_depth = excluded_revision_depth.saturating_sub(1);
                     in_text_node = false;
-                } else if name_eq(element.name().as_ref(), b"p") {
+                } else if name_eq(element.name().as_ref(), "p") {
                     if let Some(paragraph) = paragraph.take()
                         && let Some(cell) = current_cell_mut(&mut table_stack)
                     {
                         cell.blocks.push(DocxCellBlock::Paragraph(paragraph));
                     }
-                } else if name_eq(element.name().as_ref(), b"tcPr") {
+                } else if name_eq(element.name().as_ref(), "tcPr") {
                     if let Some(table) = table_stack.last_mut() {
                         table.cell_properties_depth = table.cell_properties_depth.saturating_sub(1);
                     }
-                } else if name_eq(element.name().as_ref(), b"tc") {
+                } else if name_eq(element.name().as_ref(), "tc") {
                     if let Some(table) = table_stack.last_mut() {
                         table.finish_cell();
                     }
-                } else if name_eq(element.name().as_ref(), b"trPr") {
+                } else if name_eq(element.name().as_ref(), "trPr") {
                     if let Some(table) = table_stack.last_mut() {
                         table.row_properties_depth = table.row_properties_depth.saturating_sub(1);
                     }
-                } else if name_eq(element.name().as_ref(), b"tr") {
+                } else if name_eq(element.name().as_ref(), "tr") {
                     if let Some(table) = table_stack.last_mut() {
                         table.finish_row();
                     }
-                } else if name_eq(element.name().as_ref(), b"tbl")
+                } else if name_eq(element.name().as_ref(), "tbl")
                     && let Some(table) = table_stack.pop()
                 {
                     let table = table.finish(true);
@@ -803,16 +803,16 @@ fn mark_current_row_deleted(tables: &mut [DocxTableBuilder]) {
     }
 }
 
-fn is_excluded_revision(name: &[u8], mode: DocxRevisionMode) -> bool {
+fn is_excluded_revision(name: &str, mode: DocxRevisionMode) -> bool {
     match mode {
-        DocxRevisionMode::Final => name_eq(name, b"del") || name_eq(name, b"moveFrom"),
-        DocxRevisionMode::Original => name_eq(name, b"ins") || name_eq(name, b"moveTo"),
+        DocxRevisionMode::Final => name_eq(name, "del") || name_eq(name, "moveFrom"),
+        DocxRevisionMode::Original => name_eq(name, "ins") || name_eq(name, "moveTo"),
         DocxRevisionMode::All => false,
     }
 }
 
-fn is_docx_text_element(name: &[u8], mode: DocxRevisionMode) -> bool {
-    name_eq(name, b"t") || (!matches!(mode, DocxRevisionMode::Final) && name_eq(name, b"delText"))
+fn is_docx_text_element(name: &str, mode: DocxRevisionMode) -> bool {
+    name_eq(name, "t") || (!matches!(mode, DocxRevisionMode::Final) && name_eq(name, "delText"))
 }
 
 fn apply_row_grid_offset(
@@ -827,14 +827,14 @@ fn apply_row_grid_offset(
     if table.row_properties_depth == 0 {
         return;
     }
-    let raw_value = attr_value(element, b"val");
+    let raw_value = attr_value(element, "val");
     let value = raw_value
         .as_deref()
         .and_then(|value| value.parse::<usize>().ok());
     let Some(row) = table.row.as_mut() else {
         return;
     };
-    let property = if name_eq(element.name().as_ref(), b"gridBefore") {
+    let property = if name_eq(element.name().as_ref(), "gridBefore") {
         "gridBefore"
     } else {
         "gridAfter"
@@ -853,7 +853,7 @@ fn apply_row_grid_offset(
             0
         }
     };
-    if name_eq(element.name().as_ref(), b"gridBefore") {
+    if name_eq(element.name().as_ref(), "gridBefore") {
         row.grid_before = value;
     } else {
         row.grid_after = value;
@@ -872,7 +872,7 @@ fn apply_cell_grid_span(
     if table.cell_properties_depth == 0 {
         return;
     }
-    let raw_value = attr_value(element, b"val");
+    let raw_value = attr_value(element, "val");
     let span = raw_value
         .as_deref()
         .and_then(|value| value.parse::<usize>().ok())
@@ -907,7 +907,7 @@ fn apply_cell_vertical_merge(
     if table.cell_properties_depth == 0 {
         return;
     }
-    let raw_value = attr_value(element, b"val");
+    let raw_value = attr_value(element, "val");
     let row_ordinal = table.rows.len() + 1;
     let cell_ordinal = table.row.as_ref().map_or(1, |row| row.cells.len() + 1);
     if let Some(cell) = table.cell.as_mut() {
