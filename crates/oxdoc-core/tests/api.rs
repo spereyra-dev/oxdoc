@@ -601,6 +601,112 @@ fn keeps_partial_docx_text_when_document_xml_malformed_with_sectpr() {
     assert_eq!(extraction.warnings[0].code().as_str(), "W001");
 }
 
+// The three `orders_docx_*_by_section` tests consume one hand-authored JSON
+// oracle (`tests/fixtures/docx/section-order/expected.json`) across all three
+// extraction paths, so any drift between the paths fails here.
+
+#[test]
+fn orders_docx_text_related_parts_by_section() {
+    let file = build_section_order_package();
+    let oracle = section_order_oracle();
+
+    let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
+
+    let expected_text: String = oracle["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|part| format!("{}\n", part["text"].as_str().unwrap()))
+        .collect();
+    assert_eq!(extraction.value, expected_text);
+    let messages = extraction
+        .warnings
+        .iter()
+        .map(|warning| warning.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(messages, oracle_warning_messages(&oracle));
+    assert!(
+        extraction
+            .warnings
+            .iter()
+            .all(|warning| warning.path == "word/_rels/document.xml.rels")
+    );
+}
+
+#[test]
+fn orders_docx_structured_blocks_by_section() {
+    let file = build_section_order_package();
+    let oracle = section_order_oracle();
+
+    let extraction = oxdoc_core::extract_docx_structured_text(&file).unwrap();
+
+    let parts = extraction
+        .value
+        .blocks
+        .iter()
+        .map(|block| (block.part_type.clone(), block.part_path.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(parts, oracle_parts(&oracle));
+    let messages = extraction
+        .warnings
+        .iter()
+        .map(|warning| warning.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(messages, oracle_warning_messages(&oracle));
+}
+
+#[test]
+fn orders_docx_tables_by_section() {
+    let file = build_section_order_package();
+    let oracle = section_order_oracle();
+
+    let extraction = oxdoc_core::extract_docx_tables(&file).unwrap();
+
+    let parts = extraction
+        .value
+        .tables
+        .iter()
+        .map(|table| (table.part_type.clone(), table.part_path.clone()))
+        .collect::<Vec<_>>();
+    // Only the oracle parts that declare a table contribute tables, in oracle
+    // order; `table_ordinal` stays the 1-based per-part encounter ordinal.
+    let expected_table_parts: Vec<(String, String)> = oracle["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|part| part.get("table_ordinal").is_some())
+        .map(|part| {
+            (
+                part["part_type"].as_str().unwrap().to_owned(),
+                part["part_path"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(parts, expected_table_parts);
+    let ordinals = extraction
+        .value
+        .tables
+        .iter()
+        .map(|table| table.table_ordinal)
+        .collect::<Vec<_>>();
+    let expected_ordinals: Vec<usize> = oracle["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|part| {
+            part.get("table_ordinal")
+                .map(|value| value.as_u64().unwrap() as usize)
+        })
+        .collect();
+    assert_eq!(ordinals, expected_ordinals);
+    let messages = extraction
+        .warnings
+        .iter()
+        .map(|warning| warning.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(messages, oracle_warning_messages(&oracle));
+}
+
 #[test]
 fn extracts_xlsx_csv_through_public_api() {
     let file = fixtures::build_package("xlsx/basic", "fixture.xlsx");
@@ -2097,6 +2203,73 @@ fn fuzz_entry_points_parse_minimal_xml_inputs() {
 
 fn create_ooxml(name: &str, entries: &[(&str, &str)]) -> PathBuf {
     create_ooxml_with_method(name, entries, CompressionMethod::Stored)
+}
+
+/// Zips the hand-authored section-order package tree deterministically
+/// (mirrors `fixtures::build_package`, which reads from `fixtures/corpus`).
+fn build_section_order_package() -> PathBuf {
+    const PACKAGE_DIR: &str = "tests/fixtures/docx/section-order/package";
+    const ENTRY_NAMES: [&str; 13] = [
+        "[Content_Types].xml",
+        "_rels/.rels",
+        "word/_rels/document.xml.rels",
+        "word/comments.xml",
+        "word/document.xml",
+        "word/footer1.xml",
+        "word/footer2.xml",
+        "word/footnotes.xml",
+        "word/header-default.xml",
+        "word/header-even.xml",
+        "word/header-first.xml",
+        "word/header-orphan.xml",
+        "word/header-titled.xml",
+    ];
+    let package_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../")
+        .join(PACKAGE_DIR);
+    let entries: Vec<(String, String)> = ENTRY_NAMES
+        .iter()
+        .map(|name| {
+            (
+                (*name).to_owned(),
+                fs::read_to_string(package_dir.join(name)).unwrap(),
+            )
+        })
+        .collect();
+    let entry_refs: Vec<(&str, &str)> = entries
+        .iter()
+        .map(|(name, content)| (name.as_str(), content.as_str()))
+        .collect();
+    create_ooxml("docx-section-order.docx", &entry_refs)
+}
+
+fn section_order_oracle() -> serde_json::Value {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/docx/section-order/expected.json");
+    serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+}
+
+fn oracle_parts(oracle: &serde_json::Value) -> Vec<(String, String)> {
+    oracle["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|part| {
+            (
+                part["part_type"].as_str().unwrap().to_owned(),
+                part["part_path"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+fn oracle_warning_messages(oracle: &serde_json::Value) -> Vec<String> {
+    oracle["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|warning| warning["message"].as_str().unwrap().to_owned())
+        .collect()
 }
 
 fn create_ooxml_with_method(
