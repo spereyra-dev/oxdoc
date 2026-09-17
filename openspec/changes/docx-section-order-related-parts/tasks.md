@@ -131,7 +131,7 @@ set under "Existing warning and error behavior is preserved exactly").
 
 ## Work Unit 2 — section-order fixture + docs + CHANGELOG (~185 lines, TRIANGULATE)
 
-- [ ] 8. RED/TRIANGULATE (fixture): hand-author
+- [x] 8. RED/TRIANGULATE (fixture): hand-author
   `tests/fixtures/docx/section-order/` exactly per design §5.2:
   `word/document.xml` (two sections; section 1 with default/first/even header
   refs in that attribute order, a footer ref, an unknown `rIdGhost`, a
@@ -147,7 +147,7 @@ set under "Existing warning and error behavior is preserved exactly").
   with no sectPr reference", "First variant referenced without titlePg"
   (titlePg present but still a no-op), "Unrecognized w:type", "Footnotes and
   comments among themselves".
-- [ ] 9. RED/TRIANGULATE (oracle): hand-author
+- [x] 9. RED/TRIANGULATE (oracle): hand-author
   `tests/fixtures/docx/section-order/expected.json` mirroring the
   related-parts oracle schema (`parts` + `warnings`) with the design §5.2
   order: header-first → header-even → header-default (first referencing
@@ -158,7 +158,7 @@ set under "Existing warning and error behavior is preserved exactly").
   `tests/fixtures/provenance/docx-section-order.md` (hand-authored, no
   producer, synthetic text, purpose = section-order oracle). Spec scenario:
   "Multi-section document with out-of-order relationships".
-- [ ] 10. TRIANGULATE (three-path tests): add to
+- [x] 10. TRIANGULATE (three-path tests): add to
   `crates/oxdoc-core/tests/api.rs` the three fixture-oracle consumers from
   design §6.2 — `orders_docx_text_related_parts_by_section` (flat text =
   join of part texts), `orders_docx_structured_blocks_by_section` (block
@@ -170,7 +170,7 @@ set under "Existing warning and error behavior is preserved exactly").
   producer-orthogonal encoding of the same rule; a failure here exposes an
   ordering bug tuned to the inline packages — fix in `docx.rs`, never in the
   oracle).
-- [ ] 11. Snapshot stability: verify
+- [x] 11. Snapshot stability: verify
   `tests/fixtures/snapshots/docx_python_docx_text.txt` for the python-docx
   single-section fixture (`tests/fixtures/files/docx/python-docx-basic.docx`,
   no sectPr) is byte-identical after the change (spec "python-docx
@@ -179,7 +179,7 @@ set under "Existing warning and error behavior is preserved exactly").
   Re-verify the recorded SHA-256 in
   `tests/fixtures/provenance/docx-python-docx-basic.md` was not invalidated
   (fixture not regenerated, design §5.3).
-- [ ] 12. Docs: rewrite `docs/formats/docx.md` — the two "Related text parts"
+- [x] 12. Docs: rewrite `docs/formats/docx.md` — the two "Related text parts"
   rows (Logical Text Contract + Structural Table Model) to describe
   section-order traversal, plus the determinism statement: full ordering
   rule, `titlePg` no-op note, `evenAndOddHeaders` deferral note (spec
@@ -189,13 +189,13 @@ set under "Existing warning and error behavior is preserved exactly").
   footers" bullet from Planned Improvements. Spec scenarios: "First variant
   referenced without titlePg" (documented), "evenAndOddHeaders set but not
   honored", "Unrecognized w:type".
-- [ ] 13. CHANGELOG: add the default-on section-ordering behavior-change entry
+- [x] 13. CHANGELOG: add the default-on section-ordering behavior-change entry
   to `CHANGELOG.md` (consumers relying on rels order for multi-section
   packages will see different block/table ordering; single-section ordered
   rels documents unchanged; only the two new reference warnings added). Spec
   scenario: "Output shape unchanged" (behavior change documented, schema
   unchanged).
-- [ ] 14. WU2 verification: run
+- [x] 14. WU2 verification: run
   `cargo fmt --all -- --check`,
   `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`, and

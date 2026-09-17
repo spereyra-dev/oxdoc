@@ -117,3 +117,103 @@
 - Consumed: native v2 status at session start (applyState ready, no blockers).
 - Produced: taskProgress after WU1 = 7/14 complete; `nextRecommended` remains
   apply (WU2 tasks 8–14), paused pending the delivery decision.
+
+## Session 2 (2026-06 apply) — Work Unit 2 (tasks 8–14)
+
+- Branch `issue-177-docx-section-ordering-wu2` (stacked-to-main, based on main
+  after PR #210 merged WU1). Status consumed: native `gentle-ai.sdd-status` v2,
+  `nextRecommended: apply`, `applyState: ready`, `actionContext.mode:
+  repo-local`, allowed edit roots = repo root, no blockers. Preflight: auto /
+  openspec / ask-on-risk / budget 400. Delivery decision resolved by the
+  orchestrator: WU2 = PR 2 of the stacked-to-main chain (the ask-on-risk pause
+  from session 1 resolved by merging WU1 as PR #210 and checking out a WU2
+  branch). Skills: `work-unit-commits` and `chained-pr` loaded
+  (`skill_resolution: paths-injected`). Strict TDD active (`cargo test`).
+
+### Completed tasks (persisted checkboxes updated in tasks.md)
+
+- [x] 8–14 (WU2). All 14 tasks of the change are now complete.
+
+### Files changed (WU2, measured vs main, excluding the pre-existing .gitignore tweak)
+
+| File | Changed lines (add+del) |
+| --- | --- |
+| `tests/fixtures/docx/section-order/` (13 package XML files) | 62 |
+| `tests/fixtures/docx/section-order/expected.json` | 17 |
+| `tests/fixtures/provenance/docx-section-order.md` | 8 |
+| `crates/oxdoc-core/tests/api.rs` | 173 (+173/−0) |
+| `docs/formats/docx.md` | 52 (+46/−6) |
+| `CHANGELOG.md` | 20 |
+| `openspec/.../tasks.md` | 15 (+9/−6) |
+| `openspec/.../apply-progress.md` | ~55 |
+| **WU2 total (code/test/fixture/docs only)** | **~305** |
+| **WU2 total incl. openspec process artifacts** | **~370** |
+
+Under the 400-line review budget; the fixture XML was compacted (single-line
+part documents, one oracle part per JSON line) as explicitly authorized,
+losing no pinned spec-scenario coverage.
+
+### Commits (feature branch `issue-177-docx-section-ordering-wu2`, not pushed)
+
+1. `test(docx): pin section-aware ordering with a hand-authored section-order fixture`
+   (tasks 8–10: package, oracle, provenance, three-path api.rs tests)
+2. `docs(docx): document section-aware related-part ordering and the 1.2.x change`
+   (tasks 12–13: docs rewrite + CHANGELOG Unreleased entry)
+3. `chore(sdd): record WU2 apply progress and task completion`
+   (tasks 11/14 evidence + remaining checkboxes)
+
+### TDD cycle evidence (strict TDD, cargo test)
+
+| Task | RED signal | GREEN / TRIANGULATE |
+| --- | --- | --- |
+| 8–9 (fixture+oracle) | none — hand-authored design oracle per design §5.2; never generated from parser output | package tree, `expected.json`, provenance written; consumed by tests in task 10 |
+| 10 (three-path tests) | TRIANGULATE phase: producer-orthogonal encoding of the already-implemented WU1 rule; RED not expected (rule landed in WU1) — the three tests passed on first run, agreeing with the inline-package unit tests | `orders_docx_text_related_parts_by_section`, `orders_docx_structured_blocks_by_section`, `orders_docx_tables_by_section` all green against `expected.json` (flat text join, block `part_path` sequence, `DocxTable.part_path` sequence incl. `word/footer2.xml` + `table_ordinal` 1) |
+| 11 (snapshot stability) | drift would be a stop-and-investigate signal | `extracts_application_generated_docx_text_fixture` passes; snapshot byte-identical; fixture SHA-256 re-verified `ca4465cf…71d9` matches provenance; fixture not regenerated (no fixture diffs vs main) |
+| 12–13 (docs+changelog) | docs change, no test signal | `docs/formats/docx.md`: Related-part ordering section (7 numbered rules: section discovery, kind/variant ranking with silent `default` fallback, dedup at first reference, orphans in rels order, notes strictly after h/f, missing/unknown `r:id` warnings, rid→non-h/f silent skip, `titlePg` no-op, `evenAndOddHeaders` deferral); both Related-parts rows updated; Planned-Improvements bullet removed. `CHANGELOG.md`: Unreleased Changed entry |
+| 14 (gates) | — | `cargo fmt --all -- --check` OK; `cargo clippy --workspace --all-targets -- -D warnings` 0 errors; `cargo test --workspace` 8/8 binaries ok, 0 failures; `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only` exit 0, 96.16% lines (docx.rs 97.72% lines, 100% functions) |
+
+### Spec acceptance checks (WU2)
+
+- All delta-spec scenarios pinned by the fixture oracle: multi-section
+  out-of-order rels, variant ranking (`first`/`even`/`default` from
+  `default,first,even` attribute order), dedup (shared `rIdHeaderDefault`
+  across sections), orphan header, `titlePg` no-op with a `first` reference,
+  unrecognized `w:type="title"` → default silently, comments before footnotes
+  after all h/f (rule 5), both new warnings in walk order.
+- "Output shape unchanged": `tests/schema.rs` and `crates/oxdoc-cli/` show zero
+  diff vs main; no `part_type`, field, or option changes; no variant labels.
+- "Three paths agree on ordering": one `expected.json` consumed by all three
+  api.rs tests.
+
+### Deviations from design
+
+1. Fixture part XML files and the oracle JSON are compacted to single-line
+   elements / one part per JSON line to protect the review budget (explicitly
+   authorized trim of verbosity); document.xml, document.xml.rels, and
+   [Content_Types].xml keep one element per line where the pinned attribute
+   order and scrambled rels order are the reviewable content.
+2. The api.rs oracle helpers (`build_section_order_package`,
+   `section_order_oracle`, `oracle_parts`, `oracle_warning_messages`) zip the
+   hand-authored package tree locally instead of extending the shared
+   `fixtures::build_package` (which reads from `fixtures/corpus`); ~30 lines,
+   no behavior difference.
+3. Warning-path assertions (`word/_rels/document.xml.rels`) are asserted in the
+   flat-text test and the two new-warning texts are asserted in all three
+   tests, slightly beyond the task-10 minimum, to pin warning ordering in the
+   oracle.
+
+### Remaining tasks
+
+None — all 14 tasks complete.
+
+### Workload / PR boundary
+
+WU2 = PR 2 of the stacked-to-main chain (PR 1 merged as #210). Measured WU2:
+~370 changed lines including openspec process artifacts (~305 excluding them);
+both under the 400-line budget. No push, no PR creation (parent owns
+delivery).
+
+### Structured status (produced)
+
+taskProgress after WU2 = 14/14 complete; native `nextRecommended` moves to
+verify (optional) / archive.
