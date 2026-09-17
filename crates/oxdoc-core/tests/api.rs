@@ -76,7 +76,7 @@ fn extracts_application_generated_docx_text_fixture() {
 }
 
 #[test]
-fn extracts_docx_text_from_related_parts_in_relationship_order() {
+fn keeps_unreferenced_docx_related_parts_in_relationship_order() {
     let file = create_ooxml(
         "docx-related-parts.docx",
         &[
@@ -306,7 +306,7 @@ fn extracts_docx_tables_from_read_seek_reader() {
 }
 
 #[test]
-fn extracts_docx_tables_from_related_parts_in_relationship_order() {
+fn keeps_unreferenced_docx_table_parts_in_relationship_order() {
     let file = create_ooxml(
         "docx-related-table-parts.docx",
         &[
