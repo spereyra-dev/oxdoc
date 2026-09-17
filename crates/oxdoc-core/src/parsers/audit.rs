@@ -89,12 +89,12 @@ fn parse_hidden_xlsx_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<Audi
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) | Ok(Event::Empty(element))
-                if name_eq(element.name().as_ref(), b"sheet") =>
+                if name_eq(element.name().as_ref(), "sheet") =>
             {
-                let state = attr_value(&element, b"state").unwrap_or_default();
+                let state = attr_value(&element, "state").unwrap_or_default();
                 if state.eq_ignore_ascii_case("hidden") || state.eq_ignore_ascii_case("veryHidden")
                 {
-                    let name = attr_value(&element, b"name").unwrap_or_else(|| "<unnamed>".into());
+                    let name = attr_value(&element, "name").unwrap_or_else(|| "<unnamed>".into());
                     signals.push(AuditSignal::new(
                         "hidden_sheet",
                         "warning",
@@ -104,7 +104,7 @@ fn parse_hidden_xlsx_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<Audi
                 }
             }
             Ok(Event::Start(element)) | Ok(Event::Empty(element))
-                if name_eq(element.name().as_ref(), b"workbookProtection") =>
+                if name_eq(element.name().as_ref(), "workbookProtection") =>
             {
                 signals.push(AuditSignal::new(
                     "workbook_protection",

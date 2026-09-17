@@ -7,6 +7,6 @@
     "docs:serve": "docsify serve docs --port 3000"
   },
   "devDependencies": {
-    "docsify-cli": "^4.4.4"
+    "docsify-cli": "5.0.0"
   }
 }

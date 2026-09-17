@@ -96,8 +96,8 @@ fn parse_content_types<R: BufRead>(source: R, path: &str) -> Result<Extraction<b
             Ok(Event::Start(element)) | Ok(Event::Empty(element))
                 if matches!(
                     crate::parsers::local_name(element.name().as_ref()),
-                    b"Default" | b"Override"
-                ) && attr_value(&element, b"ContentType")
+                    "Default" | "Override"
+                ) && attr_value(&element, "ContentType")
                     .as_deref()
                     .is_some_and(is_vba_project_content_type) =>
             {
@@ -122,16 +122,16 @@ fn parse_core<R: BufRead>(source: R, path: &str) -> Result<Extraction<CoreProps>
     let mut buf = Vec::new();
     let mut props = CoreProps::default();
     let mut warnings = Vec::new();
-    let mut current_field: Option<Vec<u8>> = None;
+    let mut current_field: Option<String> = None;
     let mut decoded = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) => {
-                let local = element.name().as_ref().to_vec();
+                let local = element.name().as_ref().to_owned();
                 if matches!(
                     crate::parsers::local_name(&local),
-                    b"creator" | b"lastModifiedBy" | b"created" | b"modified" | b"revision"
+                    "creator" | "lastModifiedBy" | "created" | "modified" | "revision"
                 ) {
                     current_field = Some(local);
                 }
@@ -158,9 +158,9 @@ fn parse_core<R: BufRead>(source: R, path: &str) -> Result<Extraction<CoreProps>
                 }
             }
             Ok(Event::End(element))
-                if current_field.as_deref().is_some_and(|field| {
-                    name_eq(element.name().as_ref(), crate::parsers::local_name(field))
-                }) =>
+                if current_field
+                    .as_deref()
+                    .is_some_and(|field| name_eq(element.name().as_ref(), field)) =>
             {
                 current_field = None;
             }
@@ -183,16 +183,16 @@ fn parse_app<R: BufRead>(source: R, path: &str) -> Result<Extraction<AppProps>> 
     let mut buf = Vec::new();
     let mut props = AppProps::default();
     let mut warnings = Vec::new();
-    let mut current_field: Option<Vec<u8>> = None;
+    let mut current_field: Option<String> = None;
     let mut decoded = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) => {
-                let local = element.name().as_ref().to_vec();
+                let local = element.name().as_ref().to_owned();
                 if matches!(
                     crate::parsers::local_name(&local),
-                    b"Application" | b"Company" | b"Words" | b"Pages" | b"Slides" | b"Worksheets"
+                    "Application" | "Company" | "Words" | "Pages" | "Slides" | "Worksheets"
                 ) {
                     current_field = Some(local);
                 }
@@ -219,9 +219,9 @@ fn parse_app<R: BufRead>(source: R, path: &str) -> Result<Extraction<AppProps>> 
                 }
             }
             Ok(Event::End(element))
-                if current_field.as_deref().is_some_and(|field| {
-                    name_eq(element.name().as_ref(), crate::parsers::local_name(field))
-                }) =>
+                if current_field
+                    .as_deref()
+                    .is_some_and(|field| name_eq(element.name().as_ref(), field)) =>
             {
                 current_field = None;
             }
@@ -250,8 +250,8 @@ fn parse_custom<R: BufRead>(source: R, path: &str) -> Result<Extraction<CustomPr
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) => {
-                if name_eq(element.name().as_ref(), b"property")
-                    && let Some(name) = attr_value(&element, b"name")
+                if name_eq(element.name().as_ref(), "property")
+                    && let Some(name) = attr_value(&element, "name")
                 {
                     current_property = Some(CustomPropertyValue {
                         name,
@@ -266,7 +266,7 @@ fn parse_custom<R: BufRead>(source: R, path: &str) -> Result<Extraction<CustomPr
             }
             Ok(Event::Empty(element)) => {
                 if let Some(property) = &mut current_property
-                    && !name_eq(element.name().as_ref(), b"property")
+                    && !name_eq(element.name().as_ref(), "property")
                 {
                     property.saw_value = true;
                 }
@@ -298,7 +298,7 @@ fn parse_custom<R: BufRead>(source: R, path: &str) -> Result<Extraction<CustomPr
                 }
             }
             Ok(Event::End(element)) => {
-                if name_eq(element.name().as_ref(), b"property")
+                if name_eq(element.name().as_ref(), "property")
                     && let Some(property) = current_property.take()
                     && property.saw_value
                     && !property.name.is_empty()
@@ -336,27 +336,27 @@ fn apply_core(info: &mut DocumentInfo, props: CoreProps) {
     info.revision = props.revision;
 }
 
-fn assign_core_value(props: &mut CoreProps, field: &[u8], value: &str) {
+fn assign_core_value(props: &mut CoreProps, field: &str, value: &str) {
     match crate::parsers::local_name(field) {
-        b"creator" => append_option(&mut props.author, value),
-        b"lastModifiedBy" => {
+        "creator" => append_option(&mut props.author, value),
+        "lastModifiedBy" => {
             append_option(&mut props.last_modified_by, value);
         }
-        b"created" => append_option(&mut props.created_at, value),
-        b"modified" => append_option(&mut props.modified_at, value),
-        b"revision" => append_option(&mut props.revision, value),
+        "created" => append_option(&mut props.created_at, value),
+        "modified" => append_option(&mut props.modified_at, value),
+        "revision" => append_option(&mut props.revision, value),
         _ => {}
     }
 }
 
-fn assign_app_value(props: &mut AppProps, field: &[u8], value: &str) {
+fn assign_app_value(props: &mut AppProps, field: &str, value: &str) {
     match crate::parsers::local_name(field) {
-        b"Application" => append_option(&mut props.application, value),
-        b"Company" => append_option(&mut props.company, value),
-        b"Words" => props.word_count = value.parse().ok(),
-        b"Pages" => props.page_count = value.parse().ok(),
-        b"Slides" => props.slide_count = value.parse().ok(),
-        b"Worksheets" => props.worksheet_count = value.parse().ok(),
+        "Application" => append_option(&mut props.application, value),
+        "Company" => append_option(&mut props.company, value),
+        "Words" => props.word_count = value.parse().ok(),
+        "Pages" => props.page_count = value.parse().ok(),
+        "Slides" => props.slide_count = value.parse().ok(),
+        "Worksheets" => props.worksheet_count = value.parse().ok(),
         _ => {}
     }
 }
