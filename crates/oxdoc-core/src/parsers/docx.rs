@@ -1592,4 +1592,189 @@ mod tests {
                 .starts_with("stopped after malformed XML:")
         );
     }
+
+    #[test]
+    fn parses_grid_and_merge_attributes_with_warnings() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+          <w:tbl>
+            <w:tblGrid><w:gridCol></w:gridCol><w:gridCol></w:gridCol></w:tblGrid>
+            <w:trPr><w:gridBefore w:val="1"></w:gridBefore></w:trPr>
+            <w:tcPr><w:gridSpan w:val="2"></w:gridSpan><w:vMerge w:val="restart"></w:vMerge></w:tcPr>
+            <w:tr>
+              <w:gridCol></w:gridCol>
+              <w:trPr>
+                <w:gridBefore w:val="2"></w:gridBefore>
+                <w:gridAfter w:val="oops"></w:gridAfter>
+              </w:trPr>
+              <w:tc>
+                <w:tcPr>
+                  <w:gridSpan w:val="0"></w:gridSpan>
+                  <w:gridSpan w:val="3"></w:gridSpan>
+                  <w:vMerge w:val="weird"></w:vMerge>
+                </w:tcPr>
+                <w:p><w:r><w:t>Cell</w:t><w:br/><w:cr/></w:r></w:p>
+              </w:tc>
+              <w:tc><w:p><w:t><![CDATA[raw]]></w:t></w:p></w:tc>
+              <w:tc><w:p><w:t>Q&#68;R</w:t></w:p></w:tc>
+            </w:tr>
+          </w:tbl>
+        </w:body></w:document>"#;
+
+        let result = parse_xml_tables(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
+
+        let table = &result.value[0];
+        assert_eq!(table.grid_column_count, Some(2));
+        assert_eq!(table.rows.len(), 1);
+        let row = &table.rows[0];
+        assert_eq!((row.grid_before, row.grid_after), (2, 0));
+        assert_eq!(row.cells.len(), 3);
+        assert_eq!(row.cells[0].grid_span, 3);
+        assert_eq!(row.cells[0].v_merge, DocxVerticalMerge::None);
+        assert_eq!(
+            row.cells[0].blocks,
+            vec![DocxCellBlock::Paragraph("Cell\n\n".to_owned())]
+        );
+        assert_eq!(
+            row.cells[1].blocks,
+            vec![DocxCellBlock::Paragraph("raw".to_owned())]
+        );
+        assert_eq!(
+            row.cells[2].blocks,
+            vec![DocxCellBlock::Paragraph("QDR".to_owned())]
+        );
+        let messages: Vec<&str> = result
+            .warnings
+            .iter()
+            .map(|warning| warning.message.as_str())
+            .collect();
+        assert_eq!(messages.len(), 3, "unexpected warnings: {messages:?}");
+        assert!(messages[0].contains("invalid gridAfter value oops; using 0"));
+        assert!(messages[1].contains("invalid gridSpan value 0; using 1"));
+        assert!(messages[2].contains("unknown vMerge value weird; using none"));
+    }
+
+    #[test]
+    fn ignores_table_properties_outside_valid_contexts() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+          <w:gridCol></w:gridCol>
+          <w:del></w:del>
+          <w:gridBefore w:val="2"></w:gridBefore>
+          <w:gridAfter w:val="1"></w:gridAfter>
+          <w:gridSpan w:val="2"></w:gridSpan>
+          <w:vMerge></w:vMerge>
+          <w:tbl>
+            <w:gridBefore w:val="2"></w:gridBefore>
+            <w:gridAfter w:val="1"></w:gridAfter>
+            <w:gridSpan w:val="2"></w:gridSpan>
+            <w:vMerge w:val="restart"></w:vMerge>
+          </w:tbl>
+        </w:body></w:document>"#;
+
+        let result = parse_xml_tables(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(result.value.len(), 1);
+        assert!(result.value[0].rows.is_empty());
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn keeps_all_revision_content_in_all_mode() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+          <w:p><w:ins><w:r><w:t>I</w:t></w:r></w:ins><w:del><w:r><w:delText>D</w:delText></w:r></w:del></w:p>
+        </w:body></w:document>"#;
+
+        let all = extract_xml_text(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions {
+                revision_mode: DocxRevisionMode::All,
+                ..DocxTextOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(all.value, "ID\n");
+
+        let final_mode = extract_xml_text(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(final_mode.value, "I\n");
+    }
+
+    #[test]
+    fn tolerates_cell_and_paragraph_ends_outside_expected_contexts() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+          <w:tc></w:tc>
+          <w:ins><w:p><w:r><w:t>Z</w:t></w:r></w:p></w:ins>
+          <w:tbl><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc></w:tbl>
+          <w:p><w:r><w:t>B<![CDATA[]]></w:t></w:r></w:p>
+        </w:body></w:document>"#;
+
+        let original = extract_xml_text(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions {
+                revision_mode: DocxRevisionMode::Original,
+                ..DocxTextOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(original.value, "A\nB\n");
+
+        let with_rows = extract_xml_text(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(with_rows.value, "Z\nA\nB\n");
+    }
+
+    #[test]
+    fn paragraph_texts_filter_skips_nested_tables() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+          <w:tbl>
+            <w:tr>
+              <w:tc>
+                <w:p><w:r><w:t>Before</w:t></w:r></w:p>
+                <w:tbl>
+                  <w:tr><w:tc><w:p><w:r><w:t>Nested</w:t></w:r></w:p></w:tc></w:tr>
+                </w:tbl>
+                <w:p><w:r><w:t>After</w:t></w:r></w:p>
+              </w:tc>
+            </w:tr>
+          </w:tbl>
+        </w:body></w:document>"#;
+
+        let result = parse_xml_tables(
+            Cursor::new(xml),
+            "word/document.xml",
+            DocxTextOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            only_paragraph_text(&result.value[0].rows[0].cells[0].blocks),
+            vec!["Before", "After"]
+        );
+    }
+
+    #[test]
+    fn fuzz_helper_accepts_wellformed_xml() {
+        let xml = b"<w:document xmlns:w=\"w\"><w:body><w:p><w:r><w:t>x</w:t></w:r></w:p></w:body></w:document>";
+
+        super::fuzz_extract_text(xml).unwrap();
+    }
 }

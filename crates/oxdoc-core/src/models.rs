@@ -541,7 +541,8 @@ impl AuditSignal {
 #[cfg(test)]
 mod tests {
     use super::{
-        Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCsvOptions, XlsxSheetOptions,
+        Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCsvOptions, XlsxReadOptions,
+        XlsxSheetOptions,
     };
 
     #[test]
@@ -611,5 +612,23 @@ mod tests {
         assert_eq!(options.sheet_name, None);
         assert_eq!(options.sheet_index, None);
         assert!(!options.include_hidden);
+    }
+
+    #[test]
+    fn classifies_number_format_warnings_as_data() {
+        let unsupported =
+            OutputWarning::unsupported_number_format("xl/sheet.xml", "0.00E+00", false);
+        let ambiguous = OutputWarning::unsupported_number_format("xl/sheet.xml", "# ?/?", true);
+
+        assert_eq!(unsupported.category(), WarningCategory::Data);
+        assert_eq!(ambiguous.category(), WarningCategory::Data);
+    }
+
+    #[test]
+    fn defaults_xlsx_read_options() {
+        let options = XlsxReadOptions::default();
+
+        assert_eq!(options.sheet, XlsxSheetOptions::default());
+        assert_eq!(options.worksheet_limits, None);
     }
 }

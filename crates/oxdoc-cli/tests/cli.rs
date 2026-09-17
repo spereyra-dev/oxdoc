@@ -2518,3 +2518,242 @@ fn update_with_invalid_version_fails_gracefully() {
     assert!(!output.status.success());
     assert!(stderr(&output).contains("download failed") || stderr(&output).contains("error[E013]"));
 }
+
+#[test]
+fn rejects_non_positive_resource_limits() {
+    let docx = fixtures::build_package("docx/basic", "limits-args.docx");
+
+    for (flag, value) in [
+        ("--max-input-size", "0"),
+        ("--max-package-uncompressed-size", "0"),
+        ("--max-part-size", "0"),
+        ("--max-compression-ratio", "0"),
+    ] {
+        let output = oxdoc(["extract", "text", docx.to_str().unwrap(), flag, value]);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(stderr(&output).contains("resource limits must be greater than zero"));
+    }
+}
+
+#[test]
+fn extracts_docx_text_with_revisions_all() {
+    let docx = fixtures::build_package("docx/policies", "policies-revisions-all.docx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+        "--revisions",
+        "all",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        stdout(&output),
+        "List item\nHiddenDeletedInserted\nComment\n"
+    );
+}
+
+#[test]
+fn separates_multiple_text_outputs_with_delimiter() {
+    let one = fixtures::build_package("docx/basic", "separator-one.docx");
+    let two = fixtures::build_package("docx/basic", "separator-two.docx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        one.to_str().unwrap(),
+        two.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let text = stdout(&output);
+    assert_eq!(
+        text.matches("\n---\n").count(),
+        1,
+        "expected exactly one separator in {text:?}"
+    );
+}
+
+#[test]
+fn reports_no_successful_inputs_for_text_json_and_structured_json() {
+    let missing_a = unique_path("missing-text-a.docx");
+    let missing_b = unique_path("missing-text-b.docx");
+
+    for (format, _args) in [("json", ()), ("structured-json", ()), ("text", ())] {
+        let _ = format;
+        let output = if format == "text" {
+            oxdoc([
+                "extract",
+                "text",
+                missing_a.to_str().unwrap(),
+                missing_b.to_str().unwrap(),
+            ])
+        } else {
+            let flag = if format == "json" {
+                "json"
+            } else {
+                "structured-json"
+            };
+            oxdoc([
+                "extract",
+                "text",
+                missing_a.to_str().unwrap(),
+                missing_b.to_str().unwrap(),
+                "--format",
+                flag,
+            ])
+        };
+
+        if format == "text" {
+            assert_eq!(output.status.code(), Some(1));
+            assert!(
+                stderr(&output).contains("no input files were processed successfully"),
+                "format {format}: unexpected stderr {:?}",
+                stderr(&output)
+            );
+        } else {
+            assert!(
+                output.status.success(),
+                "format {format}: {:?}",
+                stderr(&output)
+            );
+            assert_eq!(stdout(&output).trim(), "[]");
+        }
+    }
+}
+
+#[test]
+fn audits_missing_file_as_jsonl_error_record() {
+    let missing = unique_path("missing-audit-jsonl.docx");
+
+    let output = oxdoc(["audit", missing.to_str().unwrap(), "--format", "jsonl"]);
+
+    assert!(output.status.success());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["document_type"], "unknown");
+    assert!(records[0]["audit"].is_null());
+    assert!(
+        records[0]["error"]["code"]
+            .as_str()
+            .unwrap()
+            .starts_with('E')
+    );
+    assert!(!records[0]["error"]["message"].as_str().unwrap().is_empty());
+}
+
+#[test]
+fn extracts_pptx_text_as_jsonl_and_reports_unknown_document_types() {
+    let pptx = fixtures::build_package("pptx/text", "jsonl-pptx.pptx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        pptx.to_str().unwrap(),
+        "--format",
+        "jsonl",
+    ]);
+
+    assert!(output.status.success());
+    let records = jsonl_lines(&output);
+    assert_eq!(records[0]["document_type"], "pptx");
+
+    let garbage = unique_path("garbage-detect.docx");
+    fs::write(&garbage, b"not a zip package").unwrap();
+    let output = oxdoc([
+        "extract",
+        "text",
+        garbage.to_str().unwrap(),
+        "--format",
+        "jsonl",
+    ]);
+
+    assert!(output.status.success());
+    let records = jsonl_lines(&output);
+    assert_eq!(records[0]["document_type"], "unknown");
+    assert!(
+        records[0]["error"]["code"]
+            .as_str()
+            .unwrap()
+            .starts_with('E')
+    );
+}
+
+#[test]
+fn falls_back_to_extension_document_types_for_unknown_content() {
+    let pptx_named = create_ooxml("unknown-content.pptx", &[("data.bin", "x")]);
+    let output = oxdoc(["extract", "text", pptx_named.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(1));
+
+    let xlsx_named = create_ooxml("unknown-content.xlsx", &[("data.bin", "x")]);
+    let output = oxdoc(["extract", "text", xlsx_named.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("cannot extract text from an XLSX workbook"));
+}
+
+#[test]
+fn reports_list_sheets_error_for_invalid_workbook() {
+    let garbage = unique_path("garbage-list-sheets.xlsx");
+    fs::write(&garbage, b"not a zip package").unwrap();
+
+    let output = oxdoc(["extract", "csv", garbage.to_str().unwrap(), "--list-sheets"]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("error[E"));
+}
+
+#[test]
+fn reports_no_successful_csv_inputs() {
+    let missing_a = unique_path("missing-csv-a.xlsx");
+    let missing_b = unique_path("missing-csv-b.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        missing_a.to_str().unwrap(),
+        missing_b.to_str().unwrap(),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        stderr(&output).contains("no input files were processed successfully"),
+        "unexpected stderr {:?}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn rejects_oversized_input_file() {
+    let docx = fixtures::build_package("docx/basic", "too-large-cli.docx");
+
+    let output = oxdoc([
+        "extract",
+        "text",
+        docx.to_str().unwrap(),
+        "--max-input-size",
+        "1",
+    ]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("input package is too large"));
+}
+
+#[test]
+fn extracts_pptx_text_and_lists_sheets_from_stdin() {
+    let pptx = fixtures::build_package("pptx/text", "stdin-extract-pptx.pptx");
+    let xlsx = fixtures::build_package("xlsx/basic", "stdin-list-sheets.xlsx");
+
+    let text = oxdoc_with_stdin(["extract", "text", "-"], &fs::read(&pptx).unwrap());
+    assert!(text.status.success());
+    assert!(!stdout(&text).trim().is_empty());
+
+    let sheets = oxdoc_with_stdin(
+        ["extract", "csv", "-", "--list-sheets"],
+        &fs::read(&xlsx).unwrap(),
+    );
+    assert!(sheets.status.success());
+    assert!(stdout(&sheets).starts_with("1: "));
+}
