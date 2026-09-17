@@ -1,0 +1,18 @@
+{
+  "parts": [
+    { "part_type": "main", "part_path": "word/document.xml", "text": "Main section one" },
+    { "part_type": "header", "part_path": "word/header-first.xml", "text": "First header" },
+    { "part_type": "header", "part_path": "word/header-even.xml", "text": "Even header" },
+    { "part_type": "header", "part_path": "word/header-default.xml", "text": "Default header" },
+    { "part_type": "footer", "part_path": "word/footer1.xml", "text": "Footer one" },
+    { "part_type": "header", "part_path": "word/header-titled.xml", "text": "Titled header" },
+    { "part_type": "footer", "part_path": "word/footer2.xml", "table_ordinal": 1, "text": "Footer two table" },
+    { "part_type": "header", "part_path": "word/header-orphan.xml", "text": "Orphan header" },
+    { "part_type": "comments", "part_path": "word/comments.xml", "text": "Comment note" },
+    { "part_type": "footnotes", "part_path": "word/footnotes.xml", "text": "Footnote note" }
+  ],
+  "warnings": [
+    { "path": "word/_rels/document.xml.rels", "message": "skipped DOCX headerReference rIdGhost: unknown relationship id" },
+    { "path": "word/_rels/document.xml.rels", "message": "skipped DOCX footerReference: missing r:id" }
+  ]
+}

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:body>
+    <w:p><w:r><w:t>Main section one</w:t></w:r></w:p>
+    <w:p>
+      <w:pPr>
+        <w:sectPr>
+          <w:headerReference w:type="default" r:id="rIdHeaderDefault"/>
+          <w:headerReference w:type="first" r:id="rIdHeaderFirst"/>
+          <w:headerReference w:type="even" r:id="rIdHeaderEven"/>
+          <w:footerReference w:type="default" r:id="rIdFooterOne"/>
+          <w:headerReference r:id="rIdGhost"/>
+          <w:footerReference/>
+          <w:titlePg/>
+        </w:sectPr>
+      </w:pPr>
+    </w:p>
+    <w:sectPr>
+      <w:headerReference r:id="rIdHeaderDefault"/>
+      <w:headerReference w:type="title" r:id="rIdHeaderTitled"/>
+      <w:footerReference w:type="default" r:id="rIdFooterTwo"/>
+    </w:sectPr>
+  </w:body>
+</w:document>
