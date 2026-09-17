@@ -236,20 +236,20 @@ fn parse_shared_strings<R: BufRead>(
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) => {
-                if name_eq(element.name().as_ref(), b"si") {
+                if name_eq(element.name().as_ref(), "si") {
                     current_string = Some(String::new());
-                } else if current_string.is_some() && name_eq(element.name().as_ref(), b"t") {
+                } else if current_string.is_some() && name_eq(element.name().as_ref(), "t") {
                     in_text = true;
                 }
             }
             Ok(Event::Empty(element)) => {
-                if name_eq(element.name().as_ref(), b"si") {
+                if name_eq(element.name().as_ref(), "si") {
                     store.push(String::new())?;
                 } else if let Some(value) = &mut current_string {
-                    if name_eq(element.name().as_ref(), b"tab") {
+                    if name_eq(element.name().as_ref(), "tab") {
                         value.push('\t');
-                    } else if name_eq(element.name().as_ref(), b"br")
-                        || name_eq(element.name().as_ref(), b"cr")
+                    } else if name_eq(element.name().as_ref(), "br")
+                        || name_eq(element.name().as_ref(), "cr")
                     {
                         value.push('\n');
                     }
@@ -271,9 +271,9 @@ fn parse_shared_strings<R: BufRead>(
                 }
             }
             Ok(Event::End(element)) => {
-                if name_eq(element.name().as_ref(), b"t") {
+                if name_eq(element.name().as_ref(), "t") {
                     in_text = false;
-                } else if name_eq(element.name().as_ref(), b"si")
+                } else if name_eq(element.name().as_ref(), "si")
                     && let Some(current) = current_string.take()
                 {
                     store.push(current)?;

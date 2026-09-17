@@ -458,13 +458,13 @@ fn parse_workbook_sheets(xml: &str, path: &str) -> Result<Extraction<Vec<Workboo
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) | Ok(Event::Empty(element))
-                if name_eq(element.name().as_ref(), b"sheet") =>
+                if name_eq(element.name().as_ref(), "sheet") =>
             {
-                match (attr_value(&element, b"name"), attr_value(&element, b"id")) {
+                match (attr_value(&element, "name"), attr_value(&element, "id")) {
                     (Some(name), Some(relation_id)) => sheets.push(WorkbookSheet {
                         name,
                         relation_id,
-                        visibility: sheet_visibility(attr_value(&element, b"state")),
+                        visibility: sheet_visibility(attr_value(&element, "state")),
                     }),
                     _ => warnings.push(OutputWarning::ignored_workbook_sheet(path)),
                 }
@@ -490,9 +490,9 @@ fn parse_workbook_date_system(xml: &str) -> DateSystem {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) | Ok(Event::Empty(element))
-                if name_eq(element.name().as_ref(), b"workbookPr") =>
+                if name_eq(element.name().as_ref(), "workbookPr") =>
             {
-                return match attr_value(&element, b"date1904").as_deref() {
+                return match attr_value(&element, "date1904").as_deref() {
                     Some("1" | "true" | "TRUE") => DateSystem::Excel1904,
                     _ => DateSystem::Excel1900,
                 };
@@ -518,22 +518,22 @@ fn parse_styles(xml: &str, path: &str) -> Extraction<XlsxStyles> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) => {
-                if name_eq(element.name().as_ref(), b"cellXfs") {
+                if name_eq(element.name().as_ref(), "cellXfs") {
                     in_cell_xfs = true;
-                } else if in_cell_xfs && name_eq(element.name().as_ref(), b"xf") {
+                } else if in_cell_xfs && name_eq(element.name().as_ref(), "xf") {
                     cell_formats.push(cell_format_from_element(&element, &custom_formats));
-                } else if name_eq(element.name().as_ref(), b"numFmt") {
+                } else if name_eq(element.name().as_ref(), "numFmt") {
                     insert_custom_number_format(&element, &mut custom_formats);
                 }
             }
             Ok(Event::Empty(element)) => {
-                if name_eq(element.name().as_ref(), b"numFmt") {
+                if name_eq(element.name().as_ref(), "numFmt") {
                     insert_custom_number_format(&element, &mut custom_formats);
-                } else if in_cell_xfs && name_eq(element.name().as_ref(), b"xf") {
+                } else if in_cell_xfs && name_eq(element.name().as_ref(), "xf") {
                     cell_formats.push(cell_format_from_element(&element, &custom_formats));
                 }
             }
-            Ok(Event::End(element)) if name_eq(element.name().as_ref(), b"cellXfs") => {
+            Ok(Event::End(element)) if name_eq(element.name().as_ref(), "cellXfs") => {
                 in_cell_xfs = false;
             }
             Ok(Event::Eof) => break,
@@ -554,8 +554,8 @@ fn insert_custom_number_format(
     custom_formats: &mut HashMap<u32, String>,
 ) {
     if let (Some(id), Some(code)) = (
-        attr_value(element, b"numFmtId").and_then(|value| value.parse::<u32>().ok()),
-        attr_value(element, b"formatCode"),
+        attr_value(element, "numFmtId").and_then(|value| value.parse::<u32>().ok()),
+        attr_value(element, "formatCode"),
     ) {
         custom_formats.insert(id, code);
     }
@@ -565,7 +565,7 @@ fn cell_format_from_element(
     element: &quick_xml::events::BytesStart<'_>,
     custom_formats: &HashMap<u32, String>,
 ) -> CellFormat {
-    let number_format = attr_value(element, b"numFmtId")
+    let number_format = attr_value(element, "numFmtId")
         .and_then(|value| value.parse::<u32>().ok())
         .and_then(|id| {
             custom_formats
@@ -635,32 +635,32 @@ fn parse_sheet_rows<R: BufRead>(
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) => {
-                if name_eq(element.name().as_ref(), b"row") {
+                if name_eq(element.name().as_ref(), "row") {
                     let row_index = row_index_from_element(&element, next_row_index);
                     next_row_index = row_index.saturating_add(1);
                     row = Some(ParsedRow::new(row_index));
-                } else if name_eq(element.name().as_ref(), b"c") {
+                } else if name_eq(element.name().as_ref(), "c") {
                     let fallback_column = row.as_ref().map_or(0, ParsedRow::next_column);
                     current_cell = Some(cell_state_from_element(&element, fallback_column));
                 } else if let Some(cell) = &mut current_cell {
-                    if name_eq(element.name().as_ref(), b"v") {
+                    if name_eq(element.name().as_ref(), "v") {
                         cell.in_value = true;
-                    } else if name_eq(element.name().as_ref(), b"t") {
+                    } else if name_eq(element.name().as_ref(), "t") {
                         cell.in_inline_text = true;
-                    } else if name_eq(element.name().as_ref(), b"f") {
+                    } else if name_eq(element.name().as_ref(), "f") {
                         cell.has_formula = true;
                     }
                 }
             }
             Ok(Event::Empty(element)) => {
-                if name_eq(element.name().as_ref(), b"row") {
+                if name_eq(element.name().as_ref(), "row") {
                     let row_index = row_index_from_element(&element, next_row_index);
                     next_row_index = row_index.saturating_add(1);
                     if sink.emit(&ParsedRow::new(row_index).row)? == XlsxRowControl::Stop {
                         break;
                     }
                     row = None;
-                } else if name_eq(element.name().as_ref(), b"c")
+                } else if name_eq(element.name().as_ref(), "c")
                     && let Some(row) = &mut row
                 {
                     let cell = cell_state_from_element(&element, row.next_column());
@@ -672,7 +672,7 @@ fn parse_sheet_rows<R: BufRead>(
                         format_context,
                         &mut warnings,
                     )?;
-                } else if name_eq(element.name().as_ref(), b"f")
+                } else if name_eq(element.name().as_ref(), "f")
                     && let Some(cell) = &mut current_cell
                 {
                     cell.has_formula = true;
@@ -701,14 +701,14 @@ fn parse_sheet_rows<R: BufRead>(
             }
             Ok(Event::End(element)) => {
                 if let Some(cell) = &mut current_cell {
-                    if name_eq(element.name().as_ref(), b"v") {
+                    if name_eq(element.name().as_ref(), "v") {
                         cell.in_value = false;
-                    } else if name_eq(element.name().as_ref(), b"t") {
+                    } else if name_eq(element.name().as_ref(), "t") {
                         cell.in_inline_text = false;
                     }
                 }
 
-                if name_eq(element.name().as_ref(), b"c") {
+                if name_eq(element.name().as_ref(), "c") {
                     if let (Some(row), Some(cell)) = (&mut row, current_cell.take()) {
                         push_typed_cell(
                             row,
@@ -719,7 +719,7 @@ fn parse_sheet_rows<R: BufRead>(
                             &mut warnings,
                         )?;
                     }
-                } else if name_eq(element.name().as_ref(), b"row")
+                } else if name_eq(element.name().as_ref(), "row")
                     && let Some(row) = row.take()
                     && sink.emit(&row.row)? == XlsxRowControl::Stop
                 {
@@ -873,7 +873,7 @@ fn row_index_from_element(
     element: &quick_xml::events::BytesStart<'_>,
     fallback_index: usize,
 ) -> usize {
-    attr_value(element, b"r")
+    attr_value(element, "r")
         .and_then(|index| index.parse::<usize>().ok())
         .and_then(|index| index.checked_sub(1))
         .unwrap_or(fallback_index)
@@ -884,10 +884,10 @@ fn cell_state_from_element(
     fallback_column: usize,
 ) -> CellState {
     CellState {
-        value_type: attr_value(element, b"t"),
-        column_index: attr_value(element, b"r")
+        value_type: attr_value(element, "t"),
+        column_index: attr_value(element, "r")
             .and_then(|cell_ref| parse_cell_column(&cell_ref).or(Some(fallback_column))),
-        style_index: attr_value(element, b"s").and_then(|style| style.parse::<usize>().ok()),
+        style_index: attr_value(element, "s").and_then(|style| style.parse::<usize>().ok()),
         ..CellState::default()
     }
 }
