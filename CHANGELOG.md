@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on human-readable release notes.
 
+## Unreleased
+
+### Changed
+
+- DOCX headers and footers are now ordered by the sections that reference
+  them in `word/document.xml` instead of `word/_rels/document.xml.rels`
+  relationship-file order: sections in document order, headers before
+  footers, `first`/`even`/`default` variants, dedup by resolved part path at
+  the first reference, orphan header/footer parts appended in relationship
+  order, and footnotes/endnotes/comments moved strictly after all headers and
+  footers (keeping their mutual relationship order). Consumers relying on
+  relationship-file order for multi-section packages will see different text,
+  block, and table ordering; single-section documents with ordered rels are
+  unchanged. No public output schema or option changes. Two new recoverable
+  warnings are added for section references: a dangling `r:id` emits
+  `skipped DOCX headerReference|footerReference {rid}: unknown relationship
+  id`, and a reference without `r:id` emits `skipped DOCX
+  headerReference|footerReference: missing r:id`; extraction continues in
+  both cases.
+
 ## 1.2.0 - 2026-08-04
 
 ### Added

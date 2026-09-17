@@ -36,10 +36,48 @@ The current parser:
 | Fields | Field instructions such as `<w:instrText>` are omitted; visible cached/result text in `<w:t>` is emitted. |
 | Hidden text | Hidden run properties such as `<w:vanish/>` are not interpreted yet, so hidden `<w:t>` text is emitted when present in `word/document.xml`. |
 | Hyperlinks | Visible run text inside hyperlinks is emitted; relationship targets are not emitted. |
-| Related text parts | The main document body is emitted first, then headers, footers, footnotes, endnotes, and comments are appended in `word/_rels/document.xml.rels` relationship order. Missing related parts are skipped with a warning. |
+| Related text parts | The main document body is emitted first, then headers, footers, footnotes, endnotes, and comments are appended following the section-aware ordering rule below (Related-part ordering). Missing related parts are skipped with a warning. |
 | Text boxes and drawings | Visible text is emitted when it appears in `*:t` text nodes in parsed DOCX parts. Layout and drawing geometry are not interpreted. |
 
 These rules are intentionally stable for scripts. Breaking changes to this contract should be called out in release notes.
+
+### Related-part ordering
+
+Headers and footers are ordered by the sections that reference them in
+`word/document.xml`, not by `word/_rels/document.xml.rels` file order. The
+single shared ordering rule below is applied identically by flat text,
+structured blocks, and tables, so the three paths cannot drift:
+
+1. Sections are discovered by walking `w:body` children in document order: a
+   `w:p/w:pPr/w:sectPr` closes a section at that paragraph position, and the
+   body-level `w:sectPr` (last child of `w:body`) is the final section.
+2. Within each section, references are ordered headers before footers, and
+   within each kind by `w:type` variant `first`, `even`, `default`. A missing
+   or unrecognized `w:type` value (for example `title`) is treated as
+   `default` silently, with no warning. Ties keep `sectPr` element order.
+3. Each resolved part is emitted once, at its first referencing position,
+   deduplicating by resolved package path, so a header shared by two sections
+   is emitted at the first referencing section only.
+4. Header/footer relationships present in the rels file but referenced by no
+   `sectPr` are appended after all section-referenced headers and footers, in
+   relationship file order.
+5. Footnotes, endnotes, and comments (when enabled) follow strictly after all
+   header and footer parts, keeping their mutual relationship-file order.
+   Their placement after headers/footers is a behavior change from previous
+   releases, which interleaved them by relationship order.
+6. A reference whose `r:id` is absent from the rels file is skipped with the
+   warning `skipped DOCX headerReference {rid}: unknown relationship id`
+   (footer equivalent for `w:footerReference`); a reference without `r:id` is
+   skipped with `skipped DOCX headerReference: missing r:id` (footer
+   equivalent). Extraction continues after either warning. A `r:id` that
+   resolves to a relationship whose type is not header or footer is skipped
+   silently.
+7. `w:titlePg` is not consulted for ordering or filtering: a `w:type="first"`
+   header/footer is emitted whenever a section references it, whether or not
+   `titlePg` is set — this is documented behavior, not a bug.
+   `word/settings.xml` is not read either: honoring `evenAndOddHeaders` is
+   deferred, so even-variant references still emit in `first`/`even`/`default`
+   variant position.
 
 ## Structural Table Model
 
@@ -99,7 +137,7 @@ vertical merges, or omitted leading and trailing grid columns.
 | Nested blocks | A cell's direct `w:p` and `w:tbl` children become `blocks` in exact document order. A nested table appears only inside its containing cell; it is not also emitted as a top-level table. |
 | Revisions | Apply the visible-content policy before building structure: run content inside `w:del` and `w:moveFrom` is omitted; content inside `w:ins` and `w:moveTo` is retained. A row marked deleted by `w:trPr/w:del` is omitted. Property history such as `w:tblPrChange`, `w:trPrChange`, and `w:tcPrChange` is metadata and does not replace the current properties. |
 | Malformed XML | Return warnings and the largest deterministic prefix. Fully closed tables are retained. If a table is open at the failure point, emit it with `complete: false`, retaining only fully closed rows; an open row or cell is discarded. Closed descendants of a discarded open row are not promoted. |
-| Related parts | Discover the main part through the root office-document relationship. Emit main-part tables first, followed by tables from headers, footers, footnotes, endnotes, and comments in `document.xml.rels` relationship order. Every table carries `part_type` and normalized package `part_path`. Missing or malformed related parts warn and do not suppress tables already extracted from other parts. |
+| Related parts | Discover the main part through the root office-document relationship. Emit main-part tables first, followed by tables from headers, footers, footnotes, endnotes, and comments in the same section-aware order defined under Related-part ordering (Logical Text Contract). Every table carries `part_type` and normalized package `part_path`. Missing or malformed related parts warn and do not suppress tables already extracted from other parts. |
 
 Table order within each part is depth-first document order. Because nested
 tables live in cell `blocks`, top-level `table_ordinal` counts only tables whose
@@ -162,10 +200,6 @@ formats and indentation are intentionally not rendered. `--exclude-related-parts
 takes precedence over `--exclude-comments`: no related part is read. Otherwise
 `--exclude-comments` omits only the comments relationship, leaving headers,
 footers, footnotes, and endnotes intact.
-
-## Planned Improvements
-
-- Section-aware ordering for headers and footers.
 
 ## Non-Goals
 
