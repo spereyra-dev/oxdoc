@@ -26,10 +26,11 @@ use std::path::Path;
 
 pub use error::{OxdocError, Result};
 pub use models::{
-    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, DocxTable, DocxTableBlock,
-    DocxTableCell, DocxTableRow, DocxTables, DocxVerticalMerge, Extraction, OutputWarning,
-    StructuredText, TextBlock, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxReadOptions, XlsxRow,
-    XlsxRowControl, XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
+    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, DocxRevisionMode, DocxTable,
+    DocxTableBlock, DocxTableCell, DocxTableRow, DocxTables, DocxTextOptions, DocxVerticalMerge,
+    Extraction, OutputWarning, StructuredText, TextBlock, XlsxCell, XlsxCellValue, XlsxCsvOptions,
+    XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility,
+    XlsxValueMode,
 };
 #[doc(hidden)]
 pub use parsers::docx::fuzz_extract_text as fuzz_docx_text;
@@ -45,58 +46,140 @@ use parsers::{docx, metadata, pptx, xlsx};
 use vfs::{OoxmlLimits, OoxmlPackage};
 
 pub fn extract_docx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {
+    extract_docx_text_with_options(path, DocxTextOptions::default())
+}
+
+pub fn extract_docx_text_with_options(
+    path: impl AsRef<Path>,
+    options: DocxTextOptions,
+) -> Result<Extraction<String>> {
     let file = File::open(path)?;
-    extract_docx_text_from_reader(file)
+    extract_docx_text_from_reader_with_options(file, options)
 }
 
 pub fn extract_docx_text_from_reader<R: Read + Seek>(reader: R) -> Result<Extraction<String>> {
-    extract_docx_text_from_reader_with_limits(reader, OoxmlLimits::default())
+    extract_docx_text_from_reader_with_options(reader, DocxTextOptions::default())
+}
+
+pub fn extract_docx_text_from_reader_with_options<R: Read + Seek>(
+    reader: R,
+    options: DocxTextOptions,
+) -> Result<Extraction<String>> {
+    extract_docx_text_from_reader_with_options_and_limits(reader, options, OoxmlLimits::default())
 }
 
 pub fn extract_docx_text_from_reader_with_limits<R: Read + Seek>(
     reader: R,
     limits: OoxmlLimits,
 ) -> Result<Extraction<String>> {
+    extract_docx_text_from_reader_with_options_and_limits(
+        reader,
+        DocxTextOptions::default(),
+        limits,
+    )
+}
+
+pub fn extract_docx_text_from_reader_with_options_and_limits<R: Read + Seek>(
+    reader: R,
+    options: DocxTextOptions,
+    limits: OoxmlLimits,
+) -> Result<Extraction<String>> {
     let mut package = OoxmlPackage::with_limits(reader, limits)?;
-    docx::extract_text(&mut package)
+    docx::extract_text(&mut package, options)
 }
 
 pub fn extract_docx_structured_text(path: impl AsRef<Path>) -> Result<Extraction<StructuredText>> {
+    extract_docx_structured_text_with_options(path, DocxTextOptions::default())
+}
+
+pub fn extract_docx_structured_text_with_options(
+    path: impl AsRef<Path>,
+    options: DocxTextOptions,
+) -> Result<Extraction<StructuredText>> {
     let file = File::open(path)?;
-    extract_docx_structured_text_from_reader(file)
+    extract_docx_structured_text_from_reader_with_options(file, options)
 }
 
 pub fn extract_docx_structured_text_from_reader<R: Read + Seek>(
     reader: R,
 ) -> Result<Extraction<StructuredText>> {
-    extract_docx_structured_text_from_reader_with_limits(reader, OoxmlLimits::default())
+    extract_docx_structured_text_from_reader_with_options(reader, DocxTextOptions::default())
+}
+
+pub fn extract_docx_structured_text_from_reader_with_options<R: Read + Seek>(
+    reader: R,
+    options: DocxTextOptions,
+) -> Result<Extraction<StructuredText>> {
+    extract_docx_structured_text_from_reader_with_options_and_limits(
+        reader,
+        options,
+        OoxmlLimits::default(),
+    )
 }
 
 pub fn extract_docx_structured_text_from_reader_with_limits<R: Read + Seek>(
     reader: R,
     limits: OoxmlLimits,
 ) -> Result<Extraction<StructuredText>> {
+    extract_docx_structured_text_from_reader_with_options_and_limits(
+        reader,
+        DocxTextOptions::default(),
+        limits,
+    )
+}
+
+pub fn extract_docx_structured_text_from_reader_with_options_and_limits<R: Read + Seek>(
+    reader: R,
+    options: DocxTextOptions,
+    limits: OoxmlLimits,
+) -> Result<Extraction<StructuredText>> {
     let mut package = OoxmlPackage::with_limits(reader, limits)?;
-    docx::extract_structured_text(&mut package)
+    docx::extract_structured_text(&mut package, options)
 }
 
 pub fn extract_docx_tables(path: impl AsRef<Path>) -> Result<Extraction<DocxTables>> {
+    extract_docx_tables_with_options(path, DocxTextOptions::default())
+}
+
+pub fn extract_docx_tables_with_options(
+    path: impl AsRef<Path>,
+    options: DocxTextOptions,
+) -> Result<Extraction<DocxTables>> {
     let file = File::open(path)?;
-    extract_docx_tables_from_reader(file)
+    extract_docx_tables_from_reader_with_options(file, options)
 }
 
 pub fn extract_docx_tables_from_reader<R: Read + Seek>(
     reader: R,
 ) -> Result<Extraction<DocxTables>> {
-    extract_docx_tables_from_reader_with_limits(reader, OoxmlLimits::default())
+    extract_docx_tables_from_reader_with_options(reader, DocxTextOptions::default())
+}
+
+pub fn extract_docx_tables_from_reader_with_options<R: Read + Seek>(
+    reader: R,
+    options: DocxTextOptions,
+) -> Result<Extraction<DocxTables>> {
+    extract_docx_tables_from_reader_with_options_and_limits(reader, options, OoxmlLimits::default())
 }
 
 pub fn extract_docx_tables_from_reader_with_limits<R: Read + Seek>(
     reader: R,
     limits: OoxmlLimits,
 ) -> Result<Extraction<DocxTables>> {
+    extract_docx_tables_from_reader_with_options_and_limits(
+        reader,
+        DocxTextOptions::default(),
+        limits,
+    )
+}
+
+pub fn extract_docx_tables_from_reader_with_options_and_limits<R: Read + Seek>(
+    reader: R,
+    options: DocxTextOptions,
+    limits: OoxmlLimits,
+) -> Result<Extraction<DocxTables>> {
     let mut package = OoxmlPackage::with_limits(reader, limits)?;
-    docx::extract_tables(&mut package)
+    docx::extract_tables(&mut package, options)
 }
 
 pub fn extract_pptx_text(path: impl AsRef<Path>) -> Result<Extraction<String>> {

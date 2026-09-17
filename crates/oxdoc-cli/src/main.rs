@@ -5,12 +5,12 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::OnceLock;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use oxdoc_core::vfs::OoxmlLimits;
 use oxdoc_core::{
-    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, DocxTables, OutputWarning, OxdocError,
-    StructuredText, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxRow, XlsxRowControl,
-    XlsxSheetOptions, XlsxValueMode,
+    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, DocxRevisionMode, DocxTables,
+    DocxTextOptions, OutputWarning, OxdocError, StructuredText, XlsxCell, XlsxCellValue,
+    XlsxCsvOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions, XlsxValueMode,
 };
 use oxdoc_tabular::xlsx_schema;
 
@@ -145,6 +145,8 @@ enum ExtractCommand {
         format: TextFormat,
         #[arg(long, short)]
         output: Option<PathBuf>,
+        #[command(flatten)]
+        docx_options: CliDocxTextOptions,
     },
     Csv {
         #[arg(required = true)]
@@ -218,6 +220,48 @@ enum TextFormat {
     Json,
     Jsonl,
     StructuredJson,
+}
+
+#[derive(Debug, Clone, Copy, Args)]
+struct CliDocxTextOptions {
+    /// Omit runs marked hidden with w:vanish.
+    #[arg(long)]
+    exclude_hidden_text: bool,
+    /// Omit the DOCX comments part.
+    #[arg(long)]
+    exclude_comments: bool,
+    /// Select tracked-revision content.
+    #[arg(long, value_enum, default_value_t = CliDocxRevisionMode::Final)]
+    revisions: CliDocxRevisionMode,
+    /// Do not append headers, footers, notes, or comments.
+    #[arg(long)]
+    exclude_related_parts: bool,
+    /// Prefix list paragraphs with a generated "- " marker.
+    #[arg(long)]
+    include_list_markers: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum CliDocxRevisionMode {
+    Final,
+    Original,
+    All,
+}
+
+impl From<CliDocxTextOptions> for DocxTextOptions {
+    fn from(value: CliDocxTextOptions) -> Self {
+        Self {
+            include_hidden_text: !value.exclude_hidden_text,
+            include_comments: !value.exclude_comments,
+            revision_mode: match value.revisions {
+                CliDocxRevisionMode::Final => DocxRevisionMode::Final,
+                CliDocxRevisionMode::Original => DocxRevisionMode::Original,
+                CliDocxRevisionMode::All => DocxRevisionMode::All,
+            },
+            include_related_parts: !value.exclude_related_parts,
+            include_list_markers: value.include_list_markers,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -302,8 +346,15 @@ fn run() -> Result<(), CliError> {
                 files,
                 format,
                 output,
+                docx_options,
             } => {
-                extract_text_command(&files, format, output.as_deref(), warning_format)?;
+                extract_text_command(
+                    &files,
+                    format,
+                    output.as_deref(),
+                    docx_options.into(),
+                    warning_format,
+                )?;
             }
             ExtractCommand::Csv {
                 files,
@@ -466,6 +517,7 @@ fn extract_text_command(
     files: &[PathBuf],
     format: TextFormat,
     output: Option<&Path>,
+    docx_options: DocxTextOptions,
     warning_format: WarningFormat,
 ) -> Result<(), CliError> {
     let multiple = files.len() > 1;
@@ -476,14 +528,14 @@ fn extract_text_command(
 
     for file in files {
         if format == TextFormat::Jsonl {
-            let record = extract_text_jsonl_record(file, warning_format);
+            let record = extract_text_jsonl_record(file, docx_options, warning_format);
             serde_json::to_writer(&mut writer, &record)?;
             writeln!(writer)?;
             continue;
         }
 
         if format == TextFormat::StructuredJson {
-            match extract_structured_text(file) {
+            match extract_structured_text(file, docx_options) {
                 Ok(result) => {
                     emit_warnings(&result.warnings, warning_format);
                     structured_payloads.push(TextStructuredPayload {
@@ -497,7 +549,7 @@ fn extract_text_command(
             continue;
         }
 
-        match extract_text(file) {
+        match extract_text(file, docx_options) {
             Ok(result) => {
                 emit_warnings(&result.warnings, warning_format);
                 match format {
@@ -558,13 +610,14 @@ fn extract_text_command(
 
 fn extract_structured_text(
     file: &Path,
+    options: DocxTextOptions,
 ) -> Result<oxdoc_core::Extraction<StructuredText>, CliError> {
     let input = read_input(file)?;
     match document_type_for_input(&input, file)? {
         DocumentType::Pptx => input.extract_pptx_structured_text().map_err(CliError::Core),
-        DocumentType::Docx | DocumentType::Unknown => {
-            input.extract_docx_structured_text().map_err(CliError::Core)
-        }
+        DocumentType::Docx | DocumentType::Unknown => input
+            .extract_docx_structured_text_with_options(options)
+            .map_err(CliError::Core),
         DocumentType::Xlsx => Err(CliError::InvalidArgument(
             "cannot extract text from an XLSX workbook".to_owned(),
         )),
@@ -682,7 +735,11 @@ fn audit_jsonl_record(file: &Path, warning_format: WarningFormat) -> AuditJsonlR
     }
 }
 
-fn extract_text_jsonl_record(file: &Path, warning_format: WarningFormat) -> TextJsonlRecord {
+fn extract_text_jsonl_record(
+    file: &Path,
+    options: DocxTextOptions,
+    warning_format: WarningFormat,
+) -> TextJsonlRecord {
     let file_name = display_file_name(file);
     let input = match read_input(file) {
         Ok(input) => input,
@@ -700,7 +757,9 @@ fn extract_text_jsonl_record(file: &Path, warning_format: WarningFormat) -> Text
     let result = match document_type_for_input(&input, file) {
         Ok(document_type) => match document_type {
             DocumentType::Pptx => input.extract_pptx_text(),
-            DocumentType::Docx | DocumentType::Unknown => input.extract_docx_text(),
+            DocumentType::Docx | DocumentType::Unknown => {
+                input.extract_docx_text_with_options(options)
+            }
             DocumentType::Xlsx => Err(OxdocError::InvalidArgument(
                 "cannot extract text from an XLSX workbook".to_owned(),
             )),
@@ -980,13 +1039,16 @@ fn export_all_sheets(
     Ok(())
 }
 
-fn extract_text(file: &Path) -> Result<oxdoc_core::Extraction<String>, CliError> {
+fn extract_text(
+    file: &Path,
+    options: DocxTextOptions,
+) -> Result<oxdoc_core::Extraction<String>, CliError> {
     let input = read_input(file)?;
     match document_type_for_input(&input, file)? {
         DocumentType::Pptx => input.extract_pptx_text().map_err(CliError::Core),
-        DocumentType::Docx | DocumentType::Unknown => {
-            input.extract_docx_text().map_err(CliError::Core)
-        }
+        DocumentType::Docx | DocumentType::Unknown => input
+            .extract_docx_text_with_options(options)
+            .map_err(CliError::Core),
         DocumentType::Xlsx => Err(CliError::InvalidArgument(
             "cannot extract text from an XLSX workbook".to_owned(),
         )),
@@ -1041,43 +1103,49 @@ fn cli_limits() -> CliLimits {
 }
 
 impl Input {
-    fn extract_docx_text(&self) -> oxdoc_core::Result<oxdoc_core::Extraction<String>> {
+    fn extract_docx_text_with_options(
+        &self,
+        options: DocxTextOptions,
+    ) -> oxdoc_core::Result<oxdoc_core::Extraction<String>> {
         match self {
-            Input::Path(path) => oxdoc_core::extract_docx_text_from_reader_with_limits(
+            Input::Path(path) => oxdoc_core::extract_docx_text_from_reader_with_options_and_limits(
                 File::open(path)?,
+                options,
                 cli_limits().ooxml,
             ),
-            Input::Stdin(bytes) => oxdoc_core::extract_docx_text_from_reader_with_limits(
-                Cursor::new(bytes),
-                cli_limits().ooxml,
-            ),
+            Input::Stdin(bytes) => {
+                oxdoc_core::extract_docx_text_from_reader_with_options_and_limits(
+                    Cursor::new(bytes),
+                    options,
+                    cli_limits().ooxml,
+                )
+            }
         }
     }
 
     fn extract_pptx_text(&self) -> oxdoc_core::Result<oxdoc_core::Extraction<String>> {
         match self {
-            Input::Path(path) => oxdoc_core::extract_pptx_text_from_reader_with_limits(
-                File::open(path)?,
-                cli_limits().ooxml,
-            ),
-            Input::Stdin(bytes) => oxdoc_core::extract_pptx_text_from_reader_with_limits(
-                Cursor::new(bytes),
-                cli_limits().ooxml,
-            ),
+            Input::Path(path) => oxdoc_core::extract_pptx_text(path),
+            Input::Stdin(bytes) => oxdoc_core::extract_pptx_text_from_reader(Cursor::new(bytes)),
         }
     }
 
-    fn extract_docx_structured_text(
+    fn extract_docx_structured_text_with_options(
         &self,
+        options: DocxTextOptions,
     ) -> oxdoc_core::Result<oxdoc_core::Extraction<StructuredText>> {
         match self {
-            Input::Path(path) => oxdoc_core::extract_docx_structured_text_from_reader_with_limits(
-                File::open(path)?,
-                cli_limits().ooxml,
-            ),
+            Input::Path(path) => {
+                oxdoc_core::extract_docx_structured_text_from_reader_with_options_and_limits(
+                    File::open(path)?,
+                    options,
+                    cli_limits().ooxml,
+                )
+            }
             Input::Stdin(bytes) => {
-                oxdoc_core::extract_docx_structured_text_from_reader_with_limits(
+                oxdoc_core::extract_docx_structured_text_from_reader_with_options_and_limits(
                     Cursor::new(bytes),
+                    options,
                     cli_limits().ooxml,
                 )
             }

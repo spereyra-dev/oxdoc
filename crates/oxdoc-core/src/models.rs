@@ -260,6 +260,50 @@ pub enum DocxVerticalMerge {
     Continue,
 }
 
+/// Controls which DOCX content is considered visible during extraction.
+///
+/// The default preserves the behavior of the original DOCX extraction APIs:
+/// hidden text, comments, and related text parts are included; final-document
+/// revision content is used; and list markers are not synthesized.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DocxTextOptions {
+    /// Include runs with the `w:vanish` property.
+    pub include_hidden_text: bool,
+    /// Include the comments related part when related parts are included.
+    pub include_comments: bool,
+    /// Selects which tracked-revision content is emitted.
+    pub revision_mode: DocxRevisionMode,
+    /// Include headers, footers, footnotes, endnotes, and (optionally) comments.
+    pub include_related_parts: bool,
+    /// Prefix list paragraphs with a deterministic generated marker (`- `).
+    pub include_list_markers: bool,
+}
+
+impl Default for DocxTextOptions {
+    fn default() -> Self {
+        Self {
+            include_hidden_text: true,
+            include_comments: true,
+            revision_mode: DocxRevisionMode::Final,
+            include_related_parts: true,
+            include_list_markers: false,
+        }
+    }
+}
+
+/// Selects the tracked-revision view used for DOCX extraction.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DocxRevisionMode {
+    /// Emit inserted and moved-to content, omitting deleted and moved-from content.
+    #[default]
+    Final,
+    /// Emit deleted and moved-from content, omitting inserted and moved-to content.
+    Original,
+    /// Emit content from both sides of tracked revisions in document order.
+    All,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -497,7 +541,8 @@ impl AuditSignal {
 #[cfg(test)]
 mod tests {
     use super::{
-        Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCsvOptions, XlsxSheetOptions,
+        Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCsvOptions, XlsxReadOptions,
+        XlsxSheetOptions,
     };
 
     #[test]
@@ -567,5 +612,23 @@ mod tests {
         assert_eq!(options.sheet_name, None);
         assert_eq!(options.sheet_index, None);
         assert!(!options.include_hidden);
+    }
+
+    #[test]
+    fn classifies_number_format_warnings_as_data() {
+        let unsupported =
+            OutputWarning::unsupported_number_format("xl/sheet.xml", "0.00E+00", false);
+        let ambiguous = OutputWarning::unsupported_number_format("xl/sheet.xml", "# ?/?", true);
+
+        assert_eq!(unsupported.category(), WarningCategory::Data);
+        assert_eq!(ambiguous.category(), WarningCategory::Data);
+    }
+
+    #[test]
+    fn defaults_xlsx_read_options() {
+        let options = XlsxReadOptions::default();
+
+        assert_eq!(options.sheet, XlsxSheetOptions::default());
+        assert_eq!(options.worksheet_limits, None);
     }
 }

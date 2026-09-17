@@ -5,8 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use oxdoc_core::vfs::{OoxmlLimits, OoxmlPackage};
 use oxdoc_core::{
-    DocumentType, DocxTableBlock, DocxVerticalMerge, OxdocError, XlsxCellValue, XlsxCsvOptions,
-    XlsxReadOptions, XlsxRowControl, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
+    DocumentType, DocxRevisionMode, DocxTableBlock, DocxTextOptions, DocxVerticalMerge, OxdocError,
+    XlsxCellValue, XlsxCsvOptions, XlsxReadOptions, XlsxRowControl, XlsxSheetOptions,
+    XlsxSheetVisibility, XlsxValueMode,
 };
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -39,6 +40,26 @@ fn extracts_docx_text_from_read_seek_reader() {
         fixtures::read_snapshot("docx_basic_text.txt").trim_end()
     );
     assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn applies_docx_text_options_through_public_api() {
+    let file = fixtures::build_package("docx/policies", "policies.docx");
+    let default = oxdoc_core::extract_docx_text(&file).unwrap();
+    assert_eq!(default.value, "List item\nHiddenInserted\nComment\n");
+
+    let extraction = oxdoc_core::extract_docx_text_with_options(
+        &file,
+        DocxTextOptions {
+            include_hidden_text: false,
+            include_comments: false,
+            revision_mode: DocxRevisionMode::Original,
+            include_related_parts: false,
+            include_list_markers: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(extraction.value, "- List item\nDeleted\n");
 }
 
 #[test]
@@ -2021,4 +2042,227 @@ fn unique_path(name: &str) -> PathBuf {
         .unwrap()
         .as_nanos();
     std::env::temp_dir().join(format!("oxdoc-core-{}-{nonce}-{name}", std::process::id()))
+}
+
+#[test]
+fn extracts_docx_text_and_structured_text_from_readers_with_limits() {
+    let file = fixtures::build_package("docx/basic", "limits-reader.docx");
+    let bytes = fs::read(&file).unwrap();
+
+    let text = oxdoc_core::extract_docx_text_from_reader_with_limits(
+        Cursor::new(bytes.clone()),
+        OoxmlLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        text.value.trim_end(),
+        fixtures::read_snapshot("docx_basic_text.txt").trim_end()
+    );
+    assert!(text.warnings.is_empty());
+
+    let structured = oxdoc_core::extract_docx_structured_text_from_reader_with_limits(
+        Cursor::new(bytes),
+        OoxmlLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(structured.value.blocks.len(), 1);
+    assert_eq!(structured.value.blocks[0].part_type, "main");
+    assert!(structured.warnings.is_empty());
+}
+
+#[test]
+fn omits_related_parts_from_docx_structured_text_and_tables() {
+    let file = fixtures::build_package("docx/policies", "policies-no-related.docx");
+    let options = DocxTextOptions {
+        include_related_parts: false,
+        ..DocxTextOptions::default()
+    };
+
+    let structured = oxdoc_core::extract_docx_structured_text_with_options(&file, options).unwrap();
+    assert_eq!(structured.value.blocks.len(), 1);
+    assert_eq!(structured.value.blocks[0].part_type, "main");
+
+    let tables = oxdoc_core::extract_docx_tables_with_options(&file, options).unwrap();
+    assert!(tables.value.tables.is_empty());
+    assert!(tables.warnings.is_empty());
+}
+
+#[test]
+fn skips_unrelated_docx_parts_and_reports_missing_parts_for_every_extraction() {
+    let file = create_ooxml(
+        "docx-related-part-matrix.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/><Relationship Id="rMissing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="missing-footer.xml"/><Relationship Id="rFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+            ),
+            (
+                "word/footer1.xml",
+                r#"<w:ftr xmlns:w="w"><w:p><w:r><w:t>Footer</w:t></w:r></w:p></w:ftr>"#,
+            ),
+        ],
+    );
+
+    let text = oxdoc_core::extract_docx_text(&file).unwrap();
+    assert_eq!(text.value, "Body\nFooter\n");
+    assert_eq!(text.warnings.len(), 1);
+    assert!(
+        text.warnings[0]
+            .message
+            .contains("skipped related DOCX text part word/missing-footer.xml")
+    );
+
+    let structured = oxdoc_core::extract_docx_structured_text(&file).unwrap();
+    let part_types: Vec<&str> = structured
+        .value
+        .blocks
+        .iter()
+        .map(|block| block.part_type.as_str())
+        .collect();
+    assert_eq!(part_types, ["main", "footer"]);
+    assert_eq!(structured.warnings.len(), 1);
+    assert!(
+        structured.warnings[0]
+            .message
+            .contains("skipped related DOCX text part word/missing-footer.xml")
+    );
+
+    let tables = oxdoc_core::extract_docx_tables(&file).unwrap();
+    assert!(tables.value.tables.is_empty());
+    assert_eq!(tables.warnings.len(), 1);
+    assert!(
+        tables.warnings[0]
+            .message
+            .contains("skipped related DOCX table part word/missing-footer.xml")
+    );
+}
+
+#[test]
+fn rejects_escaping_docx_related_part_targets_for_every_extraction() {
+    let file = create_ooxml(
+        "docx-escaping-related-part.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="../../footer.xml"/></Relationships>"#,
+            ),
+        ],
+    );
+
+    for err in [
+        oxdoc_core::extract_docx_text(&file).unwrap_err(),
+        oxdoc_core::extract_docx_structured_text(&file).unwrap_err(),
+        oxdoc_core::extract_docx_tables(&file).unwrap_err(),
+    ] {
+        assert!(
+            matches!(err, OxdocError::SuspiciousRelationshipTarget { ref reason, .. }
+                if reason.contains("escapes")),
+            "unexpected error: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn propagates_resource_limit_errors_from_related_docx_parts() {
+    let footer_text = "F".repeat(9000);
+    let file = create_ooxml(
+        "docx-related-part-limit.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+            ),
+            (
+                "word/footer1.xml",
+                &format!(
+                    r#"<w:ftr xmlns:w="w"><w:p><w:r><w:t>{footer_text}</w:t></w:r></w:p></w:ftr>"#
+                ),
+            ),
+        ],
+    );
+    let limits = OoxmlLimits {
+        max_part_uncompressed_size: 4096,
+        ..OoxmlLimits::default()
+    };
+    let bytes = fs::read(&file).unwrap();
+
+    let text_err = oxdoc_core::extract_docx_text_from_reader_with_options_and_limits(
+        Cursor::new(bytes.clone()),
+        DocxTextOptions::default(),
+        limits,
+    )
+    .unwrap_err();
+    assert!(matches!(text_err, OxdocError::PartTooLarge { .. }));
+
+    let structured_err =
+        oxdoc_core::extract_docx_structured_text_from_reader_with_options_and_limits(
+            Cursor::new(bytes.clone()),
+            DocxTextOptions::default(),
+            limits,
+        )
+        .unwrap_err();
+    assert!(matches!(structured_err, OxdocError::PartTooLarge { .. }));
+
+    let tables_err = oxdoc_core::extract_docx_tables_from_reader_with_options_and_limits(
+        Cursor::new(bytes),
+        DocxTextOptions::default(),
+        limits,
+    )
+    .unwrap_err();
+    assert!(matches!(tables_err, OxdocError::PartTooLarge { .. }));
+}
+
+#[test]
+fn appends_related_docx_text_after_separator_and_skips_empty_parts() {
+    let file = create_ooxml(
+        "docx-related-text-separator.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:r><w:t>A</w:t></w:r></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rEmpty" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/></Relationships>"#,
+            ),
+            ("word/footer1.xml", r#"<w:ftr xmlns:w="w"/>"#),
+            (
+                "word/footer2.xml",
+                r#"<w:ftr xmlns:w="w"><w:p><w:r><w:t>F</w:t></w:r></w:p></w:ftr>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
+
+    assert_eq!(extraction.value, "A\nF\n");
+    assert!(extraction.warnings.is_empty());
 }
