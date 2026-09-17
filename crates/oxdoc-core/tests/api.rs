@@ -354,8 +354,10 @@ fn keeps_unreferenced_docx_table_parts_in_relationship_order() {
         parts,
         vec![
             ("main", "word/document.xml", "Main table"),
-            ("comments", "word/comments.xml", "Comment table"),
+            // Rule 5: notes (comments) follow strictly after all headers and
+            // footers; the orphan header keeps rels-order priority.
             ("header", "word/header1.xml", "Header table"),
+            ("comments", "word/comments.xml", "Comment table"),
         ]
     );
     assert!(extraction.warnings.is_empty());

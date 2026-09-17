@@ -7,10 +7,10 @@
       "text": "Main table"
     },
     {
-      "part_type": "comments",
-      "part_path": "word/comments.xml",
+      "part_type": "footer",
+      "part_path": "word/footer1.xml",
       "table_ordinal": 1,
-      "text": "Comment table"
+      "text": "Footer table"
     },
     {
       "part_type": "header",
@@ -19,16 +19,16 @@
       "text": "Header table"
     },
     {
+      "part_type": "comments",
+      "part_path": "word/comments.xml",
+      "table_ordinal": 1,
+      "text": "Comment table"
+    },
+    {
       "part_type": "footnotes",
       "part_path": "word/footnotes.xml",
       "table_ordinal": 1,
       "text": "Footnote table"
-    },
-    {
-      "part_type": "footer",
-      "part_path": "word/footer1.xml",
-      "table_ordinal": 1,
-      "text": "Footer table"
     },
     {
       "part_type": "endnotes",
