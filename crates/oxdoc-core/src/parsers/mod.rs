@@ -65,12 +65,9 @@ fn detect_document_type_from_content_types(xml: &str, path: &str) -> Result<Docu
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) | Ok(Event::Empty(element))
-                if matches!(
-                    local_name(element.name().as_ref()),
-                    b"Default" | b"Override"
-                ) =>
+                if matches!(local_name(element.name().as_ref()), "Default" | "Override") =>
             {
-                if let Some(content_type) = attr_value(&element, b"ContentType") {
+                if let Some(content_type) = attr_value(&element, "ContentType") {
                     if content_type
                         == "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
                     {
@@ -134,14 +131,14 @@ pub(crate) fn parse_relationships(xml: &str, path: &str) -> Result<Vec<Relations
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) | Ok(Event::Empty(element)) => {
-                if name_eq(element.name().as_ref(), b"Relationship")
-                    && let Some(target) = attr_value(&element, b"Target")
+                if name_eq(element.name().as_ref(), "Relationship")
+                    && let Some(target) = attr_value(&element, "Target")
                 {
                     relationships.push(Relationship {
-                        id: attr_value(&element, b"Id"),
+                        id: attr_value(&element, "Id"),
                         target,
-                        relationship_type: attr_value(&element, b"Type"),
-                        target_mode: attr_value(&element, b"TargetMode"),
+                        relationship_type: attr_value(&element, "Type"),
+                        target_mode: attr_value(&element, "TargetMode"),
                     });
                 }
             }
@@ -278,15 +275,15 @@ pub(crate) fn rels_path_for(part_path: &str) -> String {
     }
 }
 
-pub(crate) fn name_eq(name: &[u8], expected_local: &[u8]) -> bool {
+pub(crate) fn name_eq(name: &str, expected_local: &str) -> bool {
     local_name(name) == expected_local
 }
 
-pub(crate) fn local_name(name: &[u8]) -> &[u8] {
-    name.rsplit(|byte| *byte == b':').next().unwrap_or(name)
+pub(crate) fn local_name(name: &str) -> &str {
+    name.rsplit(':').next().unwrap_or(name)
 }
 
-pub(crate) fn attr_value(element: &BytesStart<'_>, expected_local: &[u8]) -> Option<String> {
+pub(crate) fn attr_value(element: &BytesStart<'_>, expected_local: &str) -> Option<String> {
     element
         .attributes()
         .with_checks(false)
@@ -295,16 +292,16 @@ pub(crate) fn attr_value(element: &BytesStart<'_>, expected_local: &[u8]) -> Opt
         .map(|attr| decode_xml_text(attr.value.as_ref()))
 }
 
-pub(crate) fn decode_xml_text(bytes: &[u8]) -> String {
+pub(crate) fn decode_xml_text(bytes: &str) -> String {
     let mut decoded = String::new();
     append_decoded_xml_text(bytes, &mut decoded);
     decoded
 }
 
-pub(crate) fn append_decoded_xml_text(bytes: &[u8], decoded: &mut String) {
-    let raw = String::from_utf8_lossy(bytes);
+pub(crate) fn append_decoded_xml_text(bytes: &str, decoded: &mut String) {
+    let raw = bytes;
     if !raw.contains('&') {
-        decoded.push_str(&raw);
+        decoded.push_str(raw);
         return;
     }
 
@@ -358,21 +355,21 @@ pub(crate) fn append_decoded_xml_text(bytes: &[u8], decoded: &mut String) {
 }
 
 #[cfg(test)]
-pub(crate) fn decode_xml_reference(bytes: &[u8]) -> String {
+pub(crate) fn decode_xml_reference(bytes: &str) -> String {
     let mut decoded = String::new();
     append_decoded_xml_reference(bytes, &mut decoded);
     decoded
 }
 
-pub(crate) fn append_decoded_xml_reference(bytes: &[u8], decoded: &mut String) {
+pub(crate) fn append_decoded_xml_reference(bytes: &str, decoded: &mut String) {
     match bytes {
-        b"amp" => decoded.push('&'),
-        b"lt" => decoded.push('<'),
-        b"gt" => decoded.push('>'),
-        b"quot" => decoded.push('"'),
-        b"apos" => decoded.push('\''),
+        "amp" => decoded.push('&'),
+        "lt" => decoded.push('<'),
+        "gt" => decoded.push('>'),
+        "quot" => decoded.push('"'),
+        "apos" => decoded.push('\''),
         _ => {
-            let entity = String::from_utf8_lossy(bytes);
+            let entity = bytes;
             if let Some(hex) = entity.strip_prefix("#x")
                 && let Ok(value) = u32::from_str_radix(hex, 16)
                 && let Some(decoded_char) = char::from_u32(value)
@@ -388,7 +385,7 @@ pub(crate) fn append_decoded_xml_reference(bytes: &[u8], decoded: &mut String) {
                 return;
             }
             decoded.push('&');
-            decoded.push_str(&entity);
+            decoded.push_str(entity);
             decoded.push(';');
         }
     }
@@ -413,15 +410,15 @@ mod tests {
 
     #[test]
     fn decodes_text_and_general_references() {
-        assert_eq!(decode_xml_text(b"plain"), "plain");
+        assert_eq!(decode_xml_text("plain"), "plain");
         assert_eq!(
-            decode_xml_text(b"&amp;&lt;&gt;&quot;&apos;&#65;&#x42;&unknown;"),
+            decode_xml_text("&amp;&lt;&gt;&quot;&apos;&#65;&#x42;&unknown;"),
             "&<>\"'AB&unknown;"
         );
-        assert_eq!(decode_xml_reference(b"amp"), "&");
-        assert_eq!(decode_xml_reference(b"#65"), "A");
-        assert_eq!(decode_xml_reference(b"#x42"), "B");
-        assert_eq!(decode_xml_reference(b"custom"), "&custom;");
+        assert_eq!(decode_xml_reference("amp"), "&");
+        assert_eq!(decode_xml_reference("#65"), "A");
+        assert_eq!(decode_xml_reference("#x42"), "B");
+        assert_eq!(decode_xml_reference("custom"), "&custom;");
     }
 
     #[test]

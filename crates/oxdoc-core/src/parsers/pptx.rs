@@ -104,7 +104,7 @@ fn parse_slide_relation_ids(xml: &str, path: &str) -> Result<Extraction<Vec<Stri
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) | Ok(Event::Empty(element))
-                if name_eq(element.name().as_ref(), b"sldId") =>
+                if name_eq(element.name().as_ref(), "sldId") =>
             {
                 if let Some(relation_id) = relationship_id_value(&element) {
                     slide_ids.push(relation_id);
@@ -135,7 +135,7 @@ fn relationship_id_value(element: &BytesStart<'_>) -> Option<String> {
         .flatten()
         .find(|attr| {
             let key = attr.key.as_ref();
-            key.contains(&b':') && crate::parsers::local_name(key) == b"id"
+            key.contains(':') && crate::parsers::local_name(key) == "id"
         })
         .map(|attr| decode_xml_text(attr.value.as_ref()))
 }
@@ -235,24 +235,24 @@ fn extract_text_part<R: BufRead>(source: R, path: &str) -> Result<Extraction<Str
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(element)) => {
-                if name_eq(element.name().as_ref(), b"t") {
+                if name_eq(element.name().as_ref(), "t") {
                     in_text_node = true;
-                } else if name_eq(element.name().as_ref(), b"tab") {
+                } else if name_eq(element.name().as_ref(), "tab") {
                     text.push('\t');
                     paragraph_has_content = true;
-                } else if name_eq(element.name().as_ref(), b"br")
-                    || name_eq(element.name().as_ref(), b"cr")
+                } else if name_eq(element.name().as_ref(), "br")
+                    || name_eq(element.name().as_ref(), "cr")
                 {
                     push_newline(&mut text);
                     paragraph_has_content = true;
                 }
             }
             Ok(Event::Empty(element)) => {
-                if name_eq(element.name().as_ref(), b"tab") {
+                if name_eq(element.name().as_ref(), "tab") {
                     text.push('\t');
                     paragraph_has_content = true;
-                } else if name_eq(element.name().as_ref(), b"br")
-                    || name_eq(element.name().as_ref(), b"cr")
+                } else if name_eq(element.name().as_ref(), "br")
+                    || name_eq(element.name().as_ref(), "cr")
                 {
                     push_newline(&mut text);
                     paragraph_has_content = true;
@@ -274,9 +274,9 @@ fn extract_text_part<R: BufRead>(source: R, path: &str) -> Result<Extraction<Str
                 paragraph_has_content |= push_text(&mut text, &decoded);
             }
             Ok(Event::End(element)) => {
-                if name_eq(element.name().as_ref(), b"t") {
+                if name_eq(element.name().as_ref(), "t") {
                     in_text_node = false;
-                } else if name_eq(element.name().as_ref(), b"p") {
+                } else if name_eq(element.name().as_ref(), "p") {
                     if paragraph_has_content {
                         push_newline(&mut text);
                     }
