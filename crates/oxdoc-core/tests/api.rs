@@ -76,7 +76,7 @@ fn extracts_application_generated_docx_text_fixture() {
 }
 
 #[test]
-fn extracts_docx_text_from_related_parts_in_relationship_order() {
+fn keeps_unreferenced_docx_related_parts_in_relationship_order() {
     let file = create_ooxml(
         "docx-related-parts.docx",
         &[
@@ -306,7 +306,7 @@ fn extracts_docx_tables_from_read_seek_reader() {
 }
 
 #[test]
-fn extracts_docx_tables_from_related_parts_in_relationship_order() {
+fn keeps_unreferenced_docx_table_parts_in_relationship_order() {
     let file = create_ooxml(
         "docx-related-table-parts.docx",
         &[
@@ -354,8 +354,10 @@ fn extracts_docx_tables_from_related_parts_in_relationship_order() {
         parts,
         vec![
             ("main", "word/document.xml", "Main table"),
-            ("comments", "word/comments.xml", "Comment table"),
+            // Rule 5: notes (comments) follow strictly after all headers and
+            // footers; the orphan header keeps rels-order priority.
             ("header", "word/header1.xml", "Header table"),
+            ("comments", "word/comments.xml", "Comment table"),
         ]
     );
     assert!(extraction.warnings.is_empty());
@@ -482,6 +484,118 @@ fn keeps_partial_docx_text_and_warns_on_malformed_document_xml() {
     let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
 
     assert_eq!(extraction.value, "before break\n");
+    assert_eq!(extraction.warnings.len(), 1);
+    assert_eq!(extraction.warnings[0].path, "word/document.xml");
+    assert_eq!(extraction.warnings[0].code().as_str(), "W001");
+}
+
+#[test]
+fn warns_on_missing_and_unknown_docx_reference_ids() {
+    let file = create_ooxml(
+        "docx-reference-id-warnings.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rIdGhost"/><w:footerReference/></w:sectPr></w:pPr><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rHeader"/></w:sectPr></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+            ),
+            (
+                "word/header1.xml",
+                r#"<w:hdr xmlns:w="w"><w:p><w:r><w:t>Header text</w:t></w:r></w:p></w:hdr>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
+
+    assert_eq!(extraction.value, "Body\nHeader text\n");
+    let messages = extraction
+        .warnings
+        .iter()
+        .map(|warning| warning.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        messages,
+        vec![
+            "skipped DOCX headerReference rIdGhost: unknown relationship id",
+            "skipped DOCX footerReference: missing r:id",
+        ]
+    );
+    assert!(
+        extraction
+            .warnings
+            .iter()
+            .all(|warning| warning.path == "word/_rels/document.xml.rels")
+    );
+}
+
+#[test]
+fn preserves_docx_fast_path_with_sectpr_documents() {
+    let file = create_ooxml(
+        "docx-sectpr-fast-path.docx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rHeader"/></w:sectPr></w:body></w:document>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+            ),
+            (
+                "word/header1.xml",
+                r#"<w:hdr xmlns:w="w"><w:p><w:r><w:t>Header text</w:t></w:r></w:p></w:hdr>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_docx_text_with_options(
+        &file,
+        DocxTextOptions {
+            include_related_parts: false,
+            ..DocxTextOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(extraction.value, "Body\n");
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn keeps_partial_docx_text_when_document_xml_malformed_with_sectpr() {
+    let file = create_ooxml(
+        "docx-malformed-document-sectpr.docx",
+        &[
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="w"><w:body><w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rHeader"/></w:sectPr></w:pPr><w:r><w:t>before break</w:t></w:r></w:p><"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<Relationships><Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+            ),
+            (
+                "word/header1.xml",
+                r#"<w:hdr xmlns:w="w"><w:p><w:r><w:t>Header after break</w:t></w:r></w:p></w:hdr>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
+
+    assert_eq!(extraction.value, "before break\nHeader after break\n");
     assert_eq!(extraction.warnings.len(), 1);
     assert_eq!(extraction.warnings[0].path, "word/document.xml");
     assert_eq!(extraction.warnings[0].code().as_str(), "W001");

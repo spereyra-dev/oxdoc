@@ -1,0 +1,43 @@
+# SDD project context for oxdoc (artifact store: openspec)
+# Initialized by el Gentleman orchestrator on 2026-09-17 because the sdd-init
+# agent failed to launch in this session (agent definition error, 0 tool calls).
+
+project:
+  name: oxdoc
+  description: >
+    Rust toolkit that extracts deterministic, text-safe content from Office
+    documents (DOCX, PPTX, XLSX) without rendering. Ships oxdoc-core,
+    oxdoc-cli, and oxdoc-tabular plus a Python wrapper package.
+  languages: [rust, python]
+  crates:
+    - oxdoc-core
+    - oxdoc-cli
+    - oxdoc-tabular
+  docs: docs/
+
+testing:
+  strict_tdd: true
+  runner: cargo test
+  commands:
+    unit: cargo test --workspace
+    focused: cargo test -p <crate>
+    coverage: cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only
+    fmt: cargo fmt --all -- --check
+    lint: cargo clippy --workspace --all-targets -- -D warnings
+  coverage_gate: 95 # minimum total line coverage enforced by CI
+
+delivery:
+  strategy: ask-on-risk
+  review_budget_lines: 400
+
+rules:
+  spec: >
+    Delta specs state requirements with scenarios; keep scope within the
+    approved proposal; preserve backwards compatibility of public CLI/API
+    output unless the proposal explicitly versions a breaking change.
+  sync: >
+    Archive composes applicable delta specs into openspec/source specs and
+    preserves task truth.
+  archive: >
+    Archive reports final verified state, including later fixes that postdate
+    apply-progress and verify-report snapshots.

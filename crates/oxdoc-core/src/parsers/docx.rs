@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::io::{BufRead, BufReader, Read, Seek};
 
@@ -11,8 +12,8 @@ use crate::models::{
 };
 use crate::parsers::find_office_document_path;
 use crate::parsers::{
-    append_decoded_xml_reference, append_decoded_xml_text, attr_value, name_eq, parent_dir,
-    parse_relationships, rels_path_for, resolve_relationship_target,
+    Relationship, append_decoded_xml_reference, append_decoded_xml_text, attr_value, name_eq,
+    parent_dir, parse_relationships, rels_path_for, resolve_relationship_target,
 };
 use crate::vfs::OoxmlPackage;
 use crate::{OxdocError, Result};
@@ -37,14 +38,24 @@ pub(crate) fn extract_text<R: Read + Seek>(
         Err(err) => return Err(err),
     };
 
-    for relationship in parse_relationships(&relationships_xml, &relationships_path)? {
+    let relationships = parse_relationships(&relationships_xml, &relationships_path)?;
+    let plan = plan_related_part_order(
+        package,
+        &document_path,
+        &relationships,
+        &relationships_path,
+        options,
+        &mut warnings,
+    )?;
+    for index in plan {
+        let relationship = &relationships[index];
         if !is_related_docx_text_part(relationship.relationship_type.as_deref(), options) {
             continue;
         }
 
         let part_path = resolve_relationship_target(
             parent_dir(&document_path),
-            &relationship,
+            relationship,
             &relationships_path,
         )?;
         match extract_part_text(package, &part_path, options) {
@@ -97,7 +108,17 @@ pub(crate) fn extract_structured_text<R: Read + Seek>(
         Err(err) => return Err(err),
     };
 
-    for relationship in parse_relationships(&relationships_xml, &relationships_path)? {
+    let relationships = parse_relationships(&relationships_xml, &relationships_path)?;
+    let plan = plan_related_part_order(
+        package,
+        &document_path,
+        &relationships,
+        &relationships_path,
+        options,
+        &mut warnings,
+    )?;
+    for index in plan {
+        let relationship = &relationships[index];
         let Some(part_type) =
             related_docx_text_part_type(relationship.relationship_type.as_deref(), options)
         else {
@@ -106,7 +127,7 @@ pub(crate) fn extract_structured_text<R: Read + Seek>(
 
         let part_path = resolve_relationship_target(
             parent_dir(&document_path),
-            &relationship,
+            relationship,
             &relationships_path,
         )?;
         match extract_part_text(package, &part_path, options) {
@@ -164,7 +185,17 @@ pub(crate) fn extract_tables<R: Read + Seek>(
         Err(err) => return Err(err),
     };
 
-    for relationship in parse_relationships(&relationships_xml, &relationships_path)? {
+    let relationships = parse_relationships(&relationships_xml, &relationships_path)?;
+    let plan = plan_related_part_order(
+        package,
+        &document_path,
+        &relationships,
+        &relationships_path,
+        options,
+        &mut warnings,
+    )?;
+    for index in plan {
+        let relationship = &relationships[index];
         let Some(part_type) =
             related_docx_text_part_type(relationship.relationship_type.as_deref(), options)
         else {
@@ -173,7 +204,7 @@ pub(crate) fn extract_tables<R: Read + Seek>(
 
         let part_path = resolve_relationship_target(
             parent_dir(&document_path),
-            &relationship,
+            relationship,
             &relationships_path,
         )?;
         match extract_part_tables(package, &part_path, part_type, options) {
@@ -243,6 +274,236 @@ fn related_docx_text_part_type(
     } else {
         None
     }
+}
+
+/// Order rank: headers before footers within a section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum RelatedRefKind {
+    Header,
+    Footer,
+}
+
+/// Canonical variant rank: first, even, default (unknown/missing -> Default).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum RelatedRefVariant {
+    First,
+    Even,
+    Default,
+}
+
+/// One `w:headerReference` / `w:footerReference` element, in sectPr element order.
+#[derive(Debug)]
+struct SectionReference {
+    kind: RelatedRefKind,
+    variant: RelatedRefVariant,
+    /// None => element had no r:id (warning + skip at plan time).
+    rid: Option<String>,
+}
+
+/// The iteration order shared by all three extraction paths.
+/// Indices into the `parse_relationships` result vector.
+type RelatedPartPlan = Vec<usize>;
+
+fn related_ref_kind(name: &str) -> Option<RelatedRefKind> {
+    if name_eq(name, "headerReference") {
+        Some(RelatedRefKind::Header)
+    } else if name_eq(name, "footerReference") {
+        Some(RelatedRefKind::Footer)
+    } else {
+        None
+    }
+}
+
+fn related_ref_kind_from_type(relationship_type: Option<&str>) -> Option<RelatedRefKind> {
+    let kind = relationship_type?;
+    if kind.ends_with("/header") {
+        Some(RelatedRefKind::Header)
+    } else if kind.ends_with("/footer") {
+        Some(RelatedRefKind::Footer)
+    } else {
+        None
+    }
+}
+
+fn related_ref_variant(type_value: &str) -> RelatedRefVariant {
+    match type_value {
+        "first" => RelatedRefVariant::First,
+        "even" => RelatedRefVariant::Even,
+        _ => RelatedRefVariant::Default,
+    }
+}
+
+fn section_reference(
+    kind: RelatedRefKind,
+    element: &quick_xml::events::BytesStart<'_>,
+) -> SectionReference {
+    SectionReference {
+        kind,
+        variant: attr_value(element, "type").map_or(RelatedRefVariant::Default, |value| {
+            related_ref_variant(&value)
+        }),
+        rid: attr_value(element, "id"),
+    }
+}
+
+/// Streaming sectPr collector for `word/document.xml`.
+///
+/// Walks sections in document order: a `w:p/w:pPr/w:sectPr` closes a section at
+/// that paragraph position and the body-level `w:sectPr` is the final section.
+/// Infallible: on a parse error it stops and returns the sections collected so
+/// far (deterministic prefix) so malformed `document.xml` keeps today's
+/// W001 + partial-text behavior instead of becoming a hard error.
+/// `w:titlePg` and other sectPr children are parsed past and ignored.
+fn collect_section_references<R: BufRead>(source: R) -> Vec<Vec<SectionReference>> {
+    let mut reader = Reader::from_reader(source);
+    reader.config_mut().trim_text(false);
+    let mut buf = Vec::new();
+    let mut sections = Vec::new();
+    let mut pending_section = Vec::new();
+    let mut in_sectpr = false;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(element)) => {
+                let name = element.name().as_ref().to_owned();
+                if name_eq(&name, "sectPr") {
+                    in_sectpr = true;
+                    pending_section.clear();
+                } else if in_sectpr && let Some(kind) = related_ref_kind(&name) {
+                    pending_section.push(section_reference(kind, &element));
+                }
+            }
+            Ok(Event::Empty(element)) => {
+                let name = element.name().as_ref().to_owned();
+                if name_eq(&name, "sectPr") {
+                    in_sectpr = false;
+                    sections.push(std::mem::take(&mut pending_section));
+                } else if in_sectpr && let Some(kind) = related_ref_kind(&name) {
+                    pending_section.push(section_reference(kind, &element));
+                }
+            }
+            Ok(Event::End(element)) => {
+                if in_sectpr && name_eq(element.name().as_ref(), "sectPr") {
+                    in_sectpr = false;
+                    sections.push(std::mem::take(&mut pending_section));
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    sections
+}
+
+/// Computes the shared related-part iteration order for all extraction paths.
+///
+/// Headers and footers are emitted by section reference order (headers before
+/// footers, `first`/`even`/`default` variants, dedup by resolved part path at
+/// first reference); orphans follow in rels file order; footnotes, endnotes,
+/// and comments (when enabled) follow last in rels file order. Missing or
+/// dangling `r:id` references are skipped with stable warnings. Existing
+/// `SuspiciousRelationshipTarget` errors propagate unchanged.
+fn plan_related_part_order<R: Read + Seek>(
+    package: &mut OoxmlPackage<R>,
+    document_path: &str,
+    relationships: &[Relationship],
+    relationships_path: &str,
+    options: DocxTextOptions,
+    warnings: &mut Vec<OutputWarning>,
+) -> Result<RelatedPartPlan> {
+    let sections = package.with_entry(document_path, |entry| {
+        Ok::<_, OxdocError>(collect_section_references(BufReader::new(entry)))
+    })?;
+
+    let mut relationship_by_rid: HashMap<&str, usize> = HashMap::new();
+    for (index, relationship) in relationships.iter().enumerate() {
+        if let Some(rid) = relationship.id.as_deref() {
+            relationship_by_rid.insert(rid, index);
+        }
+    }
+
+    let mut emitted_paths = HashSet::new();
+    let mut referenced = vec![false; relationships.len()];
+    let mut plan = Vec::new();
+
+    for section in sections {
+        let mut references = section;
+        references.sort_by_key(|reference| (reference.kind, reference.variant));
+        for reference in references {
+            let element_name = match reference.kind {
+                RelatedRefKind::Header => "headerReference",
+                RelatedRefKind::Footer => "footerReference",
+            };
+            let Some(rid) = reference.rid.as_deref() else {
+                warnings.push(OutputWarning::new(
+                    relationships_path,
+                    format!("skipped DOCX {element_name}: missing r:id"),
+                ));
+                continue;
+            };
+            let Some(&index) = relationship_by_rid.get(rid) else {
+                warnings.push(OutputWarning::new(
+                    relationships_path,
+                    format!("skipped DOCX {element_name} {rid}: unknown relationship id"),
+                ));
+                continue;
+            };
+            let relationship = &relationships[index];
+            if related_ref_kind_from_type(relationship.relationship_type.as_deref())
+                != Some(reference.kind)
+            {
+                continue;
+            }
+            let part_path = resolve_relationship_target(
+                parent_dir(document_path),
+                relationship,
+                relationships_path,
+            )?;
+            if emitted_paths.insert(part_path) {
+                plan.push(index);
+                referenced[index] = true;
+            }
+        }
+    }
+
+    // Orphan header/footer relationships, in rels file order.
+    for (index, relationship) in relationships.iter().enumerate() {
+        if referenced[index]
+            || related_ref_kind_from_type(relationship.relationship_type.as_deref()).is_none()
+        {
+            continue;
+        }
+        let part_path = resolve_relationship_target(
+            parent_dir(document_path),
+            relationship,
+            relationships_path,
+        )?;
+        if emitted_paths.insert(part_path) {
+            plan.push(index);
+            referenced[index] = true;
+        }
+    }
+
+    // Footnotes, endnotes, and comments (when enabled), in rels file order.
+    for (index, relationship) in relationships.iter().enumerate() {
+        if referenced[index] {
+            continue;
+        }
+        let Some(part_type) =
+            related_docx_text_part_type(relationship.relationship_type.as_deref(), options)
+        else {
+            continue;
+        };
+        if part_type == "header" || part_type == "footer" {
+            continue;
+        }
+        plan.push(index);
+    }
+
+    Ok(plan)
 }
 
 fn push_text_block(blocks: &mut Vec<TextBlock>, part_type: &str, part_path: &str, text: String) {
@@ -1016,8 +1277,15 @@ mod tests {
     use std::io::Cursor;
     use std::path::PathBuf;
 
-    use super::{DocxCellBlock, DocxVerticalMerge, extract_xml_text, parse_xml_tables};
+    use super::{
+        DocxCellBlock, DocxVerticalMerge, RelatedRefKind, RelatedRefVariant, SectionReference,
+        collect_section_references, extract_structured_text, extract_tables, extract_text,
+        extract_xml_text, parse_xml_tables, plan_related_part_order,
+    };
+    use crate::OxdocError;
     use crate::models::{DocxRevisionMode, DocxTextOptions};
+    use crate::parsers::Relationship;
+    use crate::vfs::OoxmlPackage;
 
     fn fixture_path(path: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -1776,5 +2044,437 @@ mod tests {
         let xml = b"<w:document xmlns:w=\"w\"><w:body><w:p><w:r><w:t>x</w:t></w:r></w:p></w:body></w:document>";
 
         super::fuzz_extract_text(xml).unwrap();
+    }
+
+    fn ooxml_package(entries: &[(&str, &str)]) -> OoxmlPackage<Cursor<Vec<u8>>> {
+        use std::io::Write;
+        use zip::ZipWriter;
+        use zip::write::SimpleFileOptions;
+
+        let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
+        for (name, content) in entries {
+            zip.start_file((*name).to_owned(), SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(content.as_bytes()).unwrap();
+        }
+        OoxmlPackage::new(zip.finish().unwrap()).unwrap()
+    }
+
+    fn relationship(id: &str, kind: &str, target: &str) -> Relationship {
+        Relationship {
+            id: Some(id.to_owned()),
+            target: target.to_owned(),
+            relationship_type: Some(kind.to_owned()),
+            target_mode: None,
+        }
+    }
+
+    const HEADER_TYPE: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header";
+    const FOOTER_TYPE: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
+
+    fn collect_rids(sections: &[Vec<SectionReference>]) -> Vec<Vec<Option<&str>>> {
+        sections
+            .iter()
+            .map(|section| {
+                section
+                    .iter()
+                    .map(|reference| reference.rid.as_deref())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn collects_sections_in_document_order_with_variant_ranking() {
+        let xml = r#"<w:document xmlns:w="w" xmlns:r="r"><w:body>
+            <w:p>
+              <w:pPr>
+                <w:sectPr>
+                  <w:headerReference w:type="default" r:id="rDefault"/>
+                  <w:headerReference w:type="first" r:id="rFirst"/>
+                  <w:footerReference r:id="rFooter"/>
+                  <w:headerReference w:type="even" r:id="rEven"/>
+                </w:sectPr>
+              </w:pPr>
+              <w:r><w:t>Body</w:t></w:r>
+            </w:p>
+            <w:sectPr>
+              <w:footerReference w:type="default" r:id="rFooter2"/>
+              <w:headerReference r:id="rHeader2"/>
+            </w:sectPr>
+          </w:body></w:document>"#;
+
+        let sections = collect_section_references(Cursor::new(xml));
+
+        assert_eq!(
+            collect_rids(&sections),
+            vec![
+                vec![
+                    Some("rDefault"),
+                    Some("rFirst"),
+                    Some("rFooter"),
+                    Some("rEven")
+                ],
+                vec![Some("rFooter2"), Some("rHeader2")],
+            ]
+        );
+        assert_eq!(sections[0][0].kind, RelatedRefKind::Header);
+        assert_eq!(sections[0][0].variant, RelatedRefVariant::Default);
+        assert_eq!(sections[0][1].variant, RelatedRefVariant::First);
+        assert_eq!(sections[0][2].kind, RelatedRefKind::Footer);
+        assert_eq!(sections[0][3].variant, RelatedRefVariant::Even);
+        assert_eq!(sections[1][0].kind, RelatedRefKind::Footer);
+        assert_eq!(sections[1][1].kind, RelatedRefKind::Header);
+
+        let rels = [
+            relationship("rFooter2", FOOTER_TYPE, "footer2.xml"),
+            relationship("rDefault", HEADER_TYPE, "header-default.xml"),
+            relationship("rFirst", HEADER_TYPE, "header-first.xml"),
+            relationship("rEven", HEADER_TYPE, "header-even.xml"),
+            relationship("rFooter", FOOTER_TYPE, "footer1.xml"),
+            relationship("rHeader2", HEADER_TYPE, "header2.xml"),
+        ];
+        let mut package = ooxml_package(&[
+            ("word/document.xml", xml),
+            ("word/_rels/document.xml.rels", r#"<Relationships/>"#),
+        ]);
+        let mut warnings = Vec::new();
+        let plan = plan_related_part_order(
+            &mut package,
+            "word/document.xml",
+            &rels,
+            "word/_rels/document.xml.rels",
+            DocxTextOptions::default(),
+            &mut warnings,
+        )
+        .unwrap();
+
+        // headers before footers, first/even/default within each kind,
+        // section order preserved.
+        assert_eq!(plan, vec![2, 3, 1, 4, 5, 0]);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn treats_missing_and_unrecognized_type_as_default() {
+        let xml = r#"<w:document xmlns:w="w" xmlns:r="r"><w:body>
+            <w:sectPr>
+              <w:headerReference w:type="title" r:id="rTitle"/>
+              <w:headerReference r:id="rPlain"/>
+              <w:footerReference w:type="even" r:id="rEven"/>
+            </w:sectPr>
+          </w:body></w:document>"#;
+
+        let sections = collect_section_references(Cursor::new(xml));
+
+        assert_eq!(sections.len(), 1);
+        assert_eq!(
+            sections[0]
+                .iter()
+                .map(|reference| (reference.kind, reference.variant))
+                .collect::<Vec<_>>(),
+            vec![
+                (RelatedRefKind::Header, RelatedRefVariant::Default),
+                (RelatedRefKind::Header, RelatedRefVariant::Default),
+                (RelatedRefKind::Footer, RelatedRefVariant::Even),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_reference_without_rid_as_none() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+            <w:sectPr><w:footerReference/></w:sectPr>
+          </w:body></w:document>"#;
+
+        let sections = collect_section_references(Cursor::new(xml));
+
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].len(), 1);
+        assert_eq!(sections[0][0].kind, RelatedRefKind::Footer);
+        assert_eq!(sections[0][0].variant, RelatedRefVariant::Default);
+        assert_eq!(sections[0][0].rid, None);
+    }
+
+    #[test]
+    fn stops_collection_gracefully_on_malformed_xml() {
+        let xml = br#"<w:document><w:body><w:p><w:pPr><w:sectPr><w:headerReference r:id="rH"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:t>"#;
+
+        let sections = collect_section_references(Cursor::new(xml.as_slice()));
+
+        // Deterministic prefix: the first section is still collected.
+        assert_eq!(sections.len(), 1);
+        assert_eq!(collect_rids(&sections), vec![vec![Some("rH")]]);
+    }
+
+    #[test]
+    fn plans_orphans_and_notes_in_relationship_order() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+            <w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rH1"/></w:sectPr></w:pPr></w:p>
+            <w:sectPr/>
+          </w:body></w:document>"#;
+        let rels = [
+            relationship(
+                "rFootnotes",
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes",
+                "footnotes.xml",
+            ),
+            relationship("rHOrphan", HEADER_TYPE, "header-orphan.xml"),
+            relationship(
+                "rComments",
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments",
+                "comments.xml",
+            ),
+            relationship("rH1", HEADER_TYPE, "header1.xml"),
+            relationship(
+                "rEndnotes",
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes",
+                "endnotes.xml",
+            ),
+        ];
+        let mut package = ooxml_package(&[
+            ("word/document.xml", xml),
+            ("word/_rels/document.xml.rels", r#"<Relationships/>"#),
+        ]);
+        let mut warnings = Vec::new();
+        let plan = plan_related_part_order(
+            &mut package,
+            "word/document.xml",
+            &rels,
+            "word/_rels/document.xml.rels",
+            DocxTextOptions::default(),
+            &mut warnings,
+        )
+        .unwrap();
+
+        // Referenced header first, orphan header next in rels order, then
+        // footnotes/comments/endnotes in rels order.
+        assert_eq!(plan, vec![3, 1, 0, 2, 4]);
+        assert!(warnings.is_empty());
+
+        let mut package = ooxml_package(&[
+            ("word/document.xml", xml),
+            ("word/_rels/document.xml.rels", r#"<Relationships/>"#),
+        ]);
+        let mut warnings = Vec::new();
+        let plan = plan_related_part_order(
+            &mut package,
+            "word/document.xml",
+            &rels,
+            "word/_rels/document.xml.rels",
+            DocxTextOptions {
+                include_comments: false,
+                ..DocxTextOptions::default()
+            },
+            &mut warnings,
+        )
+        .unwrap();
+
+        assert_eq!(plan, vec![3, 1, 0, 4]);
+    }
+
+    #[test]
+    fn plan_skips_missing_and_unknown_reference_ids_with_warnings() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+            <w:sectPr>
+              <w:headerReference/>
+              <w:footerReference r:id="rGhost"/>
+              <w:headerReference w:type="default" r:id="rH1"/>
+            </w:sectPr>
+          </w:body></w:document>"#;
+        let rels = [relationship("rH1", HEADER_TYPE, "header1.xml")];
+        let mut package = ooxml_package(&[
+            ("word/document.xml", xml),
+            ("word/_rels/document.xml.rels", r#"<Relationships/>"#),
+        ]);
+        let mut warnings = Vec::new();
+        let plan = plan_related_part_order(
+            &mut package,
+            "word/document.xml",
+            &rels,
+            "word/_rels/document.xml.rels",
+            DocxTextOptions::default(),
+            &mut warnings,
+        )
+        .unwrap();
+
+        assert_eq!(plan, vec![0]);
+        let messages: Vec<&str> = warnings
+            .iter()
+            .map(|warning| warning.message.as_str())
+            .collect();
+        assert_eq!(
+            messages,
+            vec![
+                "skipped DOCX headerReference: missing r:id",
+                "skipped DOCX footerReference rGhost: unknown relationship id",
+            ]
+        );
+        assert!(
+            warnings
+                .iter()
+                .all(|warning| warning.path == "word/_rels/document.xml.rels")
+        );
+    }
+
+    #[test]
+    fn plan_dedups_by_resolved_path_at_first_reference() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+            <w:p>
+              <w:pPr>
+                <w:sectPr>
+                  <w:headerReference w:type="default" r:id="rShared"/>
+                  <w:headerReference w:type="default" r:id="rShared"/>
+                  <w:headerReference w:type="default" r:id="rA"/>
+                  <w:headerReference w:type="default" r:id="rB"/>
+                </w:sectPr>
+              </w:pPr>
+            </w:p>
+            <w:sectPr>
+              <w:headerReference w:type="default" r:id="rShared"/>
+              <w:headerReference w:type="default" r:id="rAlias"/>
+            </w:sectPr>
+          </w:body></w:document>"#;
+        let rels = [
+            relationship("rShared", HEADER_TYPE, "shared.xml"),
+            relationship("rAlias", HEADER_TYPE, "shared.xml"),
+            relationship("rA", HEADER_TYPE, "a.xml"),
+            relationship("rB", HEADER_TYPE, "b.xml"),
+        ];
+        let mut package = ooxml_package(&[
+            ("word/document.xml", xml),
+            ("word/_rels/document.xml.rels", r#"<Relationships/>"#),
+        ]);
+        let mut warnings = Vec::new();
+        let plan = plan_related_part_order(
+            &mut package,
+            "word/document.xml",
+            &rels,
+            "word/_rels/document.xml.rels",
+            DocxTextOptions::default(),
+            &mut warnings,
+        )
+        .unwrap();
+
+        // Duplicate rid in one section, shared part across sections, and two
+        // rids aliasing one path all dedup by resolved path at first reference.
+        assert_eq!(plan, vec![0, 2, 3]);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn plan_propagates_suspicious_target() {
+        let xml = r#"<w:document xmlns:w="w"><w:body>
+            <w:sectPr><w:headerReference w:type="default" r:id="rExt"/></w:sectPr>
+          </w:body></w:document>"#;
+        let rels = [Relationship {
+            id: Some("rExt".to_owned()),
+            target: "https://example.invalid/header.xml".to_owned(),
+            relationship_type: Some(HEADER_TYPE.to_owned()),
+            target_mode: Some("External".to_owned()),
+        }];
+        let mut package = ooxml_package(&[
+            ("word/document.xml", xml),
+            ("word/_rels/document.xml.rels", r#"<Relationships/>"#),
+        ]);
+        let mut warnings = Vec::new();
+        let err = plan_related_part_order(
+            &mut package,
+            "word/document.xml",
+            &rels,
+            "word/_rels/document.xml.rels",
+            DocxTextOptions::default(),
+            &mut warnings,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            OxdocError::SuspiciousRelationshipTarget { .. }
+        ));
+    }
+
+    #[test]
+    fn fixture_related_parts_oracle_orders_sections_across_all_paths() {
+        let part_names = [
+            "[Content_Types].xml",
+            "_rels/.rels",
+            "word/document.xml",
+            "word/_rels/document.xml.rels",
+            "word/comments.xml",
+            "word/endnotes.xml",
+            "word/footer1.xml",
+            "word/footnotes.xml",
+            "word/header1.xml",
+        ];
+        let contents: Vec<String> = part_names
+            .iter()
+            .map(|name| read_fixture(&format!("related-parts/package/{name}")))
+            .collect();
+        let entries: Vec<(&str, &str)> = part_names
+            .iter()
+            .zip(contents.iter().map(String::as_str))
+            .map(|(name, content)| (*name, content))
+            .collect();
+
+        let expected: serde_json::Value =
+            serde_json::from_str(&read_fixture("related-parts/expected.json")).unwrap();
+        let expected_parts: Vec<(String, String)> = expected["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|part| {
+                (
+                    part["part_type"].as_str().unwrap().to_owned(),
+                    part["part_path"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+
+        // Flat text: join of the oracle part texts in oracle order.
+        let mut package = ooxml_package(&entries);
+        let text = extract_text(&mut package, DocxTextOptions::default()).unwrap();
+        let expected_text: String = expected["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|part| format!("{}\n", part["text"].as_str().unwrap()))
+            .collect();
+        assert_eq!(text.value, expected_text);
+        assert!(text.warnings.is_empty());
+
+        // Structured blocks: part_type/part_path sequence matches the oracle.
+        let mut package = ooxml_package(&entries);
+        let structured = extract_structured_text(&mut package, DocxTextOptions::default()).unwrap();
+        let blocks: Vec<(String, String)> = structured
+            .value
+            .blocks
+            .iter()
+            .map(|block| (block.part_type.clone(), block.part_path.clone()))
+            .collect();
+        assert_eq!(blocks, expected_parts);
+        assert!(structured.warnings.is_empty());
+
+        // Tables: part_type/part_path sequence matches the oracle.
+        let mut package = ooxml_package(&entries);
+        let tables = extract_tables(&mut package, DocxTextOptions::default()).unwrap();
+        let table_parts: Vec<(String, String)> = tables
+            .value
+            .tables
+            .iter()
+            .map(|table| (table.part_type.clone(), table.part_path.clone()))
+            .collect();
+        assert_eq!(table_parts, expected_parts);
+        assert_eq!(
+            table_ordinals(&tables.value.tables),
+            vec![1; expected_parts.len()]
+        );
+        assert!(tables.warnings.is_empty());
+    }
+
+    fn table_ordinals(tables: &[crate::models::DocxTable]) -> Vec<usize> {
+        tables.iter().map(|table| table.table_ordinal).collect()
     }
 }
