@@ -418,3 +418,79 @@ Decision needed from the maintainer (any one):
 
 - Consumed native `gentle-ai.sdd-status` v2 before work: change `pptx-slide-scoped-json-jsonl`, `applyState: ready`, `nextRecommended: apply`, `taskProgress 39/60`, `blockedReasons: []`, `actionContext.mode: repo-local`, `allowedEditRoots: [repo root]` — no blockers, no warnings.
 - After WU4a: tasks 41-51 marked `[x]`; `taskProgress` moves to 50/60. Remaining: task 40 (parent-owned), WU4b (52-57), final verification (58-60).
+
+---
+
+## WU4b — Documentation and changelog (this session)
+
+- Store: openspec
+- Branch: `issue-180-pptx-slides-wu4b` (PR 7 of the realized stacked-to-main chain after the WU1/WU2/WU3 splits; parent session owns PR opening)
+- Base at apply start: `9cc83f2` (`main` after WU4a merged as #224)
+- Scope: docs-only, tasks 52-57 plus the change-completion gates 58-60. No production code, no new tests. Docs mode (strict TDD not applicable to Markdown).
+
+### Completed tasks (tasks.md updated to `[x]`)
+
+| Task | Result |
+| --- | --- |
+| 52 | `docs/formats/pptx.md` gained the "Slide-scoped JSON / JSONL" section before Non-Goals: `extract slides` command, both format shapes, all five record fields, `slide_id` (p:sldId/@id, omitted-never-null rule), `slide_ordinal` (1-based `p:sldIdLst` position, gaps after skips with the `1,3` and `1,4` examples), `slide_path` provenance, `text` `""` textless rule, `notes` presence rule, the three exact skip warning wordings with their warning paths, the W001/malformed-XML recoverability note, the no-@id-warning rule, and the JSON (embedded + stderr mirror) vs JSONL (stderr-only) channel rules with the all-skipped exit-0 payload semantics. Links to `../schemas/v1/oxdoc-pptx-slides.schema.json`. |
+| 53 | `docs/json-output.md`: two new schema-table rows (`oxdoc extract slides --format json` and each `--format jsonl` line → `schemas/v1/oxdoc-pptx-slides.schema.json`) plus a new "PPTX Slides JSON / JSONL" section before Warnings covering payload/record shapes, schema_version 1, ordinal gaps, notes rule, all-skipped exit-0 semantics, the warning-channel statement (JSON embedded + stderr mirror subject to `--warnings`/`--quiet`, never suppressed by `--quiet`; JSONL stderr-only), and the version-policy note that this is a NEW contract rather than a structured-text widening (v1/v2 structured-text frozen; a slides payload does not validate against them). |
+| 54 | `docs/cli.md`: new "Extract PPTX Slides" section after the text-extraction section: usage line, one-`.pptx`-or-`-` stdin argument, option table (default `json`), JSON output-shape example, JSONL streaming example, schema link, ordinal/skip semantics (`1..=N` over `p:sldIdLst`, gaps after skips, `1`/`3` example), omitted-never-null `slide_id`/`notes`, all-skipped exit 0, warning channels per format, and the `<stdin>` file label for stdin input. |
+| 55 | `README.md`: new "### Extract PPTX Slides" CLI Usage subsection after "Stream Typed XLSX Rows" with a JSONL example and one-paragraph semantics, plus the "Current Capabilities" Output row extended with "slide-scoped PPTX JSON/JSONL". `CHANGELOG.md`: new Unreleased "### Added" entry recording the new subcommand, the new `schemas/v1/oxdoc-pptx-slides.schema.json` contract (`schema_version: 1`), per-slide skip warnings, channel rules, and the explicit statement that existing `extract text`/`structured-json` PPTX output and the structured-text v1/v2 schemas are unchanged. |
+| 56 | `git diff -- docs README.md CHANGELOG.md` reviewed: the only removed line in any doc is the README "Output" capability row, which was extended (not reworded); zero deletions in docs/cli.md, docs/formats/pptx.md, docs/json-output.md, CHANGELOG.md. No existing documentation of `extract text`, `structured-json`, or the v2 schema had its meaning altered. |
+| 57 | WU4b gate — `make` unavailable on this machine, equivalents run directly: `find README.md docs -name '*.md' | xargs npx markdown-link-check@3 --config .markdown-link-check.json` over ALL md files → 0 broken links (113 checked links all pass, incl. the new schema links and the `formats/pptx.md#slide-scoped-json--jsonl` anchor); `diff -ru schemas/v1 docs/schemas/v1` + `diff -ru schemas/v2 docs/schemas/v2` silent (docs-schemas-check); docsify-cli serve + curl probe on `/`, `cli.md`, `formats/pptx.md`, `json-output.md` → DOCS-CHECK-OK (docs-check). |
+| 58 | Full local gate on the completed stack, component by component (make equivalents): fmt-check ✓, `cargo check --workspace --all-features --all-targets` ✓, clippy `-D warnings` ✓, `cargo test --workspace` ✓ (8 targets: 25/106/112/99/15/9/2/0 — identical counts to the WU4a gate, frozen snapshots untouched), doctest ✓, coverage ✓ (`cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only` → **lines 96.39% TOTAL, exit 0**), scripts-test ✓ except `sh tests/install.sh` (see environmental note below), sh -n + py_compile + bundle self-test + homebrew ✓, docs-check ✓, docs-links ✓, docs-schemas-check ✓, docs-playground-check ✓ (exit 0), build-release ✓ (`cargo build --workspace --all-features --release` finished), compatibility-corpus-check ✓ ("passed (3 fixtures)"), python-test ✓ (exit 0). **Environmental exception:** `sh tests/install.sh` exits 1 because Windows-native curl cannot open `file:///tmp/...` POSIX paths (curl error 37) — install.sh/tests/install.sh are untouched by this branch (git status clean), the failure is pre-existing on this Windows machine, and a Markdown-only diff cannot affect it. All other 13 gate components are green. |
+| 59 | Success criteria 1–11 confirmed end-to-end: (1) JSON payload via byte snapshot compare + 106 cli tests; (2) JSONL stream + stdin `<stdin>` label via cli tests; (3) slide_id/slide_ordinal via api tests on text (inverted order, 256/257) and basic; (4) exact skip warnings + W001 partial text via missing-target/malformed-xml api tests; (5) old paths MissingPart asymmetry + SuspiciousRelationshipTarget hard error via api tests; (6) all pre-existing snapshots byte-identical (workspace green, no churn); (7) schema + mirror identical, validate both snapshots, linked from docs/json-output.md, no other schema modified; (8) all five docs files updated this unit; (9) compatibility-corpus-check passes, no digest changes; (10) fmt/clippy/test/coverage(96.39% ≥ 95) all pass; (11) per-unit realized lines recorded below, overages resolved by explicit ask-on-risk splits. |
+| 60 | No task created ownership metadata, delivery gates, or `size:exception`. Realized per-unit changed lines vs main: WU1 434 and WU2 458 and WU3 438 (each >400 → paused and resolved by explicit maintainer decisions splitting them into merged sub-PRs #217/#218, #219/#220/#221, #222/#223), WU2c 274, WU4a 380, WU4b **226 ≤ 400** (measured below). No budget number was reached by shrinking code/tests/docs. |
+
+### Files changed (vs `main`)
+
+- `docs/formats/pptx.md` (+87): "Slide-scoped JSON / JSONL" section.
+- `docs/cli.md` (+67): "Extract PPTX Slides" section.
+- `docs/json-output.md` (+42): schema table rows + "PPTX Slides JSON / JSONL" section.
+- `README.md` (+16/−1): CLI Usage subsection + Output capability row.
+- `CHANGELOG.md` (+14): Unreleased Added entry.
+
+### Test commands run
+
+- `npx markdown-link-check@3` over all README/docs md files → 0 broken
+- `diff -ru schemas/v1 docs/schemas/v1` / `diff -ru schemas/v2 docs/schemas/v2` → silent
+- docsify-cli@4 serve + curl probe → OK
+- `cargo fmt --all -- --check` → OK
+- `cargo clippy --workspace --all-targets -- -D warnings` → OK
+- `cargo check --workspace --all-features --all-targets` → OK
+- `cargo test --workspace` → all 8 targets ok (25/106/112/99/15/9/2/0)
+- `cargo test --doc --workspace --all-features` → 2 passed
+- `cargo llvm-cov ... --fail-under-lines 95 --summary-only` → lines 96.39% TOTAL, exit 0
+- `cargo build --workspace --all-features --release` → finished
+- `python scripts/check-compatibility-corpus.py` → passed (3 fixtures)
+- `python scripts/compatibility-playground.py --check` → exit 0
+- `PYTHONPATH=python/src python -m unittest discover -s python/tests` → exit 0
+- scripts-test equivalents (sh -n, py_compile, bundle self-test, homebrew tests) → passed; `sh tests/install.sh` → exit 1 (environmental Windows /tmp-curl limitation, files untouched, pre-existing)
+
+### Budget measurement (task 57/58)
+
+```
+git diff main --shortstat -- . ':(exclude).gitignore'
+5 files changed, 225 insertions(+), 1 deletion(-)   = 226 changed lines (docs + CHANGELOG only)
+git diff main --shortstat -- . ':(exclude).gitignore' ':(exclude)openspec'
+5 files changed, 225 insertions(+), 1 deletion(-)   = 226 changed lines
+```
+
+226 ≤ 400 review budget. No pause needed; no `size:exception`.
+
+### Deviations from design
+
+- None in content. `make` remains unavailable on this Windows machine, so every Makefile gate was run as its documented underlying command (same approach as WU1-WU4a sessions). `sh tests/install.sh` cannot pass on this host for pre-existing Windows `/tmp`-curl reasons independent of this docs-only unit.
+
+### Commits
+
+1. (this commit) `docs(cli): document the extract slides subcommand and slides schema contract` — the five docs/CHANGELOG files + openspec artifact updates. Single cohesive docs work-unit commit (task 57's "open PR 5" clause is parent-owned; session forbids push/PR creation).
+
+### Remaining tasks (unchecked after WU4b)
+
+- None. Tasks 1-60 are all `[x]` in tasks.md. Change implementation is complete; the fresh native recommendation for the parent is **verify (optional) → archive**.
+
+### Structured status (WU4b)
+
+- Consumed native `gentle-ai.sdd-status` v2 before work: change `pptx-slide-scoped-json-jsonl`, `applyState: ready`, `nextRecommended: apply`, `taskProgress 50/60`, `blockedReasons: []`, `actionContext.mode: repo-local`, `allowedEditRoots: [repo root]` — no blockers, no warnings.
+- After WU4b: tasks 52-60 marked `[x]`; taskProgress moves to 60/60 (`allComplete: true` expected on re-read). No `size:exception` used; WU4b landed within budget on the first slice.

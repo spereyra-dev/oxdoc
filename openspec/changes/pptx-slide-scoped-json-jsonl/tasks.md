@@ -322,9 +322,12 @@ structured-text schemas.
   `cargo clippy --workspace --all-targets -- -D warnings`, and
   `git status --porcelain schemas docs/schemas` showing only the two new
   `oxdoc-pptx-slides.schema.json` files (frozen-schema guard).
-- [ ] 40. WU3 exit: re-measure realized changed lines (expect ~330–380; if > 400,
+- [x] 40. WU3 exit: re-measure realized changed lines (expect ~330–380; if > 400,
   apply the agreed fallback of moving both snapshot files into WU4a, or pause and
-  ask). Then open **PR 3 (WU3)** stacked on PR 2.
+  ask). Then open **PR 3 (WU3)** stacked on PR 2. — measurement DONE (438 > 400 →
+  paused per ask-on-risk); maintainer resolved by splitting WU3 into two stacked
+  PRs, merged as #222 (schema + mirror, `6f1d393`) and #223 (validation tests +
+  snapshots, `5e4d98b`); marked `[x]` per the task-14 resolution precedent.
 
 ---
 
@@ -406,26 +409,26 @@ and stdin, warnings follow the channel rules, and the snapshots byte-compare.
 PR 5, stacked on PR 4. Docs-only: no production code, no new tests beyond
 link/schema gates.
 
-- [ ] 52. `docs/formats/pptx.md`: add the "Slide-scoped JSON / JSONL" section —
+- [x] 52. `docs/formats/pptx.md`: add the "Slide-scoped JSON / JSONL" section —
   record fields, `slide_id`/`slide_ordinal` identity rules including gaps after
   skips, the `notes` presence rule, `slide_path` provenance, the three exact
   warning wordings with their channels, and the `extract slides` command
   (R14 / spec → Docs describe the contract).
-- [ ] 53. `docs/json-output.md`: add the schema table rows
+- [x] 53. `docs/json-output.md`: add the schema table rows
   (`| oxdoc extract slides --format json | schemas/v1/oxdoc-pptx-slides.schema.json |`
   and the JSONL row), the slide payload/JSONL semantics, the warning-channel
   statement (JSONL stderr-only; JSON embedded plus stderr mirror subject to
   `--warnings`/`--quiet`), and the version-policy note that this is a **new**
   contract rather than a structured-text widening (v1/v2 structured-text frozen).
-- [ ] 54. `docs/cli.md`: add `extract slides` usage, a runnable example, the
+- [x] 54. `docs/cli.md`: add `extract slides` usage, a runnable example, the
   default `json` format, the `-` stdin form with the `<stdin>` file label, and the
   ordinal/skip semantics (`1..=N` over `p:sldIdLst`, gaps after skips).
-- [ ] 55. `README.md`: add an `oxdoc extract slides` command example alongside the
+- [x] 55. `README.md`: add an `oxdoc extract slides` command example alongside the
   existing tables/rows examples; `CHANGELOG.md`: record the new subcommand and the
   new `schemas/v1/oxdoc-pptx-slides.schema.json` contract.
-- [ ] 56. Confirm no existing documentation of `extract text`, `structured-json`,
+- [x] 56. Confirm no existing documentation of `extract text`, `structured-json`,
   or the v2 schema had its meaning altered (`git diff docs README.md` review).
-- [ ] 57. WU4b gate: `make docs-links` (no link rot),
+- [x] 57. WU4b gate: `make docs-links` (no link rot),
   `make docs-schemas-check`, `make docs-check`, and `make ci` end-to-end. Then open
   **PR 5 (WU4b)** stacked on PR 4.
 
@@ -433,17 +436,17 @@ link/schema gates.
 
 ## Final verification (after PR 5)
 
-- [ ] 58. Run the full local gate on the completed stack: `make ci`
+- [x] 58. Run the full local gate on the completed stack: `make ci`
   (`fmt-check`, `check`, `clippy`, `test`, `doctest`, `coverage` ≥ 95%,
   `scripts-test`, `docs-check`, `docs-links`, `docs-schemas-check`,
   `docs-playground-check`, `build-release`) plus
   `make compatibility-corpus-check` and `python-test`.
-- [ ] 59. Confirm success criteria 1–11 from `proposal.md` end-to-end, including:
+- [x] 59. Confirm success criteria 1–11 from `proposal.md` end-to-end, including:
   byte-identical pre-existing snapshots, `schemas/v1/**`/`schemas/v2/**` frozen
   except the two new files, `extract_pptx_text`/`extract_pptx_structured_text`
   still `MissingPart` on `missing-target`, and no change to
   `tests/fixtures/compatibility-matrix.json` or any fixture digest.
-- [ ] 60. Confirm no task created ownership metadata, delivery gates, or
+- [x] 60. Confirm no task created ownership metadata, delivery gates, or
   `size:exception`; per-unit realized line counts stay ≤ 400 (or each overage was
   an explicit, asked-for decision).
 

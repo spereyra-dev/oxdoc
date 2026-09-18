@@ -19,6 +19,8 @@ The v1 schema for structured-json output remains available at [`schemas/v1/oxdoc
 | `oxdoc extract csv --all-sheets --output-dir <DIR>` manifest | [`schemas/v1/oxdoc-all-sheets-manifest.schema.json`](schemas/v1/oxdoc-all-sheets-manifest.schema.json) |
 | Each `oxdoc extract rows --format jsonl` line | [`schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json`](schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json) |
 | `oxdoc infer schema FILE` | [`schemas/v1/oxdoc-xlsx-schema.schema.json`](schemas/v1/oxdoc-xlsx-schema.schema.json) |
+| `oxdoc extract slides --format json` | [`schemas/v1/oxdoc-pptx-slides.schema.json`](schemas/v1/oxdoc-pptx-slides.schema.json) |
+| Each `oxdoc extract slides --format jsonl` line | [`schemas/v1/oxdoc-pptx-slides.schema.json`](schemas/v1/oxdoc-pptx-slides.schema.json) |
 
 `oxdoc extract text --format jsonl` emits newline-delimited records for streaming batch ingestion. Each line is a standalone JSON object with `file`, `document_type`, and either `text` or `error`; successful records may include `warnings`.
 
@@ -191,6 +193,46 @@ Shape:
 Fields other than `oxdoc_version`, `file`, and `has_macros` are optional and omitted when unavailable.
 
 `custom_properties` contains values from `docProps/custom.xml`. Values are emitted as strings regardless of the OOXML custom property value type.
+
+## PPTX Slides JSON / JSONL
+
+Command:
+
+```bash
+oxdoc extract slides deck.pptx
+oxdoc extract slides deck.pptx --format jsonl
+```
+
+`--format json` (the default) emits a single pretty-printed document with
+`schema_version` (`1`), `file`, `document_type` (`"pptx"`), a `slides` array
+in `p:sldIdLst` order, and a top-level `warnings` array that is present and
+`[]` when empty. `--format jsonl` emits one compact record per slide, each
+carrying `schema_version` (`1`), `file`, and the slide fields; there is no
+wrapping array and the records appear in the same order as the JSON `slides`
+array.
+
+Each slide record carries `slide_id` (the `p:sldId/@id` integer, omitted when
+absent or unparsable), `slide_ordinal` (the 1-based `p:sldIdLst` position —
+gaps after skips are kept, so a skipped second slide of three yields ordinals
+`1` and `3`), `slide_path` (the resolved slide part path), `text` (body text,
+possibly `""`), and `notes` (speaker notes, present — possibly `""` — when a
+notes part was read successfully, omitted otherwise; never `null`).
+
+Missing slide or notes targets degrade to per-slide skip warnings while
+extraction continues; skipped slides are simply absent from `slides` (or from
+the JSONL stream), and a deck whose slides are all skipped still exits `0`
+with a valid payload (`"slides": []` plus the warnings).
+
+Warning channels follow the format: `--format json` embeds warnings in the
+payload and mirrors them to stderr subject to `--warnings`/`--quiet` (embedded
+warnings are never suppressed by `--quiet`); `--format jsonl` writes warnings
+to stderr only so stdout stays a valid JSONL stream. The exact skip wordings
+are documented in [Formats: PPTX](formats/pptx.md#slide-scoped-json--jsonl).
+
+This is a NEW versioned contract (`schema_version: 1` at
+[`schemas/v1/oxdoc-pptx-slides.schema.json`](schemas/v1/oxdoc-pptx-slides.schema.json)),
+not a widening of structured-text: the structured-text v1 and v2 schemas stay
+frozen, and a slides payload does not validate against them.
 
 ## Warnings
 

@@ -6,6 +6,20 @@ The format is based on human-readable release notes.
 
 ## Unreleased
 
+### Added
+
+- New `oxdoc extract slides` CLI subcommand for slide-scoped PPTX extraction:
+  one record per slide with `slide_id` (the `p:sldId/@id` integer, omitted
+  when absent), `slide_ordinal` (the 1-based `p:sldIdLst` position, with gaps
+  kept after skips), `slide_path`, body `text`, and optional speaker `notes`.
+  `--format json` (the default) emits a single document validated by the new
+  `schemas/v1/oxdoc-pptx-slides.schema.json` contract (`schema_version: 1`)
+  with embedded warnings also mirrored to stderr; `--format jsonl` emits one
+  compact record per slide on stdout with warnings on stderr only. Missing
+  slide or notes targets degrade to per-slide skip warnings and extraction
+  continues; the existing `extract text`/`structured-json` PPTX output and
+  the structured-text v1/v2 schemas are unchanged.
+
 ### Changed
 
 - `oxdoc extract text --format structured-json` output is now versioned as
