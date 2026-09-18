@@ -193,3 +193,64 @@ when opening PRs.
 
 - Consumed native `gentle-ai.sdd-status` v2 before WU2 work: `applyState: ready`, `nextRecommended: apply`, `blockedReasons: []`, `actionContext.mode: repo-local`, `allowedEditRoots: [repo root]`.
 - After WU2: `taskProgress` 26/60 completed (tasks 14, 15-24, 30, 31 checked; 25-29 + WU3/WU4/final unchecked). Apply remains in progress for the follow-up unit; the budget fallback pre-authorized by the parent instruction ("move the security/wrapper test group whole, never split its tests") was used instead of an `ask-on-risk` pause; no `size:exception` used or needed for this unit.
+
+---
+
+## WU2c — Security / hard-error / wrapper regression tests (tasks 25-29, moved whole by the WU2 fallback)
+
+- Store: openspec
+- Branch: `issue-180-pptx-slides-wu2c` (PR 4 of the stacked-to-main chain; parent session applies the WU2 fallback as its own unit)
+- Base at apply start: `a7d047c` (`main` after WU1 merged as #217 + #218 and WU2 merged as #219 + #220)
+- Scope: exactly tasks 25-29 (the security/hard-error + wrapper test group), moved WHOLE per the pre-agreed WU2 fallback; never split. No production code was expected or written.
+
+### Completed tasks (tasks.md updated to `[x]`)
+
+| Task | Result |
+| --- | --- |
+| 25 | RED (R7): 4 hard-error tests in `crates/oxdoc-core/tests/api.rs` — external slide target (`TargetMode="External"` → `SuspiciousRelationshipTarget` with path `ppt/_rels/presentation.xml.rels`, target `https://example.invalid/slide1.xml`, reason contains `external`), escaping slide target (`../../outside.xml` → suspicious, path + target pinned), NUL in slide target (`Target="slides/slide&#0;1.xml"` decoded via `&#0;` → suspicious reason contains `NUL`), and a package without `ppt/presentation.xml` → `Err(MissingPart("ppt/presentation.xml"))` with no partial record set. Tests written before any change; see TDD evidence note below. |
+| 26 | GREEN: verified by inspection + tests that `resolve_relationship_target` errors propagate unchanged (never downgraded to a skip) and `find_office_document_path(package, "ppt/presentation.xml")?` remains the first hard failure in `extract_slides`. No production edit was needed; `cargo test -p oxdoc-core --test api` → 99 passed. |
+| 27 | RED (R8): `old_pptx_paths_still_hard_error_on_missing_targets_while_slides_extract` — `extract_pptx_text` AND `extract_pptx_structured_text` on `missing-target.pptx` both return `Err(MissingPart("rId999"))`, while the same package still extracts via `extract_pptx_slides` with records `1,4` and 3 warnings — the asymmetry is asserted, not just implemented. |
+| 28 | TRIANGULATE (R2 gaps + notes presence rule): `keeps_ordinal_gap_when_middle_slide_of_three_is_skipped` (second of three skipped → ordinals `1,3`, one missing-part warning); `reads_empty_readable_notes_part_as_present_empty_string` (readable empty notes part → `notes: Some("")`, serialized as `"notes": ""`); `omits_notes_without_warning_when_slide_rels_part_is_absent` (absent slide `.rels` → `notes: None` omitted key, no warning). |
+| 29 | GREEN/REFACTOR: verified `read_notes_text_for_slides` remains the only notes-resolution path for slides (no duplication; grep confirms `read_notes_for_slide`/`read_notes_blocks_for_slide` serve only the old text/structured paths, untouched), rel-id sort order and deterministic `append_part_text` concatenation unchanged. No production edit needed. |
+| (wrapper parity) | Parent's WU2c scope also names reader-wrapper/limits parity: added `reads_missing_target_slides_identically_through_reader_wrappers` asserting `extract_pptx_slides_from_reader` and `..._with_limits(OoxmlLimits::default())` produce value AND warnings identical to the path variant on the `missing-target` fixture (task 17 already covered the happy-path variants). |
+
+### TDD Cycle Evidence (strict TDD)
+
+| Cycle | RED | GREEN | Evidence |
+| --- | --- | --- | --- |
+| Security hard errors (25-26) | Tests written first; no RED failure was achievable because WU2's `extract_slides` already propagates `SuspiciousRelationshipTarget`/`MissingPart` correctly (task 21 GREEN). These are characterization pins in the task-23/task-7 precedent: breaking them would require artificially breaking correct production code, which was not staged. | No production change; tests pass and pin the propagation contract. | 9 new api tests pass |
+| Old-path asymmetry (27) | Same pin status: WU1 refactored without changing old-path error semantics, and WU2's skip branches are scoped to `extract_slides` only. Test asserts the asymmetry on the real fixture (both old paths `MissingPart("rId999")`, slides path `Ok`). | passes | included in the 9 |
+| Ordinal gap + notes rule (28-29) | Same pin status; exercises the implemented skip/`Some("")`/`None` branches with fresh inline packages. | passes | included in the 9 |
+
+### Files changed (vs `main`)
+
+- `crates/oxdoc-core/tests/api.rs` (+274): 9 new WU2c tests (4 security/hard-error, 1 old-path asymmetry, 2 notes-presence triangulation, 1 ordinal gap, 1 reader-wrapper parity).
+
+### Test commands run
+
+- `cargo test -p oxdoc-core --test api slides_` → 8 passed (first partial run)
+- `cargo test -p oxdoc-core --test api -- rejects_external_pptx rejects_pptx_slide rejects_nul fails_hard_when_pptx old_pptx_paths keeps_ordinal_gap reads_empty_readable_notes omits_notes_without_warning reads_missing_target` → 9 passed
+- `cargo test --workspace` → all 8 test targets ok (cli bin 25, cli 99, core lib 112, api 99, schema 12, tabular 9 + 2 + 0); frozen snapshots untouched
+- `cargo fmt --all -- --check` → OK (after one mechanical fmt pass on the new tests)
+- `cargo clippy --workspace --all-targets -- -D warnings` → OK
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only` → lines 96.37% TOTAL, exit 0 (pptx.rs lines 96.75%)
+- `python scripts/check-compatibility-corpus.py` → passed (3 fixtures); `git status --porcelain tests/fixtures/compatibility-matrix.json tests/fixtures/files` → no changes
+
+### WU2c gate + exit measurement
+
+- Measured `git diff main --shortstat -- . ':(exclude).gitignore'` → `1 file changed, 274 insertions(+)` = **274 changed lines ≤ 400 budget**. No pause needed; no `size:exception`.
+- No stop-and-investigate event: no snapshot churn, no fixture/matrix changes, no newly-failing existing test.
+
+### Deviations from design
+
+- None in production (no production change at all). The 27-task RED and 28-task TRIANGULATE tests pass on first run against the already-correct WU2 implementation; per the task-23 precedent they are recorded as regression pins rather than drivers, since a genuine RED would require artificially breaking correct propagation that task 21 already landed.
+- `OxdocError` does not implement `PartialEq`, so the `MissingPart` assertions use `matches!(err, OxdocError::MissingPart(path) if path == ...)` instead of `assert_eq!` (matches the file's existing error-assertion style).
+
+### Commits
+
+1. (this commit) `test(pptx): pin slide-extraction security hard errors and notes leniency` — api tests + openspec artifact updates.
+
+### Structured status (WU2c)
+
+- Consumed native `gentle-ai.sdd-status` v2 before work: change `pptx-slide-scoped-json-jsonl`, `applyState: ready`, `nextRecommended: apply`, `taskProgress 26/60`, `blockedReasons: []`, `actionContext.mode: repo-local`, `allowedEditRoots: [repo root]`.
+- After WU2c: tasks 25-29 marked `[x]`; `taskProgress` moves to 31/60. Remaining: WU3 (32-40), WU4a (41-51), WU4b (52-57), final verification (58-60).

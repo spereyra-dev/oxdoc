@@ -214,24 +214,24 @@ implemented with the exact spec warnings and R1–R8 covered.
 
 ### RED/GREEN — security, hard errors, and leniency scoping
 
-- [ ] 25. RED (R7): `api.rs` tests mirroring the existing PPTX suspicious-target
+- [x] 25. RED (R7): `api.rs` tests mirroring the existing PPTX suspicious-target
   test — a slide rel with an external/escaping/NUL target returns
   `Err(OxdocError::SuspiciousRelationshipTarget { … })` from
   `extract_pptx_slides` with no records; a package without `ppt/presentation.xml`
   returns a hard error (no partial record set).
-- [ ] 26. GREEN: ensure `resolve_relationship_target` errors propagate unchanged
+- [x] 26. GREEN: ensure `resolve_relationship_target` errors propagate unchanged
   (never downgraded to a skip) and `find_office_document_path(package,
   "ppt/presentation.xml")?` stays the first hard failure. `cargo test -p oxdoc-core --test api` → green.
-- [ ] 27. RED (R8 / spec → Old paths hard-error on missing targets):
+- [x] 27. RED (R8 / spec → Old paths hard-error on missing targets):
   `extract_pptx_text` **and** `extract_pptx_structured_text` on
   `missing-target.pptx` both return `Err(OxdocError::MissingPart(_))`, and the
   same package still extracts successfully (with skips) through
   `extract_pptx_slides` — the asymmetry is asserted, not just implemented.
-- [ ] 28. TRIANGULATE/RED (R2 gaps + notes presence rule): a deck where the
+- [x] 28. TRIANGULATE/RED (R2 gaps + notes presence rule): a deck where the
   second of three slides is skipped → ordinals `1,3`; a slide whose notes part is
   readable but empty → `notes: Some("")`; a slide whose `.rels` part is absent →
   `notes: None` with no warning.
-- [ ] 29. GREEN/REFACTOR: satisfy 27–28 without duplicating the notes resolution
+- [x] 29. GREEN/REFACTOR: satisfy 27–28 without duplicating the notes resolution
   logic (`read_notes_text_for_slides` stays the only notes path), keep the
   rel-id sort order for notes relationships, and keep the notes concatenation
   deterministic (`append_part_text`). `cargo test -p oxdoc-core --test api` → green.

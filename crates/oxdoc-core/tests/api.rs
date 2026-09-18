@@ -817,6 +817,280 @@ fn emits_textless_pptx_slide_record_with_empty_text() {
 }
 
 #[test]
+fn rejects_external_pptx_slide_relationship_targets_as_hard_error() {
+    let file = create_ooxml(
+        "external-slide-target.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" TargetMode="External" Target="https://example.invalid/slide1.xml"/></Relationships>"#,
+            ),
+        ],
+    );
+
+    let err = oxdoc_core::extract_pptx_slides(&file).unwrap_err();
+
+    assert!(
+        matches!(err, OxdocError::SuspiciousRelationshipTarget { path, target, reason }
+            if path == "ppt/_rels/presentation.xml.rels"
+                && target == "https://example.invalid/slide1.xml"
+                && reason.contains("external"))
+    );
+}
+
+#[test]
+fn rejects_pptx_slide_relationship_targets_that_escape_package_root() {
+    let file = create_ooxml(
+        "escaping-slide-target.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" Target="../../outside.xml"/></Relationships>"#,
+            ),
+        ],
+    );
+
+    let err = oxdoc_core::extract_pptx_slides(&file).unwrap_err();
+
+    assert!(matches!(
+        err,
+        OxdocError::SuspiciousRelationshipTarget { path, target, .. }
+            if path == "ppt/_rels/presentation.xml.rels" && target == "../../outside.xml"
+    ));
+}
+
+#[test]
+fn rejects_nul_bytes_in_pptx_slide_relationship_targets() {
+    let file = create_ooxml(
+        "nul-slide-target.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                "<Relationships><Relationship Id=\"rId1\" Type=\"slide\" Target=\"slides/slide&#0;1.xml\"/></Relationships>",
+            ),
+        ],
+    );
+
+    let err = oxdoc_core::extract_pptx_slides(&file).unwrap_err();
+
+    assert!(matches!(
+        err,
+        OxdocError::SuspiciousRelationshipTarget { reason, .. } if reason.contains("NUL")
+    ));
+}
+
+#[test]
+fn fails_hard_when_pptx_presentation_part_is_missing() {
+    let file = create_ooxml(
+        "missing-presentation.pptx",
+        &[(
+            "_rels/.rels",
+            r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+        )],
+    );
+
+    let err = oxdoc_core::extract_pptx_slides(&file).unwrap_err();
+
+    assert!(matches!(
+        err,
+        OxdocError::MissingPart(path) if path == "ppt/presentation.xml"
+    ));
+}
+
+#[test]
+fn old_pptx_paths_still_hard_error_on_missing_targets_while_slides_extract() {
+    let file = fixtures::build_package("pptx/missing-target", "missing-target.pptx");
+
+    let text_err = oxdoc_core::extract_pptx_text(&file).unwrap_err();
+    let structured_err = oxdoc_core::extract_pptx_structured_text(&file).unwrap_err();
+    let slides = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert!(matches!(
+        text_err,
+        OxdocError::MissingPart(path) if path == "rId999"
+    ));
+    assert!(matches!(
+        structured_err,
+        OxdocError::MissingPart(path) if path == "rId999"
+    ));
+    assert_eq!(slides.value.len(), 2);
+    assert_eq!(
+        slides
+            .value
+            .iter()
+            .map(|record| record.slide_ordinal)
+            .collect::<Vec<_>>(),
+        [1, 4]
+    );
+    assert_eq!(slides.warnings.len(), 3);
+}
+
+#[test]
+fn keeps_ordinal_gap_when_middle_slide_of_three_is_skipped() {
+    let file = create_ooxml(
+        "middle-skipped.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/><p:sldId id="257" r:id="rId2"/><p:sldId id="258" r:id="rId3"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" Target="slides/slide1.xml"/><Relationship Id="rId2" Type="slide" Target="slides/absent.xml"/><Relationship Id="rId3" Type="slide" Target="slides/slide3.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"<p:sld><a:p><a:r><a:t>First Slide</a:t></a:r></a:p></p:sld>"#,
+            ),
+            (
+                "ppt/slides/slide3.xml",
+                r#"<p:sld><a:p><a:r><a:t>Third Slide</a:t></a:r></a:p></p:sld>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert_eq!(
+        extraction
+            .value
+            .iter()
+            .map(|record| (record.slide_ordinal, record.slide_path.as_str()))
+            .collect::<Vec<_>>(),
+        [(1, "ppt/slides/slide1.xml"), (3, "ppt/slides/slide3.xml")]
+    );
+    assert_eq!(extraction.warnings.len(), 1);
+    assert_eq!(
+        extraction.warnings[0].message,
+        "skipped related PPTX slide part ppt/slides/absent.xml: missing part"
+    );
+}
+
+#[test]
+fn reads_empty_readable_notes_part_as_present_empty_string() {
+    let file = create_ooxml(
+        "empty-notes.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" Target="slides/slide1.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"<p:sld><a:p><a:r><a:t>Slide With Silent Notes</a:t></a:r></a:p></p:sld>"#,
+            ),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide1.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/notesSlides/notesSlide1.xml",
+                r#"<p:notes xmlns:p="p"/>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert_eq!(extraction.value.len(), 1);
+    assert_eq!(extraction.value[0].notes, Some(String::new()));
+    let record = serde_json::to_value(&extraction.value[0]).unwrap();
+    assert_eq!(record["notes"], "");
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn omits_notes_without_warning_when_slide_rels_part_is_absent() {
+    let file = create_ooxml(
+        "no-slide-rels.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" Target="slides/slide1.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"<p:sld><a:p><a:r><a:t>Slide Without Rels</a:t></a:r></a:p></p:sld>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert_eq!(extraction.value.len(), 1);
+    assert_eq!(extraction.value[0].slide_path, "ppt/slides/slide1.xml");
+    assert_eq!(extraction.value[0].text, "Slide Without Rels\n");
+    assert_eq!(extraction.value[0].notes, None);
+    let record = serde_json::to_value(&extraction.value[0]).unwrap();
+    assert!(!record.as_object().unwrap().contains_key("notes"));
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn reads_missing_target_slides_identically_through_reader_wrappers() {
+    let file = fixtures::build_package("pptx/missing-target", "missing-target.pptx");
+    let bytes = fs::read(&file).unwrap();
+
+    let from_reader =
+        oxdoc_core::extract_pptx_slides_from_reader(Cursor::new(bytes.clone())).unwrap();
+    let with_limits = oxdoc_core::extract_pptx_slides_from_reader_with_limits(
+        Cursor::new(bytes),
+        OoxmlLimits::default(),
+    )
+    .unwrap();
+    let from_path = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert_eq!(from_reader.value, from_path.value);
+    assert_eq!(from_reader.warnings, from_path.warnings);
+    assert_eq!(with_limits.value, from_path.value);
+    assert_eq!(with_limits.warnings, from_path.warnings);
+}
+
+#[test]
 fn keeps_partial_docx_text_and_warns_on_malformed_document_xml() {
     let file = create_ooxml(
         "malformed-document.docx",
