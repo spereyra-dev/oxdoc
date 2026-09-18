@@ -216,14 +216,29 @@ endnotes/comments repositioning defined above).
 
 ### Requirement: No public output schema changes
 
-The system MUST NOT change `part_type` labels (`"header" | "footer" |
-"footnotes" | "endnotes" | "comments"`), MUST NOT add fields to `TextBlock` or
-`DocxTable`, MUST NOT add options to `DocxTextOptions`, and MUST NOT emit
-variant labels. Variant labeling is deferred to a future change.
+The system MUST NOT change `part_type` labels (`"main" | "header" | "footer" |
+"footnotes" | "endnotes" | "comments"`), MUST NOT add fields to `DocxTable`,
+MUST NOT add options to `DocxTextOptions`, and MUST NOT add fields to `TextBlock`
+other than the optional `variant` field. Variant labeling, deferred by change
+`docx-section-order-related-parts`, is now delivered by change
+`structured-text-source-provenance` through the
+versioned structured-text contract (`schema_version: 2` and schema
+`schemas/v2/oxdoc-structured-text.schema.json`, see the `structured-text-schema`
+domain spec); it MUST NOT be emitted by widening the v1 contract. Flat text and
+tables output MUST NOT change in any way.
 
-#### Scenario: Output shape unchanged
+#### Scenario: Output shape unchanged except variant on structured header/footer blocks
 
-- GIVEN any package before and after this change
+- GIVEN any DOCX package before and after this change
 - WHEN extraction output is compared structurally
-- THEN the set of fields on each block/table and the allowed `part_type`
-  values are identical; only ordering and the two new warnings differ.
+- THEN the set of fields on each table and the allowed `part_type` values are
+  identical, `DocxTextOptions` is unchanged, the only new `TextBlock` field is
+  the optional `variant`, and flat text and tables output are byte-identical.
+
+#### Scenario: Variant labels are carried by a versioned contract
+
+- GIVEN a DOCX header block that carries a `variant` label
+- WHEN the structured-json output is validated
+- THEN it validates against `schemas/v2/oxdoc-structured-text.schema.json` with
+  top-level `schema_version: 2`, and `schemas/v1/**` remains unmodified for
+  validating previously captured v1 outputs.
