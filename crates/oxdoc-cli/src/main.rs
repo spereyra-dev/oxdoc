@@ -212,6 +212,12 @@ enum ExtractCommand {
         #[arg(long, value_enum, default_value_t = TablesFormat::Json)]
         format: TablesFormat,
     },
+    /// Extract PPTX slides as slide-scoped JSON or JSONL records
+    Slides {
+        file: PathBuf,
+        #[arg(long, value_enum, default_value_t = SlidesFormat::Json)]
+        format: SlidesFormat,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -272,6 +278,12 @@ enum RowsFormat {
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum TablesFormat {
     Json,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SlidesFormat {
+    Json,
+    Jsonl,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -409,6 +421,9 @@ fn run() -> Result<(), CliError> {
                 format: TablesFormat::Json,
             } => {
                 extract_tables_command(&file, warning_format)?;
+            }
+            ExtractCommand::Slides { file, format } => {
+                extract_slides_command(&file, format, warning_format)?;
             }
         },
         Command::Info { file, format } => {
@@ -642,6 +657,66 @@ fn extract_tables_command(file: &Path, warning_format: WarningFormat) -> Result<
     };
     serde_json::to_writer_pretty(io::stdout().lock(), &payload)?;
     println!();
+    Ok(())
+}
+
+fn extract_slides_command(
+    file: &Path,
+    format: SlidesFormat,
+    warning_format: WarningFormat,
+) -> Result<(), CliError> {
+    let input = read_input(file)?;
+    match document_type_for_input(&input, file)? {
+        DocumentType::Pptx => {}
+        DocumentType::Docx | DocumentType::Unknown => {
+            return Err(CliError::InvalidArgument(
+                "cannot extract slides from a DOCX document".to_owned(),
+            ));
+        }
+        DocumentType::Xlsx => {
+            return Err(CliError::InvalidArgument(
+                "cannot extract slides from an XLSX workbook".to_owned(),
+            ));
+        }
+    }
+
+    let extraction = input.extract_pptx_slides().map_err(CliError::Core)?;
+    let file_name = display_file_name(file);
+
+    match format {
+        SlidesFormat::Json => {
+            emit_warnings(&extraction.warnings, warning_format);
+            let payload = SlidesPayload {
+                schema_version: 1,
+                file: &file_name,
+                document_type: "pptx",
+                slides: &extraction.value,
+                warnings: extraction
+                    .warnings
+                    .iter()
+                    .map(OwnedWarningPayload::from_output_warning)
+                    .collect(),
+            };
+            serde_json::to_writer_pretty(io::stdout().lock(), &payload)?;
+            println!();
+        }
+        SlidesFormat::Jsonl => {
+            let mut writer = io::stdout().lock();
+            for slide in &extraction.value {
+                let record = SlidesJsonlRecord {
+                    schema_version: 1,
+                    file: &file_name,
+                    slide,
+                };
+                serde_json::to_writer(&mut writer, &record)?;
+                writer.write_all(b"\n")?;
+            }
+            writer.flush()?;
+            // Rows-jsonl precedent: warnings go to stderr only, after the
+            // flushed record stream, so stdout stays valid JSONL.
+            emit_warnings(&extraction.warnings, warning_format);
+        }
+    }
     Ok(())
 }
 
@@ -1183,6 +1258,21 @@ impl Input {
         }
     }
 
+    fn extract_pptx_slides(
+        &self,
+    ) -> oxdoc_core::Result<oxdoc_core::Extraction<Vec<oxdoc_core::PptxSlideText>>> {
+        match self {
+            Input::Path(path) => oxdoc_core::extract_pptx_slides_from_reader_with_limits(
+                File::open(path)?,
+                cli_limits().ooxml,
+            ),
+            Input::Stdin(bytes) => oxdoc_core::extract_pptx_slides_from_reader_with_limits(
+                Cursor::new(bytes),
+                cli_limits().ooxml,
+            ),
+        }
+    }
+
     fn extract_xlsx_csv<W: Write>(
         &self,
         options: XlsxCsvOptions<'_>,
@@ -1481,6 +1571,23 @@ struct TablesPayload {
     #[serde(flatten)]
     tables: DocxTables,
     warnings: Vec<OwnedWarningPayload>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct SlidesPayload<'a> {
+    schema_version: u8,
+    file: &'a str,
+    document_type: &'static str,
+    slides: &'a [oxdoc_core::PptxSlideText],
+    warnings: Vec<OwnedWarningPayload>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct SlidesJsonlRecord<'a> {
+    schema_version: u8,
+    file: &'a str,
+    #[serde(flatten)]
+    slide: &'a oxdoc_core::PptxSlideText,
 }
 
 #[derive(Debug, serde::Serialize)]

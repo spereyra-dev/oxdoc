@@ -2748,6 +2748,279 @@ fn rejects_oversized_input_file() {
 }
 
 #[test]
+fn extracts_pptx_slides_as_json_snapshot() {
+    let pptx = fixtures::build_package("pptx/text", "slides-deck.pptx");
+
+    let output = oxdoc(["extract", "slides", pptx.to_str().unwrap()]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual_stdout = stdout(&output);
+    let expected_snapshot = fixtures::read_snapshot("cli_pptx_slides_json.json");
+    assert_eq!(actual_stdout, expected_snapshot);
+
+    let actual: Value = serde_json::from_str(&actual_stdout).unwrap();
+    let top_level_keys: Vec<String> = actual.as_object().unwrap().keys().cloned().collect();
+    // Field order is locked byte-for-byte by the snapshot comparison above.
+    assert_eq!(
+        top_level_keys,
+        vec![
+            "document_type",
+            "file",
+            "schema_version",
+            "slides",
+            "warnings"
+        ]
+    );
+    assert_eq!(actual["schema_version"], 1);
+    assert_eq!(actual["document_type"], "pptx");
+    let slides = actual["slides"].as_array().unwrap();
+    assert_eq!(slides.len(), 2);
+    let notes_bearing = slides
+        .iter()
+        .filter(|slide| slide.get("notes").is_some())
+        .count();
+    assert_eq!(notes_bearing, 1);
+}
+
+#[test]
+fn extracts_pptx_slides_as_jsonl_snapshot() {
+    let pptx = fixtures::build_package("pptx/text", "slides-deck.pptx");
+
+    let output = oxdoc([
+        "extract",
+        "slides",
+        pptx.to_str().unwrap(),
+        "--format",
+        "jsonl",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let actual_stdout = stdout(&output);
+    assert_eq!(
+        actual_stdout,
+        fixtures::read_snapshot("cli_pptx_slides_jsonl.jsonl")
+    );
+
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 2);
+    assert!(records[0].get("slide_id").is_some());
+    assert!(records[0].get("notes").is_some());
+    assert!(records[1].get("notes").is_none());
+    // Same field values and order as the JSON payload's slides array (each
+    // JSONL record additionally carries the schema_version/file envelope).
+    let json = oxdoc(["extract", "slides", pptx.to_str().unwrap()]);
+    let json_value: Value = serde_json::from_str(&stdout(&json)).unwrap();
+    for (record, slide) in records.iter().zip(json_value["slides"].as_array().unwrap()) {
+        let mut expected = slide.clone();
+        let obj = expected.as_object_mut().unwrap();
+        obj.insert("schema_version".to_owned(), Value::from(1));
+        obj.insert(
+            "file".to_owned(),
+            Value::from("slides-deck.pptx".to_owned()),
+        );
+        assert_eq!(record, &expected);
+    }
+}
+
+#[test]
+fn emits_slides_json_payload_when_all_slides_are_skipped() {
+    let pptx = create_ooxml(
+        "slides-all-skipped.pptx",
+        &[
+            (
+                "[Content_Types].xml",
+                r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId401"/><p:sldId id="257" r:id="rId402"/></p:sldIdLst></p:presentation>"#,
+            ),
+            ("ppt/_rels/presentation.xml.rels", r#"<Relationships/>"#),
+        ],
+    );
+
+    let output = oxdoc(["extract", "slides", pptx.to_str().unwrap()]);
+
+    assert_eq!(output.status.code(), Some(0));
+    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual["slides"].as_array().unwrap().len(), 0);
+    let warnings = actual["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 2);
+    for (warning, rid) in warnings.iter().zip(["rId401", "rId402"]) {
+        assert_eq!(warning["path"], "ppt/presentation.xml");
+        assert_eq!(
+            warning["message"],
+            format!("skipped PPTX slide {rid}: unknown relationship id")
+        );
+    }
+
+    let quiet = oxdoc(["--quiet", "extract", "slides", pptx.to_str().unwrap()]);
+    assert_eq!(quiet.status.code(), Some(0));
+    assert!(stderr(&quiet).is_empty());
+    let quiet_actual: Value = serde_json::from_str(&stdout(&quiet)).unwrap();
+    assert_eq!(quiet_actual["warnings"], actual["warnings"]);
+}
+
+#[test]
+fn keeps_slides_jsonl_stdout_clean_under_warnings() {
+    let pptx = fixtures::build_package("pptx/missing-target", "missing-target-jsonl.pptx");
+
+    let output = oxdoc([
+        "extract",
+        "slides",
+        pptx.to_str().unwrap(),
+        "--format",
+        "jsonl",
+    ]);
+
+    assert!(output.status.success());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 2);
+    let ordinals: Vec<u64> = records
+        .iter()
+        .map(|record| record["slide_ordinal"].as_u64().unwrap())
+        .collect();
+    assert_eq!(ordinals, vec![1, 4]);
+    assert!(!stdout(&output).contains("warning"));
+    assert_eq!(stderr(&output).matches("warning[").count(), 3);
+
+    let json_warnings = oxdoc([
+        "--warnings",
+        "json",
+        "extract",
+        "slides",
+        pptx.to_str().unwrap(),
+        "--format",
+        "jsonl",
+    ]);
+    assert!(json_warnings.status.success());
+    let warnings = json_warning_lines(&json_warnings);
+    assert_eq!(warnings.len(), 3);
+    let messages: Vec<&str> = warnings
+        .iter()
+        .map(|warning| warning["message"].as_str().unwrap())
+        .collect();
+    assert!(messages.contains(&"skipped PPTX slide rId999: unknown relationship id"));
+    assert!(
+        messages.contains(&"skipped related PPTX slide part ppt/slides/absent.xml: missing part")
+    );
+    assert!(messages.contains(
+        &"skipped related PPTX notes part ppt/notesSlides/notesSlide3.xml: missing part"
+    ));
+}
+
+#[test]
+fn extracts_pptx_slides_jsonl_from_stdin() {
+    let pptx = fixtures::build_package("pptx/text", "stdin-slides.pptx");
+
+    let output = oxdoc_with_stdin(
+        ["extract", "slides", "-", "--format", "jsonl"],
+        &fs::read(&pptx).unwrap(),
+    );
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["slide_id"], 256);
+    assert_eq!(records[0]["slide_ordinal"], 1);
+    assert_eq!(records[0]["slide_path"], "ppt/slides/slide2.xml");
+    assert_eq!(records[1]["slide_id"], 257);
+    assert_eq!(records[1]["slide_ordinal"], 2);
+    assert_eq!(records[1]["slide_path"], "ppt/slides/slide1.xml");
+    // The amended spec pins the <stdin> label (display_file_name precedent).
+    for record in &records {
+        assert_eq!(record["file"], "<stdin>");
+    }
+}
+
+#[test]
+fn rejects_slides_from_non_pptx_packages() {
+    let docx = fixtures::build_package("docx/basic", "slides.docx");
+    let xlsx = fixtures::build_package("xlsx/basic", "slides.xlsx");
+
+    let docx_output = oxdoc(["extract", "slides", docx.to_str().unwrap()]);
+    let xlsx_output = oxdoc(["extract", "slides", xlsx.to_str().unwrap()]);
+
+    assert_eq!(docx_output.status.code(), Some(1));
+    assert!(stdout(&docx_output).is_empty());
+    assert!(
+        stderr(&docx_output).contains("cannot extract slides from a DOCX document"),
+        "unexpected stderr {:?}",
+        stderr(&docx_output)
+    );
+    assert_eq!(xlsx_output.status.code(), Some(1));
+    assert!(stdout(&xlsx_output).is_empty());
+    assert!(
+        stderr(&xlsx_output).contains("cannot extract slides from an XLSX workbook"),
+        "unexpected stderr {:?}",
+        stderr(&xlsx_output)
+    );
+}
+
+#[test]
+fn reports_slides_hard_errors_without_partial_output() {
+    let external = create_ooxml(
+        "slides-external-target.pptx",
+        &[
+            (
+                "[Content_Types].xml",
+                r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" TargetMode="External" Target="https://example.invalid/slide1.xml"/></Relationships>"#,
+            ),
+        ],
+    );
+    let missing_presentation = create_ooxml(
+        "slides-missing-presentation.pptx",
+        &[
+            (
+                "[Content_Types].xml",
+                r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+        ],
+    );
+
+    let external_output = oxdoc(["extract", "slides", external.to_str().unwrap()]);
+    let missing_output = oxdoc(["extract", "slides", missing_presentation.to_str().unwrap()]);
+
+    assert_eq!(external_output.status.code(), Some(1));
+    assert!(stdout(&external_output).is_empty());
+    assert!(
+        stderr(&external_output).contains("error["),
+        "unexpected stderr {:?}",
+        stderr(&external_output)
+    );
+    assert_eq!(missing_output.status.code(), Some(1));
+    assert!(stdout(&missing_output).is_empty());
+    assert!(
+        stderr(&missing_output).contains("error["),
+        "unexpected stderr {:?}",
+        stderr(&missing_output)
+    );
+}
+
+#[test]
 fn extracts_pptx_text_and_lists_sheets_from_stdin() {
     let pptx = fixtures::build_package("pptx/text", "stdin-extract-pptx.pptx");
     let xlsx = fixtures::build_package("xlsx/basic", "stdin-list-sheets.xlsx");

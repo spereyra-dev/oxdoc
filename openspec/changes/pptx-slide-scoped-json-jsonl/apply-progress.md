@@ -344,3 +344,77 @@ Decision needed from the maintainer (any one):
 - Consumed native `gentle-ai.sdd-status` v2 before work: change `pptx-slide-scoped-json-jsonl`, `applyState: ready`, `nextRecommended: apply`, `taskProgress 31/60`, `blockedReasons: []`, `actionContext.mode: repo-local`, `allowedEditRoots: [repo root]` — no blockers, no warnings.
 - After WU3: tasks 32-39 marked `[x]`; `taskProgress` moves to 39/60; apply remains in progress with the budget decision pending.
 - Verification-gate extras run this session (parent-prompt gate): `cargo llvm-cov` line coverage 96.37% (>= 95 gate, exit 0); compatibility-corpus script passed; `git diff main` measured and reported above.
+
+---
+
+## WU4a — `extract slides` CLI subcommand and CLI tests (this session)
+
+- Store: openspec
+- Branch: `issue-180-pptx-slides-wu4a` (PR position 6 of the stacked-to-main chain after the WU2/WU3 splits; parent session owns PR opening)
+- Base at apply start: `5e4d98b` (`main` after WU1 #217/#218, WU2 #219/#220, WU2c #221, WU3 #222/#223)
+- Scope: exactly tasks 41-51 (CLI subcommand + CLI tests). Strict TDD (`cargo test`) active. WU4b docs (52-57) left unchecked. Task 40 (WU3 exit / PR 3) remains parent-owned; WU3 landed as #222/#223.
+
+### Completed tasks (tasks.md updated to `[x]`)
+
+| Task | Result |
+| --- | --- |
+| 41 | RED (R9 JSON payload shape): `extracts_pptx_slides_as_json_snapshot` in `crates/oxdoc-cli/tests/cli.rs` — `oxdoc extract slides <slides-deck.pptx>` with NO `--format` flag; asserts success, empty stderr, stdout byte-equal to `cli_pptx_slides_json.json`, top-level keys (order locked by the byte compare; Value keys asserted as a set because serde_json `Value` maps sort alphabetically), exactly two `slides` records, `notes` on exactly one record. RED: `assertion failed: output.status.success()` (clap "unrecognized subcommand 'slides'", exit 2). |
+| 42 | GREEN: `ExtractCommand::Slides { file, format }` with `#[arg(long, value_enum, default_value_t = SlidesFormat::Json)]`, `enum SlidesFormat { Json, Jsonl }`, dispatch arm `extract_slides_command(&file, format, warning_format)?`, `SlidesPayload { schema_version: u8, file: &str, document_type: &'static str, slides: &[PptxSlideText], warnings: Vec<OwnedWarningPayload> }`, pptx-only `document_type_for_input` gate (Docx/Unknown -> "cannot extract slides from a DOCX document", Xlsx -> "...XLSX workbook"), and `Input::extract_pptx_slides` (modeled on `extract_pptx_structured_text`, always `cli_limits().ooxml`). JSON branch: `emit_warnings` first, then `to_writer_pretty` + `println!`. File label = `display_file_name` (stdin -> `<stdin>` per the amended spec; NO `slides_file_label` helper). Byte snapshot compare passed first run after GREEN. |
+| 43 | Pin (RED/GREEN not achievable: all-skipped + quiet behavior is shared task-42 emission code): `emits_slides_json_payload_when_all_skipped` — inline package with empty presentation rels -> exit 0, `"slides": []`, 2 embedded warnings with exact `skipped PPTX slide {rid}: unknown relationship id` wording and path `ppt/presentation.xml`; `--quiet` -> empty stderr with the embedded `warnings` intact. |
+| 44 | RED (R10 JSONL): `extracts_pptx_slides_as_jsonl_snapshot` — `--format jsonl` on `corpus/pptx/text` -> stdout byte-equal to `cli_pptx_slides_jsonl.jsonl`, 2 compact records, `notes` on record 1 only, record values match the JSON `slides` array plus the `schema_version`/`file` envelope. RED: command failed (jsonl arm was a deliberate transient `InvalidArgument` placeholder so the RED was genuine). |
+| 45 | GREEN: `SlidesJsonlRecord<'a> { schema_version: u8, file: &'a str, #[serde(flatten)] slide: &'a PptxSlideText }`; per-slide `serde_json::to_writer` + `\n`, `writer.flush()?`, then `emit_warnings` AFTER the flush (rows-jsonl precedent: stdout stays a pure record stream). Both snapshot tests green. |
+| 46 | Pin (shared emission code): `keeps_slides_jsonl_stdout_clean_under_warnings` on `missing-target` — every stdout line parses as JSON, no warning text on stdout, 3 `warning[...]` lines on stderr, ordinals `1,4` gap asserted; `--warnings json` -> 3 stderr JSON warning payloads whose messages are exactly the three spec-locked wordings. |
+| 47 | Pin (read_input/stdin handled by task 42): `extracts_pptx_slides_jsonl_from_stdin` — piped package -> same records/values as the file form; `file` field asserted as `<stdin>` explicitly (amended spec locked). |
+| 48 | Pin (pptx-only gate was part of the task-42 command implementation per design §4.2 step 2): `rejects_slides_from_non_pptx_packages` — DOCX -> exit 1, empty stdout, `cannot extract slides from a DOCX document`; XLSX -> exit 1, `cannot extract slides from an XLSX workbook` (`CliError::InvalidArgument`, E010). |
+| 49 | Pin (hard errors already propagate via `CliError::Core`): `reports_slides_hard_errors_without_partial_output` — external slide target package and a package without `ppt/presentation.xml` both exit 1 through the `error[...]` handler with empty stdout (no partial payload/records). |
+| 50 | WU4a gate: `cargo test -p oxdoc-cli` -> bin 25 + cli 106 passed; `cargo test --workspace` -> all 8 targets ok (cli bin 25, cli 106, core lib 112, api 99, schema 15, tabular 9 + 2 + 0), frozen snapshots untouched; `cargo fmt --all -- --check` OK; `cargo clippy --workspace --all-targets -- -D warnings` OK; `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only` -> **lines 96.39% TOTAL, exit 0**; `python scripts/check-compatibility-corpus.py` -> "compatibility corpus validation passed (3 fixtures)". No snapshot churn; no change under `tests/fixtures/files/` or `compatibility-matrix.json`. |
+
+### TDD Cycle Evidence (strict TDD)
+
+| Cycle | RED | GREEN | Evidence |
+| --- | --- | --- | --- |
+| JSON payload (41-42) | clap "unrecognized subcommand 'slides'" -> `assertion failed: output.status.success()` | subcommand + gate + payload + `Input::extract_pptx_slides` | byte snapshot compare passes; 106 cli tests |
+| JSONL stream (44-45) | command failed with the transient `--format jsonl is not implemented yet` placeholder arm | `SlidesJsonlRecord` + flush-then-warn stream | byte snapshot compare passes |
+| Pins (43, 46-49) | No RED achievable: the exercised behaviors (shared emission path, quiet suppression, stdin buffering, type gate, hard-error propagation) were landed by tasks 42/45 as the minimal correct command implementation (design §4.2); per the task-23/task-25-29 precedent they are recorded as regression pins | pass on first run | 5 tests in the 106 |
+
+### Files changed (vs `main`)
+
+- `crates/oxdoc-cli/src/main.rs` (+118): `ExtractCommand::Slides`, `SlidesFormat`, `extract_slides_command`, `SlidesPayload`, `SlidesJsonlRecord`, `Input::extract_pptx_slides`.
+- `crates/oxdoc-cli/tests/cli.rs` (+262): 7 new WU4a tests.
+
+### Test commands run
+
+- `cargo test -p oxdoc-cli --test cli extracts_pptx_slides_as_json_snapshot` -> RED (clap exit 2), then 1 passed
+- `cargo test -p oxdoc-cli --test cli extracts_pptx_slides_as_jsonl_snapshot` -> RED (transient jsonl placeholder), then 1 passed
+- `cargo test -p oxdoc-cli --test cli slides` -> 7 passed
+- `cargo test -p oxdoc-cli` -> bin 25 passed, cli 106 passed
+- `cargo test --workspace` -> all 8 targets ok (frozen snapshots untouched)
+- `cargo fmt --all -- --check` -> OK (one mechanical fmt pass on new tests)
+- `cargo clippy --workspace --all-targets -- -D warnings` -> OK
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only` -> lines 96.39% TOTAL, exit 0
+- `python scripts/check-compatibility-corpus.py` -> passed (3 fixtures)
+
+### WU4a gate + exit measurement (task 51)
+
+- `git diff main --shortstat -- . ':(exclude).gitignore'` -> `2 files changed, 380 insertions(+)` = **380 changed lines <= 400 budget** (matches the ~300-380 estimate). No pause needed; no `size:exception`.
+- The `.gitignore` modification and untracked `.gga`/`.pi/` present in the working tree are pre-existing local Pi runtime state, NOT part of this unit and excluded from the commit.
+- No stop-and-investigate event: no snapshot churn, no fixture/matrix changes, no newly-failing existing test.
+
+### Deviations from design
+
+- Design §4.2's `-` stdin label callout is superseded (as recorded in tasks.md reconciliation notes): the `<stdin>` label from `display_file_name` is used, per the amended spec; no `slides_file_label` helper exists.
+- No other deviations: payload/record struct shapes, stderr warning ordering (JSON: warnings before stdout; JSONL: after flush), gate messages, and exit codes follow design §4.2 exactly.
+
+### Commits
+
+1. (this commit) `feat(cli): add extract slides subcommand for slide-scoped JSON and JSONL` — subcommand + CLI tests + openspec artifact updates. Single cohesive work-unit commit (task 51's "open PR 4" clause is parent-owned; session forbids push/PR creation).
+
+### Remaining tasks (unchecked after WU4a)
+
+- [ ] 40. WU3 exit (parent-owned; WU3 landed as PRs #222/#223)
+- WU4b tasks 52-57 (docs only), final verification tasks 58-60
+
+### Structured status (WU4a)
+
+- Consumed native `gentle-ai.sdd-status` v2 before work: change `pptx-slide-scoped-json-jsonl`, `applyState: ready`, `nextRecommended: apply`, `taskProgress 39/60`, `blockedReasons: []`, `actionContext.mode: repo-local`, `allowedEditRoots: [repo root]` — no blockers, no warnings.
+- After WU4a: tasks 41-51 marked `[x]`; `taskProgress` moves to 50/60. Remaining: task 40 (parent-owned), WU4b (52-57), final verification (58-60).
