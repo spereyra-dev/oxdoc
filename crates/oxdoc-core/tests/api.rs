@@ -644,15 +644,85 @@ fn orders_docx_structured_blocks_by_section() {
         .value
         .blocks
         .iter()
-        .map(|block| (block.part_type.clone(), block.part_path.clone()))
+        .map(|block| {
+            (
+                block.part_type.clone(),
+                block.part_path.clone(),
+                block.variant.clone(),
+            )
+        })
         .collect::<Vec<_>>();
-    assert_eq!(parts, oracle_parts(&oracle));
+    assert_eq!(parts, oracle_parts_with_variant(&oracle));
     let messages = extraction
         .warnings
         .iter()
         .map(|warning| warning.message.as_str())
         .collect::<Vec<_>>();
     assert_eq!(messages, oracle_warning_messages(&oracle));
+}
+
+#[test]
+fn keeps_plain_text_free_of_variant_metadata() {
+    let file = build_section_order_package();
+    let oracle = section_order_oracle();
+
+    let extraction = oxdoc_core::extract_docx_text(&file).unwrap();
+
+    let expected_text: String = oracle["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|part| format!("{}\n", part["text"].as_str().unwrap()))
+        .collect();
+    assert_eq!(extraction.value, expected_text);
+    for token in ["word/header", "word/footer", "variant", "ordinal"] {
+        assert!(
+            !extraction.value.contains(token),
+            "flat text leaked provenance token {token}: {:?}",
+            extraction.value
+        );
+    }
+}
+
+#[test]
+fn keeps_non_variant_blocks_without_variant_key() {
+    let file = build_section_order_package();
+
+    let extraction = oxdoc_core::extract_docx_structured_text(&file).unwrap();
+    let output = serde_json::to_value(&extraction.value).unwrap();
+    for block in output["blocks"].as_array().unwrap() {
+        let part_type = block["part_type"].as_str().unwrap();
+        if part_type == "header" || part_type == "footer" {
+            continue;
+        }
+        assert!(
+            block.get("variant").is_none(),
+            "{part_type} block serializes a variant key: {block}"
+        );
+    }
+
+    let pptx = fixtures::build_package("pptx/text", "structured-variant-free.pptx");
+    let pptx_extraction = oxdoc_core::extract_pptx_structured_text(&pptx).unwrap();
+    let pptx_output = serde_json::to_value(&pptx_extraction.value).unwrap();
+    for block in pptx_output["blocks"].as_array().unwrap() {
+        assert!(
+            block.get("variant").is_none(),
+            "PPTX block serializes a variant key: {block}"
+        );
+    }
+}
+
+#[test]
+fn ordinals_are_contiguous_in_output_order() {
+    let file = build_section_order_package();
+
+    let extraction = oxdoc_core::extract_docx_structured_text(&file).unwrap();
+
+    let blocks = &extraction.value.blocks;
+    assert_eq!(
+        blocks.iter().map(|block| block.ordinal).collect::<Vec<_>>(),
+        (1..=blocks.len()).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -2249,7 +2319,7 @@ fn section_order_oracle() -> serde_json::Value {
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
-fn oracle_parts(oracle: &serde_json::Value) -> Vec<(String, String)> {
+fn oracle_parts_with_variant(oracle: &serde_json::Value) -> Vec<(String, String, Option<String>)> {
     oracle["parts"]
         .as_array()
         .unwrap()
@@ -2258,6 +2328,7 @@ fn oracle_parts(oracle: &serde_json::Value) -> Vec<(String, String)> {
             (
                 part["part_type"].as_str().unwrap().to_owned(),
                 part["part_path"].as_str().unwrap().to_owned(),
+                part["variant"].as_str().map(|variant| variant.to_owned()),
             )
         })
         .collect()
