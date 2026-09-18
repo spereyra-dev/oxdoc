@@ -756,6 +756,42 @@ fn keeps_rows_jsonl_stdout_clean_when_warnings_are_emitted() {
     assert_eq!(records[0]["cells"][0]["raw"], "kept");
     assert!(!stdout(&output).contains("warning["));
     assert!(stderr(&output).contains("warning[parser/W001]"));
+
+    // Unresolved shared formulas warn on stderr with the exact wording while
+    // stdout stays a valid JSONL stream (schema_version stays 1 until S7).
+    let shared = create_ooxml(
+        "shared-formula-warning.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><f t="shared" si="9"/><v>4</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+
+    let shared_output = oxdoc(["extract", "rows", shared.to_str().unwrap()]);
+
+    assert!(shared_output.status.success());
+    let shared_records = jsonl_lines(&shared_output);
+    assert_eq!(shared_records.len(), 1);
+    assert_eq!(shared_records[0]["cells"][0]["raw"], "4");
+    assert!(!stdout(&shared_output).contains("unresolved"));
+    assert!(
+        stderr(&shared_output)
+            .contains("unresolved shared formula index '9': formula expression omitted")
+    );
 }
 
 #[test]

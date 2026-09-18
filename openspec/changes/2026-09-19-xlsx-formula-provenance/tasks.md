@@ -332,7 +332,7 @@ injectable seam + unit tests) / **S5b** (warning emission + latch + api/CLI warn
 
 ### RED
 
-- [ ] 22. Add failing unit tests to `crates/oxdoc-core/src/parsers/xlsx.rs`:
+- [x] 22. Add failing unit tests to `crates/oxdoc-core/src/parsers/xlsx.rs`:
   `resolves_cached_and_uncached_shared_slaves_verbatim`,
   `warns_per_cell_for_dangling_si`,
   `treats_slave_before_master_as_unresolved_without_buffering`,
@@ -345,7 +345,7 @@ injectable seam + unit tests) / **S5b** (warning emission + latch + api/CLI warn
   `xlsx-formula-provenance` → Shared formula resolution → all four scenarios; → Bounded
   shared-formula table → "Overflow latches once per worksheet", "Default bound follows
   existing memory conventions".
-- [ ] 23. Add failing api assertions in `crates/oxdoc-core/tests/api.rs` over
+- [x] 23. Add failing api assertions in `crates/oxdoc-core/tests/api.rs` over
   `xlsx/shared-formulas`: sheet `Shared` (`A2` master text + cache true, `A3` cached slave
   with master text verbatim and its own cache true and cached value emitted, `A4` uncached
   slave with master text and cache false, `B2` dangling `si=9` with `has_formula: true`/
@@ -362,13 +362,13 @@ injectable seam + unit tests) / **S5b** (warning emission + latch + api/CLI warn
 
 ### GREEN
 
-- [ ] 24. Add `SharedFormulaTable { expressions: BTreeMap<String, String>, memory_bytes: usize, memory_limit: usize, overflow_warned: bool }`
+- [x] 24. Add `SharedFormulaTable { expressions: BTreeMap<String, String>, memory_bytes: usize, memory_limit: usize, overflow_warned: bool }`
   in `crates/oxdoc-core/src/parsers/xlsx.rs` keyed by **raw `si` attribute text** (never
   numerically parsed) with `register(&mut self, si, expression, path, warnings)` and
   `resolve(&self, si) -> Option<&str>`. `BTreeMap` keeps fuzz/replay order deterministic.
   Implements: `xlsx-formula-provenance` → Shared formula resolution → "First registration
   wins".
-- [ ] 25. Implement `register` check order: (a) empty expression → register nothing;
+- [x] 25. Implement `register` check order: (a) empty expression → register nothing;
   (b) `si` already present → return without overwriting (first wins); (c) saturating
   `memory_bytes + estimated_formula_memory_cost(expression) > memory_limit` → record
   nothing and, if `!overflow_warned`, push `shared_formula_table_limit_reached(path)` and
@@ -386,7 +386,7 @@ injectable seam + unit tests) / **S5b** (warning emission + latch + api/CLI warn
   `write_sheet_csv`, and `fuzz_parse_sheet` keep using the default entry point so
   `OoxmlLimits` and the public API never change. Implements: `xlsx-formula-provenance` →
   Bounded shared-formula table → "Default bound follows existing memory conventions".
-- [ ] 27. Wire emission points: `End` `</f>` registers when `formula_type == Some("shared")`
+- [x] 27. Wire emission points: `End` `</f>` registers when `formula_type == Some("shared")`
   and `formula_si` is present and the captured text is non-empty (the Start-opened master
   still keeps its own text); `Empty` `<f t="shared" si="N"/>` resolves immediately — hit ⇒
   `formula = Some(master_text.to_owned())` copied verbatim, miss ⇒ `formula = None` plus
@@ -398,7 +398,7 @@ injectable seam + unit tests) / **S5b** (warning emission + latch + api/CLI warn
 
 ### TRIANGULATE
 
-- [ ] 28. Verify the overflow aftermath and the warning channel:
+- [x] 28. Verify the overflow aftermath and the warning channel:
   `shared_formula_table_limit_reached` appears exactly once per worksheet while affected
   slaves still warn per cell and still emit cached values; both new wordings classify
   `W999`/`custom`; and stderr warnings leave stdout a valid JSONL stream (extend
@@ -407,14 +407,14 @@ injectable seam + unit tests) / **S5b** (warning emission + latch + api/CLI warn
   defer to S7). Implements: `xlsx-formula-provenance` → Bounded shared-formula table →
   "Overflow latches once per worksheet"; → Warning classification → "Warnings stay on
   stderr".
-- [ ] 29. Confirm streaming and memory claims: rows are still emitted one `ParsedRow` at a
+- [x] 29. Confirm streaming and memory claims: rows are still emitted one `ParsedRow` at a
   time, the only new cross-row state is the bounded table, and no `OoxmlLimits` field or
   public option changed. Implements: `xlsx-formula-provenance` → Bounded shared-formula
   table → "Default bound follows existing memory conventions".
 
 ### REFACTOR / Gate S5
 
-- [ ] 30. Run `cargo fmt --all -- --check`,
+- [x] 30. Run `cargo fmt --all -- --check`,
   `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, the
   coverage gate, and `make compatibility-corpus-check`; compare `git diff --stat` against
   ~320–420 lines and apply the S5a/S5b fallback if over budget before opening the PR.
