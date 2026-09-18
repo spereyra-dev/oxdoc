@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v2/oxdoc-structured-text.schema.json",
+  "title": "oxdoc structured text JSON output",
+  "description": "Schema for `oxdoc extract text --format structured-json` output in oxdoc schema version 2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "file", "document_type", "blocks"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 2,
+      "description": "Schema version of this payload; always 2 for this contract."
+    },
+    "file": {
+      "type": "string",
+      "description": "File name derived from the provided input path."
+    },
+    "document_type": {
+      "type": "string",
+      "enum": ["docx", "pptx"],
+      "description": "Detected text-bearing OOXML document type."
+    },
+    "blocks": {
+      "type": "array",
+      "description": "Ordered non-empty text blocks with source part metadata.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["part_type", "part_path", "ordinal", "text"],
+        "properties": {
+          "part_type": {
+            "type": "string",
+            "description": "Logical source kind, such as main, header, footer, footnotes, endnotes, comments, slide, or notes. `notes` blocks carry speaker notes extracted from a `ppt/notesSlides/notesSlideN.xml` part."
+          },
+          "part_path": {
+            "type": "string",
+            "description": "OOXML package part path that produced this text block."
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based global output-order index across the flattened block list — not a paragraph ordinal and not scoped per part or per slide."
+          },
+          "text": {
+            "type": "string",
+            "description": "Extracted text for this source block."
+          },
+          "variant": {
+            "type": "string",
+            "enum": ["first", "even", "default"],
+            "description": "DOCX header/footer variant from the `w:type` of the `sectPr` reference that positioned the part; missing or unrecognized `w:type` values are labeled `default`. Present only on section-referenced DOCX `header` and `footer` blocks; omitted (never null) for orphan header/footer parts and for all other block kinds and document types. When one part is referenced as multiple variants, the first reference's variant wins."
+          }
+        }
+      }
+    }
+  }
+}
