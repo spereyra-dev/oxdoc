@@ -175,6 +175,73 @@ Warnings are still written to stderr when regular JSON output is selected. They 
 
 PPTX extraction preserves presentation slide order, extracts DrawingML text boxes, and includes linked speaker notes after each slide.
 
+## Extract PPTX Slides
+
+```bash
+oxdoc extract slides <FILE> [--format json|jsonl]
+```
+
+`FILE` is one `.pptx` package or `-` for stdin. Unlike
+`extract text`, this command is slide-scoped: it emits one record per slide
+with body text and speaker notes as fields of the same record.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--format json` | `json` | Emit a single versioned JSON document payload. |
+| `--format jsonl` | `json` | Emit one compact slide record per line. |
+
+Example:
+
+```bash
+oxdoc extract slides deck.pptx
+```
+
+Output shape:
+
+```json
+{
+  "schema_version": 1,
+  "file": "deck.pptx",
+  "document_type": "pptx",
+  "slides": [
+    {
+      "slide_id": 256,
+      "slide_ordinal": 1,
+      "slide_path": "ppt/slides/slide2.xml",
+      "text": "First Slide\n",
+      "notes": "Speaker note\n"
+    }
+  ],
+  "warnings": []
+}
+```
+
+Streaming example:
+
+```bash
+oxdoc extract slides deck.pptx --format jsonl
+```
+
+```jsonl
+{"schema_version":1,"file":"deck.pptx","slide_id":256,"slide_ordinal":1,"slide_path":"ppt/slides/slide2.xml","text":"First Slide\n","notes":"Speaker note\n"}
+```
+
+Both shapes validate against [`schemas/v1/oxdoc-pptx-slides.schema.json`](schemas/v1/oxdoc-pptx-slides.schema.json).
+`slide_ordinal` is the 1-based position of each `p:sldId` entry in
+`p:sldIdLst` (not a renumbered index over the emitted records), so slides
+skipped for missing targets keep their presentation positions and the emitted
+ordinals may contain gaps — for example `1` and `3` when the second slide of
+three is skipped. `slide_id` is omitted (never `null`) when the `p:sldId`
+entry has no usable `@id`, and `notes` is omitted when the slide has no
+readable speaker notes. A deck whose slides are all skipped still exits `0`
+with a valid payload (`"slides": []` plus warnings; no JSONL records).
+
+Warning channels follow the format: JSON embeds warnings in the payload and
+mirrors them to stderr according to the global `--warnings`/`--quiet`
+settings; JSONL writes warnings to stderr only so stdout remains a valid
+JSONL record stream. With stdin input, the `file` field is labeled `<stdin>`,
+matching the other single-input commands.
+
 ## Extract DOCX Tables
 
 ```bash

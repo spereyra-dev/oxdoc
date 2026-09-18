@@ -252,6 +252,20 @@ object per worksheet row. Row and column indices are 0-based, while requested
 `--sheet-index` values are 1-based. Sparse cells are omitted, raw numbers remain
 strings, and recoverable warnings stay on stderr.
 
+### Extract PPTX Slides
+
+```bash
+oxdoc extract slides deck.pptx --format jsonl
+```
+
+The command accepts one presentation, including `-` for stdin, and emits one
+slide-scoped record per slide with `slide_id`, `slide_ordinal`, `slide_path`,
+body `text`, and optional speaker `notes`. `json` is the default format and
+emits a single versioned document payload
+(`schemas/v1/oxdoc-pptx-slides.schema.json`). Missing slide or notes targets
+degrade to per-slide skip warnings while extraction continues; with JSONL,
+recoverable warnings stay on stderr.
+
 ### Infer an XLSX Schema
 
 ```bash
@@ -358,7 +372,7 @@ inferred conversion while keeping columnar dependencies out of `oxdoc-core`.
 | XLSX CSV, rows, and schema inference | Workbook relationship lookup, sheet name/index selection, hidden-sheet opt-in, shared strings, inline strings, sparse cells, typed JSONL rows, experimental inferred schemas, booleans, errors, cached formula values, CSV escaping. |
 | Metadata | Core/app properties plus basic macro detection. |
 | Audit | Factual signals for macros, custom properties, suspicious relationships, hidden XLSX sheets, and recoverable parser warnings. |
-| Output | Plain text, CSV, JSONL rows, JSON metadata, JSON text extraction, experimental XLSX schema JSON. |
+| Output | Plain text, CSV, JSONL rows, JSON metadata, JSON text extraction, slide-scoped PPTX JSON/JSONL, experimental XLSX schema JSON. |
 | Errors | Typed library errors, CLI non-zero hard failures. |
 | Warnings | Recoverable parser warnings with OOXML part paths. |
 
