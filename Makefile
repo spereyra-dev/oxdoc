@@ -145,6 +145,7 @@ docs-links:
 
 docs-schemas-check:
 	@diff -ru schemas/v1 docs/schemas/v1
+	@diff -ru schemas/v2 docs/schemas/v2
 
 docs-playground-check:
 	python3 scripts/compatibility-playground.py --check

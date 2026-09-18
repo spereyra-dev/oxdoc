@@ -539,6 +539,7 @@ fn extract_text_command(
                 Ok(result) => {
                     emit_warnings(&result.warnings, warning_format);
                     structured_payloads.push(TextStructuredPayload {
+                        schema_version: 2,
                         file: display_file_name(file),
                         structured: result.value,
                     });
@@ -1467,6 +1468,7 @@ struct TextPayload {
 
 #[derive(Debug, serde::Serialize)]
 struct TextStructuredPayload {
+    schema_version: u8,
     file: String,
     #[serde(flatten)]
     structured: StructuredText,

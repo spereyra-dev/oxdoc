@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "file": "structured-slide.pptx",
+  "document_type": "pptx",
+  "blocks": [
+    {
+      "part_type": "slide",
+      "part_path": "ppt/slides/slide2.xml",
+      "ordinal": 1,
+      "text": "First Slide\nAlpha\tBeta & Co\nGamma < Delta\n"
+    },
+    {
+      "part_type": "notes",
+      "part_path": "ppt/notesSlides/notesSlide2.xml",
+      "ordinal": 2,
+      "text": "Speaker note\n"
+    },
+    {
+      "part_type": "slide",
+      "part_path": "ppt/slides/slide1.xml",
+      "ordinal": 3,
+      "text": "Second Slide\n"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 # Apply Progress — structured text source provenance
 
 - Change id: `structured-text-source-provenance`
-- Branch: `issue-179-structured-text-wu1` (stacked-to-main PR 1 of 3)
+- Branch: `issue-179-structured-text-wu1` (stacked-to-main PR 1 of 3) · WU2 on `issue-179-structured-text-wu2` (stacked-to-main PR 2 of 3, WU1 merged as #213)
 - Artifact store: openspec · strict TDD (`cargo test`) · review budget 400 lines
 
 ## WU1 — Variant plumbing + oracle + regressions (tasks 1–12) — COMPLETE
@@ -47,3 +47,53 @@
 ### Sequencing note
 
 WU1 merged alone emits `variant` under an unversioned payload — legitimate intermediate state violating no locked test, but WU2 must merge before any tag/release.
+
+## WU2 — Versioned contract + CLI + snapshots (tasks 13–26) — COMPLETE
+
+### TDD Cycle Evidence
+
+| Cycle | Step | Evidence |
+| --- | --- | --- |
+| R3/R5/R7 RED | cli.rs marker asserts (`extracts_text_as_structured_json` incl. `blocks[0].get("variant").is_none()`, stdin/multi per-element `schema_version == 2`, PPTX test upgraded to byte snapshot comparison) + schema.rs v2/PPTX validation tests, version-aware `read_json_schema`, `SCHEMA_VERSIONS` metadata table, negative v1 test | `cargo test -p oxdoc-core --test schema`: 3 failed (v2 schema file missing → path NotFound; metadata table fails on missing v2 dir), 9 passed · `cargo test -p oxdoc-cli --test cli`: 3 failed (schema_version `Null != 2` ×2; PPTX snapshot file missing), 96 passed |
+| R3/R5/R7 GREEN | `schemas/v2/oxdoc-structured-text.schema.json` (design §3.1 verbatim) + byte-identical `docs/schemas/v2/` mirror + Makefile v2 diff pass + CLI `TextStructuredPayload.schema_version: 2` at the single construction site + DOCX snapshot bump (one key) + frozen PPTX snapshot + cli.rs/schema.rs tests | `cargo test --workspace`: 329 passed, 0 failed (was 327; +2 new schema tests) · schema suite 12 passed · cli suite 99 passed |
+| TRIANGULATE | targeted `cargo test -p oxdoc-cli --test cli -- structured` (7 passed: single DOCX, PPTX byte-snapshot, stdin, multi per-element, empty-batch unchanged) · `git diff main -- cli_structured_text_json.json` shows exactly one added key · `cargo test -- v2_payload` (negative v1 breakage) · `cargo test -- representative_structured` (both snapshots validate vs v2 + const) · `git diff main --name-only -- schemas/v1 docs/schemas/v1` → empty · `git diff main --name-only -- tests/fixtures/snapshots` → exactly the two sanctioned snapshots | ok |
+| REFACTOR | version-driven tooling only (`read_json_schema(version, name)`, metadata derives version from the directory table — v3 is a one-line table edit); `validate_object` untouched (const asserts local to the two structured tests, mirroring the rows-jsonl precedent); `cargo fmt --all` + clippy clean | ok |
+
+### Files changed (WU2)
+
+- `schemas/v2/oxdoc-structured-text.schema.json` (new) — draft 2020-12, `$id .../schemas/v2/oxdoc-structured-text.schema.json`, `additionalProperties: false`, required `schema_version` (const 2) / `file` / `document_type` (docx|pptx) / `blocks`; block items require `part_type` / `part_path` / `ordinal` (minimum 1) / `text` with optional `variant` enum `first|even|default` and the ordinal/notes/variant semantics descriptions.
+- `docs/schemas/v2/oxdoc-structured-text.schema.json` (new) — byte-identical mirror (`cmp` verified).
+- `Makefile` — `docs-schemas-check` now diffs v1 **and** v2 mirrors.
+- `crates/oxdoc-core/tests/schema.rs` — `read_json_schema(version, name)` + 9 mechanical call-site updates; `schemas_have_stable_public_metadata` iterates `SCHEMA_VERSIONS` (v1 ×9, v2 ×1) deriving `$id` version from the directory; structured test switched to v2 with const assertion; new `representative_structured_text_pptx_json_matches_schema`; new `v2_payload_fails_frozen_v1_validation` (documented intentional v1-strict breakage via the undeclared-field panic path, with a temporary no-op panic hook); PPTX test added.
+- `crates/oxdoc-cli/src/main.rs` — `TextStructuredPayload` gains `schema_version: u8` as first field; set to 2 at the single construction site serving single/stdin/multi modes. Core `StructuredText` unversioned (asymmetric convention preserved, mirrors TablesPayload).
+- `tests/fixtures/snapshots/cli_structured_text_json.json` — `"schema_version": 2` added as first key; `blocks` array byte-identical (diff reviewed).
+- `tests/fixtures/snapshots/cli_structured_text_pptx_json.json` (new) — generated once from implementation output over `pptx/text` corpus (`build_package` path), reviewed against design §5 before freezing: block 1 `slide`/`ppt/slides/slide2.xml`, block 2 `notes`/`ppt/notesSlides/notesSlide2.xml` ("Speaker note"), block 3 `slide`/`ppt/slides/slide1.xml`, ordinals 1..3, no `variant` — the slide2-before-slide1 inversion locks `p:sldIdLst` presentation order.
+- `crates/oxdoc-cli/tests/cli.rs` — marker asserts for all emission modes (multi per element), `variant`-omission assert on the DOCX main block, PPTX test upgraded from minimal field asserts to byte comparison + parsed-Value equality; `emits_empty_structured_json_batch_when_no_inputs_succeed` untouched.
+
+### Verification evidence (WU2 final gate)
+
+- `cargo fmt --all -- --check` → clean
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean
+- `cargo test --workspace` → 329 passed, 0 failed
+- `make docs-schemas-check` → `make` unavailable on Windows; ran the exact underlying commands instead: `diff -ru schemas/v1 docs/schemas/v1` and `diff -ru schemas/v2 docs/schemas/v2` → both clean (mirror byte-identical, `cmp`-verified)
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only` → exit 0 (line coverage 96.22% ≥ 95)
+- `git diff main --stat` (excluding .gitignore): 8 files, 263 insertions(+), 54 deletions(−) = **317 changed lines** vs estimate ~300–380 — within the 400-line budget; no delivery ask needed. WU1+WU2 cumulative ≈ 657 lines across two stacked PRs.
+- Cross-unit guards (WU2 portion): no `schemas/v1/**` / `docs/schemas/v1/**` path in the change diff; only the two sanctioned structured snapshots changed; `validate_object` untouched.
+
+### Commits (WU2)
+
+- `22e4770` feat(schema): publish structured-text schema v2 with mirror lockstep (schema + mirror + Makefile + version-aware tooling + negative v1 pin; verified green as its own tree via stash-run)
+- `e89d735` feat(cli): stamp structured-json payloads with schema version 2 (CLI marker + DOCX snapshot bump + frozen PPTX snapshot + cli.rs/schema.rs structured tests)
+
+### Deviations from design
+
+- None behavioral. The PPTX snapshot was generated from implementation output as designed and matches the §5 block table exactly. The negative v1 test suppresses the panic hook during `catch_unwind` to keep CI output clean; the assertion goes through the same `validate_object` undeclared-field panic path the design specifies.
+
+### Remaining tasks
+
+- WU3 (tasks 27–32): documentation — unchecked.
+- Cross-unit guards (tasks 33–35): v1-frozen and snapshot-scope verified for WU1+WU2 (tasks 33–34 evidence above); task 35 work-unit boundaries preserved (WU2 in two commits, tests with code).
+
+### Sequencing note
+
+WU2 carries the version marker, so after this PR the transient "unversioned variant" state from WU1 is resolved; WU2 must be in a release before any tag (still holds — release sequencing unchanged).

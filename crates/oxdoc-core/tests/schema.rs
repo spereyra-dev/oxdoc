@@ -2,7 +2,7 @@ use serde_json::Value;
 
 #[test]
 fn representative_info_json_matches_schema() {
-    let schema = read_json_schema("oxdoc-info.schema.json");
+    let schema = read_json_schema("v1", "oxdoc-info.schema.json");
     let output = serde_json::from_str(&read_snapshot("cli_info_json.json")).unwrap();
 
     validate_object(&schema, &output);
@@ -10,7 +10,7 @@ fn representative_info_json_matches_schema() {
 
 #[test]
 fn representative_extract_text_json_matches_schema() {
-    let schema = read_json_schema("oxdoc-extract-text.schema.json");
+    let schema = read_json_schema("v1", "oxdoc-extract-text.schema.json");
     let output = serde_json::from_str(&read_snapshot("cli_extract_text_json.json")).unwrap();
 
     validate_object(&schema, &output);
@@ -18,15 +18,32 @@ fn representative_extract_text_json_matches_schema() {
 
 #[test]
 fn representative_structured_text_json_matches_schema() {
-    let schema = read_json_schema("oxdoc-structured-text.schema.json");
+    let schema = read_json_schema("v2", "oxdoc-structured-text.schema.json");
     let output = serde_json::from_str(&read_snapshot("cli_structured_text_json.json")).unwrap();
 
     validate_object(&schema, &output);
+    assert_eq!(
+        output["schema_version"],
+        schema["properties"]["schema_version"]["const"]
+    );
+}
+
+#[test]
+fn representative_structured_text_pptx_json_matches_schema() {
+    let schema = read_json_schema("v2", "oxdoc-structured-text.schema.json");
+    let output =
+        serde_json::from_str(&read_snapshot("cli_structured_text_pptx_json.json")).unwrap();
+
+    validate_object(&schema, &output);
+    assert_eq!(
+        output["schema_version"],
+        schema["properties"]["schema_version"]["const"]
+    );
 }
 
 #[test]
 fn representative_docx_tables_json_matches_schema() {
-    let schema = read_json_schema("oxdoc-docx-tables.schema.json");
+    let schema = read_json_schema("v1", "oxdoc-docx-tables.schema.json");
     let output = serde_json::json!({
         "schema_version": 1,
         "file": "contract.docx",
@@ -88,7 +105,7 @@ fn representative_docx_tables_json_matches_schema() {
 
 #[test]
 fn representative_audit_json_matches_schema() {
-    let schema = read_json_schema("oxdoc-audit.schema.json");
+    let schema = read_json_schema("v1", "oxdoc-audit.schema.json");
     let output = serde_json::from_str(&read_snapshot("cli_audit_json.json")).unwrap();
 
     validate_object(&schema, &output);
@@ -96,7 +113,7 @@ fn representative_audit_json_matches_schema() {
 
 #[test]
 fn representative_audit_jsonl_record_matches_schema_shape() {
-    let schema = read_json_schema("oxdoc-audit-jsonl.schema.json");
+    let schema = read_json_schema("v1", "oxdoc-audit-jsonl.schema.json");
     let output = serde_json::json!({
         "schema_version": 1,
         "file": "report.docx",
@@ -137,7 +154,7 @@ fn representative_audit_jsonl_record_matches_schema_shape() {
 
 #[test]
 fn representative_all_sheets_manifest_matches_schema() {
-    let schema = read_json_schema("oxdoc-all-sheets-manifest.schema.json");
+    let schema = read_json_schema("v1", "oxdoc-all-sheets-manifest.schema.json");
     let output = serde_json::from_str(&read_snapshot("all_sheets_manifest.json")).unwrap();
 
     validate_object(&schema, &output);
@@ -145,7 +162,7 @@ fn representative_all_sheets_manifest_matches_schema() {
 
 #[test]
 fn representative_xlsx_rows_jsonl_record_matches_schema_shape() {
-    let schema = read_json_schema("oxdoc-xlsx-rows-jsonl.schema.json");
+    let schema = read_json_schema("v1", "oxdoc-xlsx-rows-jsonl.schema.json");
     let output: Value = serde_json::from_str(
         r##"{
             "schema_version": 1,
@@ -188,7 +205,7 @@ fn representative_xlsx_rows_jsonl_record_matches_schema_shape() {
 
 #[test]
 fn representative_xlsx_schema_report_matches_schema_shape() {
-    let schema = read_json_schema("oxdoc-xlsx-schema.schema.json");
+    let schema = read_json_schema("v1", "oxdoc-xlsx-schema.schema.json");
     let output = serde_json::json!({
         "schema_version": 1,
         "experimental": true,
@@ -233,40 +250,83 @@ fn representative_xlsx_schema_report_matches_schema_shape() {
 
 #[test]
 fn schemas_have_stable_public_metadata() {
-    for name in [
-        "oxdoc-info.schema.json",
-        "oxdoc-extract-text.schema.json",
-        "oxdoc-structured-text.schema.json",
-        "oxdoc-docx-tables.schema.json",
-        "oxdoc-audit.schema.json",
-        "oxdoc-audit-jsonl.schema.json",
-        "oxdoc-all-sheets-manifest.schema.json",
-        "oxdoc-xlsx-rows-jsonl.schema.json",
-        "oxdoc-xlsx-schema.schema.json",
-    ] {
-        let schema = read_json_schema(name);
+    const SCHEMA_VERSIONS: &[(&str, &[&str])] = &[
+        (
+            "v1",
+            &[
+                "oxdoc-info.schema.json",
+                "oxdoc-extract-text.schema.json",
+                "oxdoc-structured-text.schema.json",
+                "oxdoc-docx-tables.schema.json",
+                "oxdoc-audit.schema.json",
+                "oxdoc-audit-jsonl.schema.json",
+                "oxdoc-all-sheets-manifest.schema.json",
+                "oxdoc-xlsx-rows-jsonl.schema.json",
+                "oxdoc-xlsx-schema.schema.json",
+            ],
+        ),
+        ("v2", &["oxdoc-structured-text.schema.json"]),
+    ];
 
-        assert_eq!(
-            schema.get("$schema").and_then(Value::as_str),
-            Some("https://json-schema.org/draft/2020-12/schema")
-        );
-        assert!(
-            schema
-                .get("$id")
-                .and_then(Value::as_str)
-                .is_some_and(|id| id.ends_with(&format!("/schemas/v1/{name}")))
-        );
-        assert_eq!(schema.get("type").and_then(Value::as_str), Some("object"));
-        assert_eq!(
-            schema.get("additionalProperties").and_then(Value::as_bool),
-            Some(false)
-        );
+    for (version, names) in SCHEMA_VERSIONS {
+        for name in *names {
+            assert_schema_metadata(version, name);
+        }
     }
 }
 
-fn read_json_schema(name: &str) -> Value {
+#[test]
+fn v2_payload_fails_frozen_v1_validation() {
+    // The v2 payload adds `schema_version`, which the frozen v1 schema does not
+    // declare; with `additionalProperties: false` this is the documented,
+    // intentional breakage strict v1 validators must migrate for.
+    let v1_schema = read_json_schema("v1", "oxdoc-structured-text.schema.json");
+    let v2_payload = serde_json::json!({
+        "schema_version": 2,
+        "file": "contract.docx",
+        "document_type": "docx",
+        "blocks": []
+    });
+
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = std::panic::catch_unwind(move || {
+        let schema = v1_schema.clone();
+        let payload = v2_payload.clone();
+        validate_object(&schema, &payload)
+    });
+    std::panic::set_hook(previous_hook);
+
+    assert!(
+        result.is_err(),
+        "a v2 payload must fail the frozen v1 schema (undeclared schema_version)"
+    );
+}
+
+fn assert_schema_metadata(version: &str, name: &str) {
+    let schema = read_json_schema(version, name);
+
+    assert_eq!(
+        schema.get("$schema").and_then(Value::as_str),
+        Some("https://json-schema.org/draft/2020-12/schema")
+    );
+    assert!(
+        schema
+            .get("$id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id.ends_with(&format!("/schemas/{version}/{name}")))
+    );
+    assert_eq!(schema.get("type").and_then(Value::as_str), Some("object"));
+    assert_eq!(
+        schema.get("additionalProperties").and_then(Value::as_bool),
+        Some(false)
+    );
+}
+
+fn read_json_schema(version: &str, name: &str) -> Value {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../schemas/v1")
+        .join("../../schemas")
+        .join(version)
         .join(name);
     let source = std::fs::read_to_string(path).unwrap();
 
