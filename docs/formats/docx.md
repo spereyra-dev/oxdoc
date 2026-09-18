@@ -79,6 +79,25 @@ structured blocks, and tables, so the three paths cannot drift:
    deferred, so even-variant references still emit in `first`/`even`/`default`
    variant position.
 
+### Structured blocks and variants
+
+In structured-json output, header and footer blocks carry an optional `variant`
+field (`first`, `even`, or `default`) sourced from the `w:type` of the `sectPr`
+reference that positioned the part:
+
+- Section-referenced headers and footers carry the variant of the reference
+  that first positioned them. When one part is shared by two or more sections
+  as different variants, the first reference wins (dedup emits the part once,
+  at its first referencing position).
+- A missing or unrecognized `w:type` value (for example `title`) is labeled
+  `default`, with no warning — mirroring the ordering rule above.
+- Orphan header/footer parts (present in the rels file but referenced by no
+  `sectPr`) are emitted without a `variant` field. The key is omitted, never
+  `null`, because an orphan has no section-assigned variant.
+- Flat text and table output never carry variant data: variant is a
+  structured-json-only field, and the plain-text and tables contracts are
+  unchanged.
+
 ## Structural Table Model
 
 The plain-text contract above remains unchanged. `oxdoc extract tables` and the

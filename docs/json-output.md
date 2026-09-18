@@ -10,7 +10,9 @@ Machine-readable schemas live under `schemas/v1/` in the repository and are mirr
 | --- | --- |
 | `oxdoc info --format json` | [`schemas/v1/oxdoc-info.schema.json`](schemas/v1/oxdoc-info.schema.json) |
 | `oxdoc extract text --format json` | [`schemas/v1/oxdoc-extract-text.schema.json`](schemas/v1/oxdoc-extract-text.schema.json) |
-| `oxdoc extract text --format structured-json` | [`schemas/v1/oxdoc-structured-text.schema.json`](schemas/v1/oxdoc-structured-text.schema.json) |
+| `oxdoc extract text --format structured-json` | [`schemas/v2/oxdoc-structured-text.schema.json`](schemas/v2/oxdoc-structured-text.schema.json) |
+
+The v1 schema for structured-json output remains available at [`schemas/v1/oxdoc-structured-text.schema.json`](schemas/v1/oxdoc-structured-text.schema.json) for outputs captured before schema v2. It stays frozen: new output fields are never added to it.
 | `oxdoc extract tables --format json` | [`schemas/v1/oxdoc-docx-tables.schema.json`](schemas/v1/oxdoc-docx-tables.schema.json) |
 | `oxdoc audit --format json` | [`schemas/v1/oxdoc-audit.schema.json`](schemas/v1/oxdoc-audit.schema.json) |
 | Each `oxdoc audit --format jsonl` line | [`schemas/v1/oxdoc-audit-jsonl.schema.json`](schemas/v1/oxdoc-audit-jsonl.schema.json) |
@@ -21,6 +23,12 @@ Machine-readable schemas live under `schemas/v1/` in the repository and are mirr
 `oxdoc extract text --format jsonl` emits newline-delimited records for streaming batch ingestion. Each line is a standalone JSON object with `file`, `document_type`, and either `text` or `error`; successful records may include `warnings`.
 
 `oxdoc extract text --format structured-json` emits ordered text blocks with `part_type`, `part_path`, `ordinal`, and `text` so consumers can distinguish body text from related parts such as comments, headers, speaker notes, and slides.
+
+Structured-json payloads also carry a top-level `schema_version` field (`2` today). Schema version 2 adds one optional block field: `variant`, a DOCX header/footer label (`first`, `even`, or `default`) sourced from the `w:type` of the `sectPr` reference that positioned the part. Missing or unrecognized `w:type` values are labeled `default` with no warning. `variant` is present only on section-referenced DOCX `header` and `footer` blocks; it is omitted (never `null`) for orphan header/footer parts and for every other block kind and document type, including all PPTX blocks. When one header/footer part is referenced by multiple sections as different variants, the first reference's variant wins. The `ordinal` field is a 1-based global output-order index across the flattened block list — not a paragraph ordinal and not scoped per part or per slide; PPTX `slide` blocks are followed by the `notes` block holding their speaker notes, extracted from the `ppt/notesSlides/notesSlideN.xml` part.
+
+The Rust `StructuredText` library type itself stays unversioned: serializing it directly produces the block body without the CLI's top-level `schema_version` marker. The versioned contract is a CLI output convention, mirroring the tables and rows-jsonl payloads.
+
+Strict v1 validation of structured-json payloads is intentionally broken by schema v2: because v1 sets `additionalProperties` to `false`, any v2 payload (including variant-free ones, which only add `schema_version: 2` at the top level) fails v1 validation through its undeclared-field rule. If you validate structured-json output against a schema, point consumers at [`schemas/v2/oxdoc-structured-text.schema.json`](schemas/v2/oxdoc-structured-text.schema.json); the v1 schema is kept only for previously captured outputs. The v2 `blocks` arrays of variant-free documents are byte-identical to v1 output apart from the new `schema_version` key.
 
 `oxdoc extract tables --format json` emits DOCX tables with source part
 metadata, row and cell ordinals, grid offsets, column spans, vertical merge
@@ -34,7 +42,7 @@ The `--all-sheets` manifest records each exported XLSX sheet with `index`, `visi
 regular JSON audit contract stays optimized for one document or a small
 in-memory array.
 
-The `v1` schemas use JSON Schema draft 2020-12, include stable `$id` values, and set `additionalProperties` to `false`. New output fields are introduced through a new schema version instead of silently widening the current contract.
+The `v1` and `v2` schemas use JSON Schema draft 2020-12, include stable `$id` values, and set `additionalProperties` to `false`. New output fields are introduced through a new schema version instead of silently widening the current contract: whenever a command's output gains a field, the payload's `schema_version` moves to a new version and the previous version's schema stays frozen. Existing `schema_version: 1` payloads remain valid against their published v1 schemas.
 
 Within a schema version:
 

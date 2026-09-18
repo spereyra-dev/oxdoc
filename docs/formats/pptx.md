@@ -44,6 +44,47 @@ oxdoc extract text deck.pptx --format json
 
 Warnings are still written to stderr when JSON output is selected. They are not embedded in the JSON payload.
 
+## Structured JSON
+
+```bash
+oxdoc extract text deck.pptx --format structured-json
+```
+
+Structured output keeps each non-empty text part as a separate block:
+
+```json
+{
+  "schema_version": 2,
+  "file": "deck.pptx",
+  "document_type": "pptx",
+  "blocks": [
+    {
+      "part_type": "slide",
+      "part_path": "ppt/slides/slide2.xml",
+      "ordinal": 1,
+      "text": "First Slide\n"
+    },
+    {
+      "part_type": "notes",
+      "part_path": "ppt/notesSlides/notesSlide2.xml",
+      "ordinal": 2,
+      "text": "Speaker note\n"
+    }
+  ]
+}
+```
+
+- `slide` blocks carry the text of one slide; `notes` blocks carry that
+  slide's speaker notes, extracted from the linked
+  `ppt/notesSlides/notesSlideN.xml` part. A `notes` block follows its slide.
+- Slide order follows `p:sldIdLst` in `ppt/presentation.xml`, not slide part
+  file names: a deck whose `sldIdLst` lists slide2 before slide1 emits the
+  slide2 block first even though its file name sorts later.
+- `ordinal` is a 1-based global output-order index across the flattened block
+  list — not scoped per part or per slide.
+- PPTX blocks never carry a `variant` field; that label is a DOCX
+  header/footer concept.
+
 ## Non-Goals
 
 - Rendering slides.
