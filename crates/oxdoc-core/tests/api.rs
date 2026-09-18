@@ -436,6 +436,90 @@ fn extracts_application_generated_pptx_text_fixture() {
 }
 
 #[test]
+fn extracts_pptx_sldid_without_id_attribute_unchanged() {
+    let file = create_ooxml(
+        "sldid-without-id.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId r:id="rId1"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" Target="slides/slide1.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"<p:sld><a:p><a:r><a:t>Alpha Slide</a:t></a:r></a:p></p:sld>"#,
+            ),
+        ],
+    );
+
+    let text = oxdoc_core::extract_pptx_text(&file).unwrap();
+    let structured = oxdoc_core::extract_pptx_structured_text(&file).unwrap();
+
+    assert_eq!(text.value, "Alpha Slide\n");
+    assert!(text.warnings.is_empty());
+    let parts: Vec<(String, String, usize, String)> = structured
+        .value
+        .blocks
+        .iter()
+        .map(|block| {
+            (
+                block.part_type.clone(),
+                block.part_path.clone(),
+                block.ordinal,
+                block.text.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        parts,
+        vec![(
+            "slide".to_owned(),
+            "ppt/slides/slide1.xml".to_owned(),
+            1,
+            "Alpha Slide\n".to_owned(),
+        )]
+    );
+    assert!(structured.warnings.is_empty());
+}
+
+#[test]
+fn extracts_pptx_sldid_with_id_attribute_unchanged() {
+    let file = create_ooxml(
+        "sldid-with-id.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="257" r:id="rId1"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" Target="slides/slide1.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"<p:sld><a:p><a:r><a:t>Beta Slide</a:t></a:r></a:p></p:sld>"#,
+            ),
+        ],
+    );
+
+    let text = oxdoc_core::extract_pptx_text(&file).unwrap();
+
+    assert_eq!(text.value, "Beta Slide\n");
+    assert!(text.warnings.is_empty());
+}
+
+#[test]
 fn keeps_partial_pptx_text_and_warns_on_malformed_slide_xml() {
     let file = create_ooxml(
         "malformed-slide.pptx",
