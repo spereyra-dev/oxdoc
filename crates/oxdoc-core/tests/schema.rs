@@ -263,6 +263,7 @@ fn schemas_have_stable_public_metadata() {
                 "oxdoc-all-sheets-manifest.schema.json",
                 "oxdoc-xlsx-rows-jsonl.schema.json",
                 "oxdoc-xlsx-schema.schema.json",
+                "oxdoc-pptx-slides.schema.json",
             ],
         ),
         ("v2", &["oxdoc-structured-text.schema.json"]),
@@ -273,6 +274,41 @@ fn schemas_have_stable_public_metadata() {
             assert_schema_metadata(version, name);
         }
     }
+}
+
+#[test]
+fn representative_pptx_slides_json_payload_matches_schema() {
+    let schema = read_json_schema("v1", "oxdoc-pptx-slides.schema.json");
+    let output = serde_json::from_str(&read_snapshot("cli_pptx_slides_json.json")).unwrap();
+
+    validate_slides_object(&schema, &output);
+    assert_eq!(output["schema_version"], 1);
+    assert_eq!(output["document_type"], "pptx");
+}
+
+#[test]
+fn representative_pptx_slides_jsonl_record_matches_schema_shape() {
+    let schema = read_json_schema("v1", "oxdoc-pptx-slides.schema.json");
+    let first_line = read_snapshot("cli_pptx_slides_jsonl.jsonl")
+        .lines()
+        .next()
+        .expect("jsonl snapshot has at least one record")
+        .to_owned();
+    let output: Value = serde_json::from_str(&first_line).unwrap();
+
+    validate_slides_object(&schema, &output);
+
+    // slide_id is optional: an @id-less slide record (key omitted) validates.
+    let record: Value = serde_json::json!({
+        "schema_version": 1,
+        "file": "slides-deck.pptx",
+        "slide_ordinal": 2,
+        "slide_path": "ppt/slides/slide1.xml",
+        "text": "Second Slide\n"
+    });
+    validate_slides_object(&schema, &record);
+    assert!(record.get("slide_id").is_none());
+    assert_eq!(record["schema_version"], 1);
 }
 
 #[test]
@@ -303,6 +339,33 @@ fn v2_payload_fails_frozen_v1_validation() {
     );
 }
 
+#[test]
+fn slides_payload_fails_frozen_structured_text_validation() {
+    // The slides payload declares `slides` (not `blocks`) and pins
+    // `schema_version: 1`/`document_type: "pptx"`; the structured-text
+    // schemas (v1 and frozen v2) reject it — this is a NEW contract, not a
+    // structured-text widening.
+    let payload: Value = serde_json::from_str(&read_snapshot("cli_pptx_slides_json.json")).unwrap();
+
+    for version in ["v2", "v1"] {
+        let schema = read_json_schema(version, "oxdoc-structured-text.schema.json");
+
+        let previous_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let result = std::panic::catch_unwind({
+            let schema = schema.clone();
+            let payload = payload.clone();
+            move || validate_object(&schema, &payload)
+        });
+        std::panic::set_hook(previous_hook);
+
+        assert!(
+            result.is_err(),
+            "a slides payload must fail the frozen {version} structured-text schema"
+        );
+    }
+}
+
 fn assert_schema_metadata(version: &str, name: &str) {
     let schema = read_json_schema(version, name);
 
@@ -317,10 +380,45 @@ fn assert_schema_metadata(version: &str, name: &str) {
             .is_some_and(|id| id.ends_with(&format!("/schemas/{version}/{name}")))
     );
     assert_eq!(schema.get("type").and_then(Value::as_str), Some("object"));
-    assert_eq!(
-        schema.get("additionalProperties").and_then(Value::as_bool),
-        Some(false)
-    );
+
+    if let Some(branches) = schema.get("oneOf").and_then(Value::as_array) {
+        // oneOf schemas keep their strictness either on the referenced
+        // branch definitions (payload/record $refs) or on the top level next
+        // to inline discrimination branches (audit-jsonl).
+        let mut inline_branch = false;
+        for branch in branches {
+            match branch.get("$ref").and_then(Value::as_str) {
+                Some(reference) => {
+                    let pointer = reference.strip_prefix('#').unwrap_or_else(|| {
+                        panic!("unsupported reference {reference} in {version}/{name}")
+                    });
+                    let definition = schema.pointer(pointer).unwrap_or_else(|| {
+                        panic!("unresolved reference {reference} in {version}/{name}")
+                    });
+                    assert_eq!(
+                        definition
+                            .get("additionalProperties")
+                            .and_then(Value::as_bool),
+                        Some(false),
+                        "oneOf branch {reference} in {version}/{name} is strict"
+                    );
+                }
+                None => inline_branch = true,
+            }
+        }
+        if inline_branch {
+            assert_eq!(
+                schema.get("additionalProperties").and_then(Value::as_bool),
+                Some(false),
+                "inline oneOf branches keep the top-level strictness in {version}/{name}"
+            );
+        }
+    } else {
+        assert_eq!(
+            schema.get("additionalProperties").and_then(Value::as_bool),
+            Some(false)
+        );
+    }
 }
 
 fn read_json_schema(version: &str, name: &str) -> Value {
@@ -342,14 +440,18 @@ fn read_snapshot(name: &str) -> String {
 }
 
 fn validate_object(schema: &Value, output: &Value) {
+    validate_against(schema, output, schema);
+}
+
+fn validate_against(definition: &Value, output: &Value, root: &Value) {
     let output = output
         .as_object()
         .expect("representative output is an object");
-    let required = schema
+    let required = definition
         .get("required")
         .and_then(Value::as_array)
         .expect("schema declares required fields");
-    let properties = schema
+    let properties = definition
         .get("properties")
         .and_then(Value::as_object)
         .expect("schema declares properties");
@@ -363,6 +465,12 @@ fn validate_object(schema: &Value, output: &Value) {
         let property = properties
             .get(field)
             .unwrap_or_else(|| panic!("field {field} is not declared in schema"));
+        let property = property
+            .get("$ref")
+            .and_then(Value::as_str)
+            .filter(|reference| reference.starts_with('#'))
+            .map(|reference| resolve_schema_reference(root, reference))
+            .unwrap_or(property);
         let expected_type = property
             .get("type")
             .and_then(Value::as_str)
@@ -378,6 +486,43 @@ fn validate_object(schema: &Value, output: &Value) {
             );
         }
     }
+}
+
+fn resolve_schema_reference<'a>(schema: &'a Value, reference: &str) -> &'a Value {
+    let pointer = reference
+        .strip_prefix('#')
+        .unwrap_or_else(|| panic!("unsupported schema reference {reference}"));
+    schema
+        .pointer(pointer)
+        .unwrap_or_else(|| panic!("unresolved schema reference {reference}"))
+}
+
+fn validate_slides_object(schema: &Value, output: &Value) {
+    let branches = schema
+        .get("oneOf")
+        .and_then(Value::as_array)
+        .expect("slides schema declares a top-level oneOf");
+    let matched = branches
+        .iter()
+        .map(|branch| {
+            resolve_schema_reference(
+                schema,
+                branch
+                    .get("$ref")
+                    .and_then(Value::as_str)
+                    .expect("slides oneOf branches are $refs"),
+            )
+        })
+        .find(|definition| {
+            definition["required"]
+                .as_array()
+                .expect("branch declares required fields")
+                .iter()
+                .all(|field| output.get(field.as_str().unwrap()).is_some())
+        })
+        .expect("slides output matches exactly one schema branch");
+
+    validate_against(matched, output, schema);
 }
 
 fn assert_json_type(field: &str, value: &Value, expected_type: &str) {
