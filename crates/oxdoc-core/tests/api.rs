@@ -1757,6 +1757,154 @@ fn xlsx_formulas_corpus_loads_and_carries_the_documented_cells() {
 }
 
 #[test]
+fn shared_formulas_corpus_loads_and_carries_the_documented_cells() {
+    let file = fixtures::build_package("xlsx/shared-formulas", "shared-formulas.xlsx");
+
+    let mut shared_rows = Vec::new();
+    let shared_extraction = oxdoc_core::visit_xlsx_rows(
+        &file,
+        XlsxSheetOptions {
+            sheet_name: Some("Shared"),
+            ..XlsxSheetOptions::default()
+        },
+        XlsxValueMode::Formatted,
+        |row| {
+            shared_rows.push(row.clone());
+            Ok(XlsxRowControl::Continue)
+        },
+    )
+    .unwrap();
+    assert!(shared_extraction.warnings.is_empty());
+
+    // Sheet "Shared", row 2: shared master, dangling-si slave, array master.
+    assert_eq!(shared_rows[0].row_index, 1);
+    assert_eq!(
+        shared_rows[0]
+            .cells
+            .iter()
+            .map(|cell| cell.column_index)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 5]
+    );
+    let shared_row2 = &shared_rows[0].cells;
+    // A2: shared master registers its own expression (v1 baseline: has_formula only).
+    assert!(shared_row2[0].has_formula);
+    assert!(matches!(
+        &shared_row2[0].value,
+        XlsxCellValue::Number { raw, .. } if raw == "6"
+    ));
+    // B2: dangling si=9 slave (v1 baseline: no warning yet, S5 adds it).
+    assert!(shared_row2[1].has_formula);
+    assert!(matches!(
+        &shared_row2[1].value,
+        XlsxCellValue::Number { raw, .. } if raw == "4"
+    ));
+    // F2: array master.
+    assert!(shared_row2[2].has_formula);
+    assert!(matches!(
+        &shared_row2[2].value,
+        XlsxCellValue::Number { raw, .. } if raw == "3"
+    ));
+
+    assert_eq!(shared_rows.len(), 6);
+
+    // Sheet "Shared", row 3: cached slave of si=0, array region cell.
+    assert_eq!(shared_rows[1].row_index, 2);
+    assert_eq!(
+        shared_rows[1]
+            .cells
+            .iter()
+            .map(|cell| cell.column_index)
+            .collect::<Vec<_>>(),
+        vec![0, 5]
+    );
+    let row3 = &shared_rows[1].cells;
+    // A3: cached slave keeps its own cached value at the v1 baseline.
+    assert!(row3[0].has_formula);
+    assert!(matches!(
+        &row3[0].value,
+        XlsxCellValue::Number { raw, .. } if raw == "9"
+    ));
+    // F3: array region cell with only <v> is the non-formula control.
+    assert!(!row3[1].has_formula);
+    assert!(matches!(
+        &row3[1].value,
+        XlsxCellValue::Number { raw, .. } if raw == "5"
+    ));
+
+    // Sheet "Shared", row 4: uncached slave of si=0.
+    assert_eq!(shared_rows[2].row_index, 3);
+    assert_eq!(shared_rows[2].cells.len(), 1);
+    assert!(shared_rows[2].cells[0].has_formula);
+    assert_eq!(shared_rows[2].cells[0].value, XlsxCellValue::Blank);
+
+    // Sheet "Shared", row 5: first master of si=1.
+    assert_eq!(shared_rows[3].row_index, 4);
+    assert_eq!(shared_rows[3].cells.len(), 1);
+    assert!(shared_rows[3].cells[0].has_formula);
+    assert!(matches!(
+        &shared_rows[3].cells[0].value,
+        XlsxCellValue::Number { raw, .. } if raw == "1"
+    ));
+
+    // Sheet "Shared", row 6: duplicate master of si=1.
+    assert_eq!(shared_rows[4].row_index, 5);
+    assert_eq!(shared_rows[4].cells.len(), 1);
+    assert!(shared_rows[4].cells[0].has_formula);
+    assert!(matches!(
+        &shared_rows[4].cells[0].value,
+        XlsxCellValue::Number { raw, .. } if raw == "2"
+    ));
+
+    // Sheet "Shared", row 7: slave of si=1.
+    assert_eq!(shared_rows[5].row_index, 6);
+    assert_eq!(shared_rows[5].cells.len(), 1);
+    assert!(shared_rows[5].cells[0].has_formula);
+    assert_eq!(shared_rows[5].cells[0].value, XlsxCellValue::Blank);
+
+    let mut prefixed_rows = Vec::new();
+    let prefixed_extraction = oxdoc_core::visit_xlsx_rows(
+        &file,
+        XlsxSheetOptions {
+            sheet_name: Some("Prefixed"),
+            ..XlsxSheetOptions::default()
+        },
+        XlsxValueMode::Formatted,
+        |row| {
+            prefixed_rows.push(row.clone());
+            Ok(XlsxRowControl::Continue)
+        },
+    )
+    .unwrap();
+    assert!(prefixed_extraction.warnings.is_empty());
+
+    // Sheet "Prefixed": every element namespace-prefixed; slave before master,
+    // later master, slave after master (v1 baseline: has_formula only).
+    assert_eq!(prefixed_rows.len(), 3);
+    for (row_index, row) in prefixed_rows.iter().enumerate() {
+        assert_eq!(row.row_index, row_index);
+        assert_eq!(
+            row.cells
+                .iter()
+                .map(|cell| cell.column_index)
+                .collect::<Vec<_>>(),
+            vec![1],
+            "only column B is populated on the prefixed sheet row {row_index}"
+        );
+        assert!(
+            row.cells[0].has_formula,
+            "prefixed sheet row {row_index} carries an <x:f> element"
+        );
+    }
+    assert!(matches!(
+        &prefixed_rows[1].cells[0].value,
+        XlsxCellValue::Number { raw, .. } if raw == "1"
+    ));
+    assert_eq!(prefixed_rows[0].cells[0].value, XlsxCellValue::Blank);
+    assert_eq!(prefixed_rows[2].cells[0].value, XlsxCellValue::Blank);
+}
+
+#[test]
 fn visits_typed_xlsx_rows_from_reader_and_stops_early() {
     let file = fixtures::build_package("xlsx/basic", "fixture.xlsx");
     let reader = File::open(file).unwrap();
@@ -2992,6 +3140,7 @@ fn fixture_provenance_notes_are_present() {
         "xlsx-openpyxl-basic.md",
         "xlsx-formatted-locale.md",
         "xlsx-formulas.md",
+        "xlsx-shared-formulas.md",
         "pptx-basic.md",
         "pptx-text.md",
         "pptx-python-pptx-basic.md",
@@ -3006,7 +3155,12 @@ fn fixture_provenance_notes_are_present() {
         assert!(note.contains("Purpose:"));
     }
 
-    for provenance in ["xlsx-basic.md", "xlsx-app-metadata.md", "xlsx-formulas.md"] {
+    for provenance in [
+        "xlsx-basic.md",
+        "xlsx-app-metadata.md",
+        "xlsx-formulas.md",
+        "xlsx-shared-formulas.md",
+    ] {
         let note = fixtures::read_provenance(provenance);
         assert!(note.contains("no `.xlsx` binary is checked in"));
     }

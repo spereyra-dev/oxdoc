@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <x:sheetData>
+    <x:row r="1">
+      <x:c r="B1"><x:f t="shared" si="0"/></x:c>
+    </x:row>
+    <x:row r="2">
+      <x:c r="B2"><x:f t="shared" si="0">PrefixedSum()</x:f><x:v>1</x:v></x:c>
+    </x:row>
+    <x:row r="3">
+      <x:c r="B3"><x:f t="shared" si="0"/></x:c>
+    </x:row>
+  </x:sheetData>
+</x:worksheet>

@@ -144,13 +144,13 @@ Spec coverage: Fixture corpus with provenance; Shared formula resolution; Array 
 
 Depends on S1 merged (provenance-list pattern and README convention established).
 
-- [ ] 5. RED: append `xlsx-shared-formulas.md` to both provenance-presence lists as in
+- [x] 5. RED: append `xlsx-shared-formulas.md` to both provenance-presence lists as in
   task 1 and record the missing-note panic from
   `cargo test -p oxdoc-core --test api fixture_provenance_notes_are_present` and
   `cargo test -p oxdoc-cli --test cli fixture_provenance_notes_are_present`. Implements:
   `xlsx-formula-provenance` → Fixture corpus with provenance → "Provenance and corpus
   gates stay green".
-- [ ] 6. Hand-author `tests/fixtures/corpus/xlsx/shared-formulas/` with a two-sheet
+- [x] 6. Hand-author `tests/fixtures/corpus/xlsx/shared-formulas/` with a two-sheet
   workbook (`Shared` = `rId1`, `Prefixed` = `rId2`, both mapped in
   `xl/_rels/workbook.xml.rels`). Sheet 1 per design §5.2: `A2`
   `<f t="shared" si="0" ref="A2:A4">SUM(B2:B4)</f><v>6</v>` master; `A3` cached slave
@@ -166,11 +166,11 @@ Depends on S1 merged (provenance-list pattern and README convention established)
   provenance → "Corpus covers the formula case matrix", and → Shared formula resolution →
   "Slave resolves to master text verbatim", "Dangling si warns per cell and still emits
   the cell", "Slave before master is unresolved", "First registration wins".
-- [ ] 7. Add `tests/fixtures/provenance/xlsx-shared-formulas.md` with the required label
+- [x] 7. Add `tests/fixtures/provenance/xlsx-shared-formulas.md` with the required label
   set and the runtime-zipped/no-binary statement, and add the `xlsx/shared-formulas` entry
   to `tests/fixtures/README.md`. Implements: `xlsx-formula-provenance` → Fixture corpus
   with provenance → "Provenance and corpus gates stay green".
-- [ ] 8. TRIANGULATE: add `shared_formulas_corpus_loads_and_carries_the_documented_cells`
+- [x] 8. TRIANGULATE: add `shared_formulas_corpus_loads_and_carries_the_documented_cells`
   to `crates/oxdoc-core/tests/api.rs` proving
   `fixtures::build_package("xlsx/shared-formulas", "shared-formulas.xlsx")` loads with both
   sheets and asserting today's v1 baseline (`has_formula: true` for `A2`/`A3`/`A4`/`B2`/
