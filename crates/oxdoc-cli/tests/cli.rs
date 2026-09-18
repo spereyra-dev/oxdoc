@@ -231,6 +231,7 @@ fn extracts_text_as_structured_json() {
     assert!(output.status.success());
     assert!(stderr(&output).is_empty());
     let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    assert_eq!(actual["schema_version"], 2);
     assert!(
         actual["file"]
             .as_str()
@@ -242,6 +243,7 @@ fn extracts_text_as_structured_json() {
     assert_eq!(actual["blocks"][0]["part_path"], "word/document.xml");
     assert_eq!(actual["blocks"][0]["ordinal"], 1);
     assert_eq!(actual["blocks"][0]["text"], "Body\n");
+    assert!(actual["blocks"][0].get("variant").is_none());
     assert_eq!(actual["blocks"][1]["part_type"], "header");
     assert_eq!(actual["blocks"][1]["part_path"], "word/header1.xml");
     assert_eq!(actual["blocks"][1]["ordinal"], 2);
@@ -262,23 +264,21 @@ fn extracts_pptx_text_as_structured_json() {
 
     assert!(output.status.success());
     assert!(stderr(&output).is_empty());
-    let actual: Value = serde_json::from_str(&stdout(&output)).unwrap();
+    let actual_stdout = stdout(&output);
+    assert_eq!(
+        actual_stdout.trim_end(),
+        fixtures::read_snapshot("cli_structured_text_pptx_json.json").trim_end()
+    );
+    let actual: Value = serde_json::from_str(&actual_stdout).unwrap();
+    assert_eq!(
+        actual,
+        serde_json::from_str::<Value>(&fixtures::read_snapshot(
+            "cli_structured_text_pptx_json.json"
+        ))
+        .unwrap()
+    );
+    assert_eq!(actual["schema_version"], 2);
     assert_eq!(actual["file"], "structured-slide.pptx");
-    assert_eq!(actual["document_type"], "pptx");
-    assert_eq!(actual["blocks"][0]["part_type"], "slide");
-    assert!(
-        actual["blocks"][0]["part_path"]
-            .as_str()
-            .unwrap()
-            .starts_with("ppt/slides/slide")
-    );
-    assert_eq!(actual["blocks"][0]["ordinal"], 1);
-    assert!(
-        actual["blocks"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("Slide")
-    );
 }
 
 #[test]
@@ -402,6 +402,7 @@ fn extracts_structured_json_from_stdin_and_multiple_inputs() {
     );
     assert!(stdin_output.status.success());
     let stdin_actual: Value = serde_json::from_str(&stdout(&stdin_output)).unwrap();
+    assert_eq!(stdin_actual["schema_version"], 2);
     assert_eq!(stdin_actual["file"], "<stdin>");
     assert_eq!(stdin_actual["document_type"], "docx");
     assert_eq!(stdin_actual["blocks"][0]["part_type"], "main");
@@ -432,6 +433,9 @@ fn extracts_structured_json_from_stdin_and_multiple_inputs() {
             .unwrap()
             .ends_with("structured-second.docx")
     );
+    for record in records {
+        assert_eq!(record["schema_version"], 2);
+    }
 }
 
 #[test]

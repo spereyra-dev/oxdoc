@@ -18,10 +18,27 @@ fn representative_extract_text_json_matches_schema() {
 
 #[test]
 fn representative_structured_text_json_matches_schema() {
-    let schema = read_json_schema("v1", "oxdoc-structured-text.schema.json");
+    let schema = read_json_schema("v2", "oxdoc-structured-text.schema.json");
     let output = serde_json::from_str(&read_snapshot("cli_structured_text_json.json")).unwrap();
 
     validate_object(&schema, &output);
+    assert_eq!(
+        output["schema_version"],
+        schema["properties"]["schema_version"]["const"]
+    );
+}
+
+#[test]
+fn representative_structured_text_pptx_json_matches_schema() {
+    let schema = read_json_schema("v2", "oxdoc-structured-text.schema.json");
+    let output =
+        serde_json::from_str(&read_snapshot("cli_structured_text_pptx_json.json")).unwrap();
+
+    validate_object(&schema, &output);
+    assert_eq!(
+        output["schema_version"],
+        schema["properties"]["schema_version"]["const"]
+    );
 }
 
 #[test]
