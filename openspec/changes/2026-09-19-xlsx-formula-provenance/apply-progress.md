@@ -385,3 +385,79 @@ Implemented and verified in the working tree on top of 051dbc8:
   28 and the S5 gate run (task 30) — then check those boxes.
 - S6: tasks 31–36; S7: tasks 37–44; S8: tasks 45–50; cross-slice guards:
   tasks 51–55 (all unchecked)
+
+---
+
+## S6 — Rows-jsonl schema v2 + harness (tasks 31–36) — SPLIT VIA PRE-AGREED SECOND FALLBACK (S6a committed, S6b ready uncommitted)
+
+Realized diff for the whole S6 slice measured **564 lines** (263 additions + 1 deletion in
+`crates/oxdoc-core/tests/schema.rs`, plus two new 150-line schema files = 300) > the
+400-line budget, so the pre-agreed second fallback applied ("move S6's snapshot-free
+harness tests into their own slice"): **S6a** (schema v2 + byte-identical mirror +
+registration + mirror-identity test + representative v2 record test) is committed
+(af9d6d0, 392 lines); **S6b** (the `const` harness extension + coupling, negative, and
+additive-delta tests, 172 lines) is fully implemented and verified in the working tree,
+gate-green, ready to be committed as the next work unit. Per `ask-on-risk`, the executor
+stopped at the S6a gate instead of committing further — the S5a/S5b precedent.
+
+### TDD Cycle Evidence (S6)
+
+| Task | Cycle | Test | RED evidence | GREEN evidence |
+| --- | --- | --- | --- | --- |
+| 31 | RED | 5 new tests in `crates/oxdoc-core/tests/schema.rs` + v2 `SCHEMA_VERSIONS` registration | `cargo test -p oxdoc-core --test schema`: 6 failed (5 new tests + `schemas_have_stable_public_metadata`), all on the missing v2 file (`Os NotFound` at `read_json_schema`) | See tasks 32–35 |
+| 33–34 | GREEN | `xlsx_rows_v2_schema_and_mirror_are_identical`, registration | — | Schema authored (v1 + design §4.1 deltas), mirror byte-identical (`cmp` identical), committed in af9d6d0; 17 tests pass in the S6a state |
+| 32 | GREEN (RED above) | `v1_rows_payload_fails_frozen_v2_validation` | Intermediate proof: with the v2 file present but **before** the `const` extension the negative test failed with `a v1 payload must fail the v2 schema (schema_version const 2)` (payload validated — all v1 fields stay declared in v2) | After the ~7-line `const` equality check in `validate_against`, passes; the negative now fails validation on the `schema_version` const, as designed |
+| 31/35 | GREEN | `representative_xlsx_rows_v2_jsonl_record_matches_schema_shape` (cached number, uncached blank, cached error, shared slave; five-variant walk; per-cell coupling), `xlsx_rows_v2_formula_free_record_differs_from_v1_only_by_schema_version` (additive delta + five-variant declaration + v1 frozen-no-formula), `xlsx_rows_v2_enforces_formula_presence_coupling` | — | All pass; full suite 20/20 in schema.rs |
+
+Harness limitation stated inline (never silent): `coupling_accepts` reads the two
+declared `allOf`/`if`/`then` branches from the shared `cell` shape and applies them
+directly in Rust, panicking on any unsupported shape; the test comment states the
+hand-rolled harness does not evaluate `allOf`/`if`/`then` and that the constraint is
+enforced there instead.
+
+### Files changed
+
+- `schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json` (new, 150 lines): `$id` v2, `const: 2`
+  on `schema_version`, `formula`/`formula_cached` in `$defs.cellBaseProperties`, both
+  `$ref`s added to all five variants' properties (optional, not required), coupling
+  declared once on the shared `cell` shape via `allOf`/`if`/`then`; every other v1
+  element byte-preserved.
+- `docs/schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json` (new, byte-identical mirror).
+- `crates/oxdoc-core/tests/schema.rs`: S6a (+91/−1 committed) + S6b working tree
+  (+172): registration, identity test, representative v2 test, `const` equality check in
+  `validate_against` (strengthens every existing schema test), coupling test +
+  `coupling_accepts` helper, negative test, additive-delta test.
+- openspec artifacts (tasks.md marks, apply-progress.md) included with the slice.
+
+### Verification (Gate S6, run on the S6b working tree)
+
+- `cargo fmt --all -- --check` → clean (one fmt normalization pass applied first)
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean
+- `cargo test --workspace` → 8 suites ok, 0 failures (391 tests incl. 6 new schema tests)
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only` → exit 0
+- `diff -ru schemas/v1 docs/schemas/v1 && diff -ru schemas/v2 docs/schemas/v2` (`make docs-schemas-check`; `make` unavailable in this shell) → identical
+- `python scripts/check-compatibility-corpus.py` → "compatibility corpus validation passed (3 fixtures)"
+- `git status --porcelain schemas/v1 docs/schemas/v1 tests/fixtures/files tests/fixtures/compatibility-matrix.json tests/fixtures/snapshots` → empty (v1 frozen; no snapshot/manifest/digest/binary churn)
+- Envelope honesty: `schema_version` stays `1` in CLI payloads (the flip is S7); no JSON formula field is emitted; `schemas/v2/oxdoc-structured-text.schema.json` untouched.
+
+### Measured changed lines vs budget
+
+- Whole S6 slice (S6a commit + S6b working tree, excluding `.gitignore` and openspec
+  bookkeeping): 263 additions + 1 deletion + 300 new schema/mirror lines = **564 total**
+  → over budget, pre-agreed second fallback applied.
+- S6a commit af9d6d0: 391 insertions + 1 deletion = **392 total** — under 400.
+- S6b working tree on top of S6a: **172 additions** in `schema.rs` — under 400 on its own.
+
+### Deviations from design
+
+- The pre-agreed second fallback split was applied (S6 measured 564 > 400). S6b is
+  implemented, verified, and gate-green in the working tree but uncommitted pending the
+  maintainer's delivery decision (second stacked PR for the S6b work unit, or an explicit
+  `size:exception` for one combined S6 PR). No other deviation: the v2 schema is exactly
+  the design §4.1 delta set, and the harness changes are exactly design §4.2 items 1–6.
+
+### Remaining tasks
+
+- S6b commit (uncommitted, gate-green): completes tasks 31, 32, 35 and the S6 gate run
+  (task 36) — then check those boxes.
+- S7: tasks 37–44; S8: tasks 45–50; cross-slice guards: tasks 51–55 (all unchecked)
