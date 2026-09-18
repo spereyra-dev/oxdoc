@@ -335,7 +335,7 @@ and stdin, warnings follow the channel rules, and the snapshots byte-compare.
 
 ### RED/GREEN — subcommand, JSON payload
 
-- [ ] 41. RED (R9 JSON document contract → JSON payload shape): in
+- [x] 41. RED (R9 JSON document contract → JSON payload shape): in
   `crates/oxdoc-cli/tests/cli.rs` add a test running
   `oxdoc extract slides <slides-deck.pptx>` with **no** `--format` flag,
   asserting success, empty stderr, stdout byte-equal to
@@ -343,7 +343,7 @@ and stdin, warnings follow the channel rules, and the snapshots byte-compare.
   `schema_version`(`1`)/`file`/`document_type`(`"pptx"`)/`slides`/`warnings`,
   exactly two `slides` records, and `notes` present on exactly the
   notes-bearing record.
-- [ ] 42. GREEN: in `crates/oxdoc-cli/src/main.rs` add
+- [x] 42. GREEN: in `crates/oxdoc-cli/src/main.rs` add
   `ExtractCommand::Slides { file: PathBuf, #[arg(long, value_enum, default_value_t = SlidesFormat::Json)] format: SlidesFormat }`,
   `#[derive(Debug, Clone, Copy, ValueEnum)] enum SlidesFormat { Json, Jsonl }`,
   the dispatch arm calling `extract_slides_command(&file, format, warning_format)?`,
@@ -354,48 +354,48 @@ and stdin, warnings follow the channel rules, and the snapshots byte-compare.
   `serde_json::to_writer_pretty(io::stdout().lock(), &payload)?` plus trailing
   newline. Reuse `display_file_name` for the file label — **no** `slides_file_label`
   helper (`<stdin>` per the amended spec). `cargo test -p oxdoc-cli --test cli` → green.
-- [ ] 43. RED/GREEN (R9 → All slides skipped still yields a payload): inline
+- [x] 43. RED/GREEN (R9 → All slides skipped still yields a payload): inline
   all-skipped package → exit code `0`, payload with `"slides": []` and embedded
   warnings, and `--quiet` leaves the embedded `warnings` intact while producing
   empty stderr.
 
 ### RED/GREEN — JSONL stream
 
-- [ ] 44. RED (R10 → One record per slide, same order as JSON): test asserting
+- [x] 44. RED (R10 → One record per slide, same order as JSON): test asserting
   `--format jsonl` on `corpus/pptx/text` produces stdout byte-equal to
   `cli_pptx_slides_jsonl.jsonl`, one compact record per line, no wrapping array,
   and the same field values/order as the JSON `slides` array.
-- [ ] 45. GREEN: add `SlidesJsonlRecord<'a> { schema_version: u8, file: &'a str,
+- [x] 45. GREEN: add `SlidesJsonlRecord<'a> { schema_version: u8, file: &'a str,
   #[serde(flatten)] slide: &'a PptxSlideText }`, write each record with
   `serde_json::to_writer` + `\n`, `flush()` stdout, then call `emit_warnings`
   **after** the flush (rows-jsonl precedent: stdout stays a pure record stream).
-- [ ] 46. RED/GREEN (R10 → Valid stream under warnings): `--format jsonl` on the
+- [x] 46. RED/GREEN (R10 → Valid stream under warnings): `--format jsonl` on the
   `missing-target` fixture → every stdout line parses as JSON with no warning text
   on stdout, all three warnings appear on stderr, and the emitted ordinals show
   the `1,4` gap; `--warnings json` renders the stderr lines as JSON warning
   payloads (`OwnedWarningPayload::from_output_warning`).
-- [ ] 47. RED/GREEN (R10 CLI stdin scenario, amended): `oxdoc extract slides - --format jsonl`
+- [x] 47. RED/GREEN (R10 CLI stdin scenario, amended): `oxdoc extract slides - --format jsonl`
   with the package piped in → same records as the file argument and the `file`
   field is `<stdin>`; assert the label explicitly so the amended spec is locked.
 
 ### RED/GREEN — type gate and hard errors
 
-- [ ] 48. RED/GREEN (CLI → DOCX input rejected): `oxdoc extract slides <report.docx>`
+- [x] 48. RED/GREEN (CLI → DOCX input rejected): `oxdoc extract slides <report.docx>`
   fails with `CliError::InvalidArgument` in the same style as
   `extract_docx_tables`' rejections (message `cannot extract slides from a DOCX
   document`), exit `1`, no slide output; add the XLSX analogue
   (`cannot extract slides from an XLSX workbook`).
-- [ ] 49. RED/GREEN (hard errors at CLI level): a package with a suspicious slide
+- [x] 49. RED/GREEN (hard errors at CLI level): a package with a suspicious slide
   target and a package without `ppt/presentation.xml` both exit non-zero through
   the existing `error[…]` handler with no partial payload/records on stdout.
 
 ### WU4a gate
 
-- [ ] 50. WU4a gate — run and record: `cargo test -p oxdoc-cli`,
+- [x] 50. WU4a gate — run and record: `cargo test -p oxdoc-cli`,
   `cargo test --workspace` (frozen snapshots untouched), `cargo fmt --all -- --check`,
   `cargo clippy --workspace --all-targets -- -D warnings`, `make coverage`,
   `make compatibility-corpus-check`.
-- [ ] 51. WU4a exit: re-measure realized changed lines (expect ~300–380). If > 400,
+- [x] 51. WU4a exit: re-measure realized changed lines (expect ~300–380). If > 400,
   do not merge docs back in (they are WU4b) — re-slice the CLI tests or pause and
   ask. Then open **PR 4 (WU4a)** stacked on PR 3.
 
