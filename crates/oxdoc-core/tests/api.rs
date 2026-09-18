@@ -1829,6 +1829,8 @@ fn shared_formulas_corpus_loads_and_carries_the_documented_cells() {
         },
     )
     .unwrap();
+    // The dangling-si per-cell warning wording arrives with S5b's warning
+    // emission; S5a proves resolution and cell emission only.
     assert!(shared_extraction.warnings.is_empty());
 
     // Sheet "Shared", row 2: shared master, dangling-si slave, array master.
@@ -1842,20 +1844,38 @@ fn shared_formulas_corpus_loads_and_carries_the_documented_cells() {
         vec![0, 1, 5]
     );
     let shared_row2 = &shared_rows[0].cells;
-    // A2: shared master registers its own expression (v1 baseline: has_formula only).
+    // A2: shared master keeps its own expression and cache flag.
     assert!(shared_row2[0].has_formula);
+    assert_eq!(
+        shared_row2[0]
+            .formula
+            .as_ref()
+            .map(|f| f.expression.as_str()),
+        Some("SUM(B2:B4)")
+    );
+    assert!(shared_row2[0].formula.as_ref().unwrap().cached);
     assert!(matches!(
         &shared_row2[0].value,
         XlsxCellValue::Number { raw, .. } if raw == "6"
     ));
-    // B2: dangling si=9 slave (v1 baseline: no warning yet, S5 adds it).
+    // B2: dangling si=9 slave — has_formula true, expression unresolved,
+    // cached value retained.
     assert!(shared_row2[1].has_formula);
+    assert!(shared_row2[1].formula.is_none());
     assert!(matches!(
         &shared_row2[1].value,
         XlsxCellValue::Number { raw, .. } if raw == "4"
     ));
-    // F2: array master.
+    // F2: array master captures its own expression; region cell untouched.
     assert!(shared_row2[2].has_formula);
+    assert_eq!(
+        shared_row2[2]
+            .formula
+            .as_ref()
+            .map(|f| f.expression.as_str()),
+        Some("SUM(G2:G3)")
+    );
+    assert!(shared_row2[2].formula.as_ref().unwrap().cached);
     assert!(matches!(
         &shared_row2[2].value,
         XlsxCellValue::Number { raw, .. } if raw == "3"
@@ -1874,14 +1894,20 @@ fn shared_formulas_corpus_loads_and_carries_the_documented_cells() {
         vec![0, 5]
     );
     let row3 = &shared_rows[1].cells;
-    // A3: cached slave keeps its own cached value at the v1 baseline.
+    // A3: cached slave carries the master text verbatim with its own cache.
     assert!(row3[0].has_formula);
+    assert_eq!(
+        row3[0].formula.as_ref().map(|f| f.expression.as_str()),
+        Some("SUM(B2:B4)")
+    );
+    assert!(row3[0].formula.as_ref().unwrap().cached);
     assert!(matches!(
         &row3[0].value,
         XlsxCellValue::Number { raw, .. } if raw == "9"
     ));
-    // F3: array region cell with only <v> is the non-formula control.
+    // F3: array region cell with only <v> stays the non-formula control.
     assert!(!row3[1].has_formula);
+    assert!(row3[1].formula.is_none());
     assert!(matches!(
         &row3[1].value,
         XlsxCellValue::Number { raw, .. } if raw == "5"
@@ -1891,30 +1917,60 @@ fn shared_formulas_corpus_loads_and_carries_the_documented_cells() {
     assert_eq!(shared_rows[2].row_index, 3);
     assert_eq!(shared_rows[2].cells.len(), 1);
     assert!(shared_rows[2].cells[0].has_formula);
+    assert_eq!(
+        shared_rows[2].cells[0]
+            .formula
+            .as_ref()
+            .map(|f| f.expression.as_str()),
+        Some("SUM(B2:B4)")
+    );
+    assert!(!shared_rows[2].cells[0].formula.as_ref().unwrap().cached);
     assert_eq!(shared_rows[2].cells[0].value, XlsxCellValue::Blank);
 
-    // Sheet "Shared", row 5: first master of si=1.
+    // Sheet "Shared", row 5: first master of si=1 keeps its own text.
     assert_eq!(shared_rows[3].row_index, 4);
     assert_eq!(shared_rows[3].cells.len(), 1);
     assert!(shared_rows[3].cells[0].has_formula);
+    assert_eq!(
+        shared_rows[3].cells[0]
+            .formula
+            .as_ref()
+            .map(|f| f.expression.as_str()),
+        Some("FIRST()")
+    );
     assert!(matches!(
         &shared_rows[3].cells[0].value,
         XlsxCellValue::Number { raw, .. } if raw == "1"
     ));
 
-    // Sheet "Shared", row 6: duplicate master of si=1.
+    // Sheet "Shared", row 6: duplicate master of si=1 keeps its own text
+    // (first registration wins: it never overwrites the first).
     assert_eq!(shared_rows[4].row_index, 5);
     assert_eq!(shared_rows[4].cells.len(), 1);
     assert!(shared_rows[4].cells[0].has_formula);
+    assert_eq!(
+        shared_rows[4].cells[0]
+            .formula
+            .as_ref()
+            .map(|f| f.expression.as_str()),
+        Some("SECOND()")
+    );
     assert!(matches!(
         &shared_rows[4].cells[0].value,
         XlsxCellValue::Number { raw, .. } if raw == "2"
     ));
 
-    // Sheet "Shared", row 7: slave of si=1.
+    // Sheet "Shared", row 7: slave of si=1 resolves to FIRST() verbatim.
     assert_eq!(shared_rows[5].row_index, 6);
     assert_eq!(shared_rows[5].cells.len(), 1);
     assert!(shared_rows[5].cells[0].has_formula);
+    assert_eq!(
+        shared_rows[5].cells[0]
+            .formula
+            .as_ref()
+            .map(|f| f.expression.as_str()),
+        Some("FIRST()")
+    );
     assert_eq!(shared_rows[5].cells[0].value, XlsxCellValue::Blank);
 
     let mut prefixed_rows = Vec::new();
@@ -1931,10 +1987,12 @@ fn shared_formulas_corpus_loads_and_carries_the_documented_cells() {
         },
     )
     .unwrap();
+    // Prefixed sheet: B1 is a slave before its master (single-pass,
+    // unresolved); its per-cell warning wording arrives with S5b.
     assert!(prefixed_extraction.warnings.is_empty());
 
     // Sheet "Prefixed": every element namespace-prefixed; slave before master,
-    // later master, slave after master (v1 baseline: has_formula only).
+    // later master, slave after master — local-name attribute matching.
     assert_eq!(prefixed_rows.len(), 3);
     for (row_index, row) in prefixed_rows.iter().enumerate() {
         assert_eq!(row.row_index, row_index);
@@ -1951,15 +2009,36 @@ fn shared_formulas_corpus_loads_and_carries_the_documented_cells() {
             "prefixed sheet row {row_index} carries an <x:f> element"
         );
     }
+    // B1: slave before master — has_formula true, expression unresolved.
+    assert!(prefixed_rows[0].cells[0].formula.is_none());
+    assert_eq!(prefixed_rows[0].cells[0].value, XlsxCellValue::Blank);
+    // B2: the later master still registers and captures its own text.
+    assert_eq!(
+        prefixed_rows[1].cells[0]
+            .formula
+            .as_ref()
+            .map(|f| f.expression.as_str()),
+        Some("PrefixedSum()")
+    );
+    assert!(prefixed_rows[1].cells[0].formula.as_ref().unwrap().cached);
     assert!(matches!(
         &prefixed_rows[1].cells[0].value,
         XlsxCellValue::Number { raw, .. } if raw == "1"
     ));
-    assert_eq!(prefixed_rows[0].cells[0].value, XlsxCellValue::Blank);
+    // B3: slave after master resolves to the prefixed master text.
+    assert_eq!(
+        prefixed_rows[2].cells[0]
+            .formula
+            .as_ref()
+            .map(|f| f.expression.as_str()),
+        Some("PrefixedSum()")
+    );
     assert_eq!(prefixed_rows[2].cells[0].value, XlsxCellValue::Blank);
 
     // Documented invariant over real parser output on both sheets:
-    // `has_formula == false` implies `formula == None`.
+    // `has_formula == false` implies `formula == None`. The converse does
+    // not hold: B2 (dangling si=9) and B1 (slave before master) stay
+    // `has_formula: true` with `formula: None`.
     for row in shared_rows.iter().chain(prefixed_rows.iter()) {
         for cell in &row.cells {
             assert!(

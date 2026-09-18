@@ -379,7 +379,7 @@ injectable seam + unit tests) / **S5b** (warning emission + latch + api/CLI warn
   temp-file spill. Implements: `xlsx-formula-provenance` → Bounded shared-formula table →
   "Overflow latches once per worksheet", "Default bound follows existing memory
   conventions".
-- [ ] 26. Add the crate-internal seam
+- [x] 26. Add the crate-internal seam
   `parse_sheet_rows_with_shared_formula_limit(source, path, shared_strings, format_context, sink, shared_formula_memory_limit)`
   mirroring `SharedStringStore::parse_with_memory_limit`; `parse_sheet_rows` delegates with
   `DEFAULT_SHARED_FORMULA_MEMORY_LIMIT`, and `visit_rows_with_read_options`,

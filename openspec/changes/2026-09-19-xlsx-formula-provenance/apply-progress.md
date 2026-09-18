@@ -289,3 +289,99 @@ compressed to fit.
 
 - S5: tasks 22–30; S6: tasks 31–36; S7: tasks 37–44; S8: tasks 45–50; cross-slice
   guards: tasks 51–55 (all unchecked)
+
+---
+
+## S5 — Shared/array resolution + bounded table + warnings (tasks 22–30) — SPLIT INTO S5a/S5b (pre-agreed fallback)
+
+Realized diff for the whole S5 slice measured **512 lines** (485 additions,
+27 deletions) > the 400-line budget, so the pre-agreed fallback applied:
+**S5a** (table + default constant + injectable seam + master registration +
+resolution, unit/api tests) is committed; **S5b** (warning emission + latch +
+api/CLI warning tests) is fully implemented and verified in the working tree
+but intentionally **left uncommitted** ("STOP at the S5a gate instead of
+committing further"). S5b measures 217 lines on top of S5a and passes the
+full gate, ready to be committed as the next work unit.
+
+### S5a — table + seam + master registration + resolution (commit 051dbc8)
+
+### TDD Cycle Evidence (S5a)
+
+| Task | Cycle | Test | RED evidence | GREEN evidence |
+| --- | --- | --- | --- | --- |
+| 22 (partial) | RED→GREEN | 5 resolution unit tests in `parsers::xlsx::tests`: `resolves_cached_and_uncached_shared_slaves_verbatim`, `treats_slave_before_master_as_unresolved_without_buffering`, `first_registration_wins`, `registers_nothing_for_empty_master_text`, `default_shared_formula_limit_is_one_mib_and_ooxml_limits_unchanged` | `cargo test -p oxdoc-core parsers::xlsx` compile failure: `unresolved imports super::DEFAULT_SHARED_FORMULA_MEMORY_LIMIT, super::parse_sheet_rows_with_shared_formula_limit` (seam + constant undeclared) — same RED pattern as S3 | All pass after tasks 24–27 (lib: 128 → later 128 with S5b tests too) |
+| 23 (partial) | RED→GREEN | `shared_formulas_corpus_loads_and_carries_the_documented_cells` rewritten with resolution assertions (master/slave expressions verbatim, dangling B2 `formula: None` with `raw: "4"` retained, first-wins `A7`→`FIRST()`, array F2/F3, prefixed sheet B1/B2/B3) | `cargo test -p oxdoc-core --test api shared_formulas_corpus`: `assertion left == right failed, left: 0, right: 1` (warning count — pre-S5b no warning existed; first failing point of the rewritten assertions) | Passes with all resolution assertions |
+| 24 | GREEN (RED above) | `SharedFormulaTable { expressions: BTreeMap<String,String>, memory_bytes, memory_limit }` keyed by **raw `si` text**, `register` check order (empty → nothing; `si` present → first wins; saturating overflow → record nothing; else insert+cost), `resolve`. Note: `overflow_warned` lands in S5b per the pre-agreed split | — | Committed in 051dbc8 |
+| 25 (partial) | GREEN (RED above) | `DEFAULT_SHARED_FORMULA_MEMORY_LIMIT = 1024*1024` (1 MiB) + `estimated_formula_memory_cost` (len saturating-add 16, the same per-entry constant as `xlsx_shared_strings.rs`); latch warning lands in S5b | — | Constant + cost committed in 051dbc8 |
+| 26 | GREEN (RED above) | `parse_sheet_rows_with_shared_formula_limit(source, path, shared_strings, format_context, sink, shared_formula_memory_limit)` mirroring `SharedStringStore::parse_with_memory_limit`; `parse_sheet_rows` delegates with the default; `visit_rows_with_read_options`, `write_sheet_csv`, `fuzz_parse_sheet` keep the default entry point — `OoxmlLimits`/public API unchanged | — | Committed in 051dbc8; `- [x]` in tasks.md |
+| 27 (partial) | GREEN (RED above) | `End </f>` registers when `t="shared"` + `si` present + non-empty text (master keeps own text even when refused); `Empty <f t="shared" si="N"/>` resolves immediately — hit ⇒ master text verbatim, miss ⇒ `formula = None` (per-cell warning lands in S5b). No buffering/second pass | — | Resolution committed; warning emission uncommitted (S5b) |
+
+Cycle notes: the first GREEN attempt had one wrong test expectation — the
+overflow test initially asserted refused masters lose their text; the design
+is explicit that a Start-opened shared master keeps its own text even when
+registration is refused, so the test was corrected to assert
+`Some("AAAAA()")`/`Some("BBBBB()")` (code unchanged, code was right).
+
+### S5b — warning emission + latch + api/CLI warning tests (uncommitted, ready)
+
+Implemented and verified in the working tree on top of 051dbc8:
+
+- `overflow_warned: bool` latch added to `SharedFormulaTable`; `register`
+  pushes `shared_formula_table_limit_reached(path)` exactly once per
+  worksheet (latched) when an insertion would exceed the bound.
+- `Empty <f/>` miss branch now pushes
+  `unresolved_shared_formula_index(path, si)` per affected cell.
+- Unit tests (re)added: `warns_per_cell_for_dangling_si` (exact wording ×2,
+  cells still emit), `latches_overflow_warning_once_per_worksheet` (tiny
+  20-byte limit via the seam helper `parse_formula_rows_with_shared_formula_limit`,
+  mirroring the `SharedStringStore::parse_with_memory_limit(…, 6)` test),
+  warning assertions restored in slave-before-master and empty-master tests.
+- api.rs: exactly-one-warning assertions for dangling `si=9` (sheet `Shared`)
+  and slave-before-master `si='0'` (sheet `Prefixed`) with byte-exact wordings.
+- cli.rs: `keeps_rows_jsonl_stdout_clean_when_warnings_are_emitted` extended
+  with a dangling-`si` package — stdout stays valid JSONL, stderr carries the
+  exact unresolved wording (S7 will extend further with the v2 snapshot).
+- Task 29 confirmation: rows are still emitted one `ParsedRow` at a time; the
+  only new cross-row state is the bounded table; no `OoxmlLimits` field or
+  public option changed (vfs.rs untouched, `git status` clean).
+
+### S5b gate (run on the uncommitted working tree)
+
+- `cargo fmt --all -- --check` → clean
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean
+- `cargo test --workspace` → 386 passed, 0 failed (384 in S5a; +2 in S5b)
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only` → exit 0
+- `python scripts/check-compatibility-corpus.py` → "compatibility corpus validation passed (3 fixtures)"
+- `git status --porcelain schemas/v1 docs/schemas/v1 tests/fixtures/files
+  tests/fixtures/compatibility-matrix.json tests/fixtures/snapshots` → empty
+  (frozen guards hold; no snapshot, manifest, digest, or binary churn)
+- Envelope honesty: `schema_version` stays `1`; no JSON formula field emitted
+  (CLI fields are S7); no new dependency; no temp-file spill.
+
+### Measured changed lines vs budget
+
+- Whole S5 slice (S5a commit + S5b working tree, excluding `.gitignore` and
+  openspec bookkeeping): 485 additions + 27 deletions = **512 total** → over
+  budget, fallback applied as pre-agreed.
+- S5a commit 051dbc8: 316 insertions + 25 deletions = **341 total** (diff
+  measure 343 including the pre-existing `.gitignore` edit) — under 400.
+- S5b working tree on top of S5a: 195 additions + 22 deletions = **217
+  total** — under 400 on its own.
+
+### Deviations from design
+
+- The pre-agreed S5a/S5b split was applied (S5 measured 512 > 400). Within
+  S5a, `register` deliberately omits the `overflow_warned` latch (silent
+  refusal) so no dead field/warning path sits in the committed slice; S5b
+  adds it exactly per task 24/25 wording.
+- The S5a commit does not include the openspec task/progress marks (they
+  were produced after the gate); they sit uncommitted next to S5b and should
+  land with the S5b work-unit commit (S1–S4 precedent includes them per
+  slice).
+
+### Remaining tasks
+
+- S5b commit (uncommitted, gate-green): completes tasks 22, 23, 24, 25, 27,
+  28 and the S5 gate run (task 30) — then check those boxes.
+- S6: tasks 31–36; S7: tasks 37–44; S8: tasks 45–50; cross-slice guards:
+  tasks 51–55 (all unchecked)
