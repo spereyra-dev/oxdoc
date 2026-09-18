@@ -8,6 +8,26 @@ The format is based on human-readable release notes.
 
 ### Changed
 
+- `oxdoc extract text --format structured-json` output is now versioned as
+  schema v2: payloads carry a top-level `schema_version: 2` field and blocks
+  may carry an optional `variant` field (`first`, `even`, or `default`) on
+  section-referenced DOCX `header` and `footer` blocks, sourced from the
+  `w:type` of the `sectPr` reference that positioned the part. Missing or
+  unrecognized `w:type` values are labeled `default` with no warning; orphan
+  header/footer parts and all other block kinds (including every PPTX block)
+  omit the field, never emitting `null`; when one part is referenced as
+  multiple variants, the first reference's variant wins. The `blocks` arrays
+  of variant-free documents are byte-identical to v1 output apart from the
+  new `schema_version` key. **Migration note:** this intentionally breaks
+  strict v1 validation of structured-json payloads — because v1 sets
+  `additionalProperties` to `false`, any v2 payload fails v1 validation
+  through its undeclared-field rule, even for variant-free documents. The v1
+  schema is frozen and kept only for previously captured outputs; point
+  consumers at `schemas/v2/oxdoc-structured-text.schema.json`. PPTX
+  structured output (slide and notes blocks in `p:sldIdLst` presentation
+  order) is unchanged but is now locked by a snapshot and documented under
+  the v2 schema.
+
 - DOCX headers and footers are now ordered by the sections that reference
   them in `word/document.xml` instead of `word/_rels/document.xml.rels`
   relationship-file order: sections in document order, headers before

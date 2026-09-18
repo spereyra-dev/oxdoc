@@ -148,6 +148,7 @@ Output shape:
 
 ```json
 {
+  "schema_version": 2,
   "file": "contrato.docx",
   "document_type": "docx",
   "blocks": [
@@ -156,12 +157,19 @@ Output shape:
       "part_path": "word/document.xml",
       "ordinal": 1,
       "text": "Plain text..."
+    },
+    {
+      "part_type": "header",
+      "part_path": "word/header1.xml",
+      "ordinal": 2,
+      "text": "Section header...",
+      "variant": "default"
     }
   ]
 }
 ```
 
-Plain text output flattens all supported text-bearing parts into a single stream. Structured output keeps each non-empty source part separate. DOCX blocks can come from `main`, `header`, `footer`, `footnotes`, `endnotes`, or `comments`; PPTX blocks can come from `slide` and speaker `notes`.
+Plain text output flattens all supported text-bearing parts into a single stream. Structured output keeps each non-empty source part separate. DOCX blocks can come from `main`, `header`, `footer`, `footnotes`, `endnotes`, or `comments`; PPTX blocks can come from `slide` and speaker `notes`. Each payload carries `schema_version` (2), validated by [`schemas/v2/oxdoc-structured-text.schema.json`](schemas/v2/oxdoc-structured-text.schema.json). Section-referenced DOCX `header` and `footer` blocks carry an optional `variant` (`first`, `even`, or `default`) from the `w:type` of the section reference that positioned the part; missing or unrecognized `w:type` values are labeled `default`. `ordinal` is a 1-based global index across the flattened block list, spanning every part in output order — PPTX `slide` blocks are followed by their speaker `notes` blocks, so ordinals count all blocks regardless of document type.
 
 Warnings are still written to stderr when regular JSON output is selected. They are not embedded in the JSON payload. Use `--warnings json` when a pipeline needs machine-readable warning records.
 
