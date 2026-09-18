@@ -28,9 +28,9 @@ pub use error::{OxdocError, Result};
 pub use models::{
     AuditSignal, DocumentAudit, DocumentInfo, DocumentType, DocxRevisionMode, DocxTable,
     DocxTableBlock, DocxTableCell, DocxTableRow, DocxTables, DocxTextOptions, DocxVerticalMerge,
-    Extraction, OutputWarning, StructuredText, TextBlock, XlsxCell, XlsxCellValue, XlsxCsvOptions,
-    XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility,
-    XlsxValueMode,
+    Extraction, OutputWarning, PptxSlideText, StructuredText, TextBlock, XlsxCell, XlsxCellValue,
+    XlsxCsvOptions, XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheet, XlsxSheetOptions,
+    XlsxSheetVisibility, XlsxValueMode,
 };
 #[doc(hidden)]
 pub use parsers::docx::fuzz_extract_text as fuzz_docx_text;
@@ -197,6 +197,25 @@ pub fn extract_pptx_text_from_reader_with_limits<R: Read + Seek>(
 ) -> Result<Extraction<String>> {
     let mut package = OoxmlPackage::with_limits(reader, limits)?;
     pptx::extract_text(&mut package)
+}
+
+pub fn extract_pptx_slides(path: impl AsRef<Path>) -> Result<Extraction<Vec<PptxSlideText>>> {
+    let file = File::open(path)?;
+    extract_pptx_slides_from_reader(file)
+}
+
+pub fn extract_pptx_slides_from_reader<R: Read + Seek>(
+    reader: R,
+) -> Result<Extraction<Vec<PptxSlideText>>> {
+    extract_pptx_slides_from_reader_with_limits(reader, OoxmlLimits::default())
+}
+
+pub fn extract_pptx_slides_from_reader_with_limits<R: Read + Seek>(
+    reader: R,
+    limits: OoxmlLimits,
+) -> Result<Extraction<Vec<PptxSlideText>>> {
+    let mut package = OoxmlPackage::with_limits(reader, limits)?;
+    pptx::extract_slides(&mut package)
 }
 
 pub fn extract_pptx_structured_text(path: impl AsRef<Path>) -> Result<Extraction<StructuredText>> {
