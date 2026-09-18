@@ -94,6 +94,50 @@ pub(crate) fn extract_structured_text<R: Read + Seek>(
     ))
 }
 
+pub(crate) fn extract_slides<R: Read + Seek>(
+    package: &mut OoxmlPackage<R>,
+) -> Result<Extraction<Vec<crate::models::PptxSlideText>>> {
+    let presentation_path =
+        crate::parsers::find_office_document_path(package, "ppt/presentation.xml")?;
+    let presentation_xml = package.read_to_string(&presentation_path)?;
+    let slide_references = parse_slide_references(&presentation_xml, &presentation_path)?;
+
+    let presentation_rels_path = rels_path_for(&presentation_path);
+    let presentation_rels_xml = package.read_to_string(&presentation_rels_path)?;
+    let presentation_rels =
+        parse_relationship_map(&presentation_rels_xml, &presentation_rels_path)?;
+
+    let mut records = Vec::new();
+    let mut warnings = slide_references.warnings;
+
+    for slide_reference in slide_references.value {
+        let relationship = presentation_rels
+            .get(&slide_reference.relation_id)
+            .ok_or_else(|| OxdocError::MissingPart(slide_reference.relation_id.clone()))?;
+        let slide_path = resolve_relationship_target(
+            parent_dir(&presentation_path),
+            relationship,
+            &presentation_rels_path,
+        )?;
+
+        let slide = read_text_part(package, &slide_path)?;
+        warnings = merge_warnings(warnings, slide.warnings);
+
+        let notes = read_notes_text_for_slides(package, &slide_path)?;
+        warnings = merge_warnings(warnings, notes.warnings);
+
+        records.push(crate::models::PptxSlideText {
+            slide_id: slide_reference.slide_id,
+            slide_ordinal: slide_reference.position,
+            slide_path: slide_path.clone(),
+            text: slide.value,
+            notes: notes.value,
+        });
+    }
+
+    Ok(Extraction::with_warnings(records, warnings))
+}
+
 fn parse_slide_references(xml: &str, path: &str) -> Result<Extraction<Vec<SlideReference>>> {
     let mut reader = Reader::from_reader(Cursor::new(xml.as_bytes()));
     reader.config_mut().trim_text(true);
@@ -173,6 +217,44 @@ fn relationship_id_value(element: &BytesStart<'_>) -> Option<String> {
             key.contains(':') && crate::parsers::local_name(key) == "id"
         })
         .map(|attr| decode_xml_text(attr.value.as_ref()))
+}
+
+fn read_notes_text_for_slides<R: Read + Seek>(
+    package: &mut OoxmlPackage<R>,
+    slide_path: &str,
+) -> Result<Extraction<Option<String>>> {
+    let slide_rels_path = rels_path_for(slide_path);
+    let slide_rels_xml = match package.read_to_string(&slide_rels_path) {
+        Ok(xml) => xml,
+        Err(OxdocError::MissingPart(_)) => return Ok(Extraction::new(None)),
+        Err(err) => return Err(err),
+    };
+    let slide_rels = parse_relationship_map(&slide_rels_xml, &slide_rels_path)?;
+    let mut notes_relationships = slide_rels
+        .iter()
+        .filter(|(_, relationship)| {
+            relationship
+                .relationship_type
+                .as_deref()
+                .is_some_and(|kind| kind.ends_with("/notesSlide"))
+        })
+        .collect::<Vec<_>>();
+    notes_relationships.sort_by(|left, right| left.0.cmp(right.0));
+    let has_notes_relationships = !notes_relationships.is_empty();
+
+    let mut text = String::new();
+    let mut warnings = Vec::new();
+
+    for (_, relationship) in notes_relationships {
+        let notes_path =
+            resolve_relationship_target(parent_dir(slide_path), relationship, &slide_rels_path)?;
+        let notes = read_text_part(package, &notes_path)?;
+        append_part_text(&mut text, &notes.value);
+        warnings = merge_warnings(warnings, notes.warnings);
+    }
+
+    let notes = has_notes_relationships.then_some(text);
+    Ok(Extraction::with_warnings(notes, warnings))
 }
 
 fn read_notes_for_slide<R: Read + Seek>(

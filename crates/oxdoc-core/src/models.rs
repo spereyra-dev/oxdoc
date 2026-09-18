@@ -191,6 +191,24 @@ pub struct StructuredText {
     pub blocks: Vec<TextBlock>,
 }
 
+/// One extracted PPTX slide with stable identity and its speaker notes.
+///
+/// `slide_id` is the `p:sldId/@id` attribute (OOXML `xsd:unsignedInt`) and is
+/// omitted from serialization when the element had no parsable `@id`.
+/// `slide_ordinal` is the 1-based position of the `p:sldId` element within
+/// `p:sldIdLst` (gaps after skipped slides are intentional). `notes` is
+/// omitted when the slide links no readable notes part.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PptxSlideText {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slide_id: Option<u32>,
+    pub slide_ordinal: usize,
+    pub slide_path: String,
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TextBlock {
     pub part_type: String,
@@ -633,6 +651,48 @@ mod tests {
 
         assert_eq!(unsupported.category(), WarningCategory::Data);
         assert_eq!(ambiguous.category(), WarningCategory::Data);
+    }
+
+    #[test]
+    fn serializes_pptx_slide_text_with_omitted_optional_keys() {
+        use crate::models::PptxSlideText;
+
+        let no_slide_id = PptxSlideText {
+            slide_id: None,
+            slide_ordinal: 1,
+            slide_path: "ppt/slides/slide1.xml".to_owned(),
+            text: String::new(),
+            notes: None,
+        };
+        let with_notes = PptxSlideText {
+            slide_id: Some(256),
+            slide_ordinal: 2,
+            slide_path: "ppt/slides/slide2.xml".to_owned(),
+            text: "Body".to_owned(),
+            notes: Some(String::new()),
+        };
+
+        let no_slide_id_value = serde_json::to_value(&no_slide_id).unwrap();
+        assert!(
+            !no_slide_id_value
+                .as_object()
+                .unwrap()
+                .contains_key("slide_id")
+        );
+        assert!(!no_slide_id_value.as_object().unwrap().contains_key("notes"));
+        assert_eq!(no_slide_id_value["text"], "");
+
+        let with_notes_value = serde_json::to_value(&with_notes).unwrap();
+        assert_eq!(with_notes_value["slide_id"], 256);
+        assert_eq!(with_notes_value["slide_ordinal"], 2);
+        assert_eq!(with_notes_value["notes"], "");
+
+        for key in ["slide_id", "slide_ordinal", "slide_path", "text", "notes"] {
+            if let Some(value) = no_slide_id_value.as_object().unwrap().get(key) {
+                assert!(!value.is_null());
+            }
+            assert!(!with_notes_value[key].is_null());
+        }
     }
 
     #[test]

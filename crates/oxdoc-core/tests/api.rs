@@ -556,6 +556,87 @@ fn keeps_partial_pptx_text_and_warns_on_malformed_slide_xml() {
 }
 
 #[test]
+fn extracts_pptx_slides_with_slide_ids_and_ordinals_in_sldidlst_order() {
+    let file = fixtures::build_package("pptx/text", "slides-deck.pptx");
+
+    let extraction = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert_eq!(extraction.value.len(), 2);
+    assert_eq!(extraction.value[0].slide_id, Some(256));
+    assert_eq!(extraction.value[0].slide_ordinal, 1);
+    assert_eq!(extraction.value[0].slide_path, "ppt/slides/slide2.xml");
+    assert_eq!(
+        extraction.value[0].text,
+        "First Slide\nAlpha\tBeta & Co\nGamma < Delta\n"
+    );
+    assert_eq!(extraction.value[0].notes, Some("Speaker note\n".to_owned()));
+    assert_eq!(extraction.value[1].slide_id, Some(257));
+    assert_eq!(extraction.value[1].slide_ordinal, 2);
+    assert_eq!(extraction.value[1].slide_path, "ppt/slides/slide1.xml");
+    assert_eq!(extraction.value[1].text, "Second Slide\n");
+    assert_eq!(extraction.value[1].notes, None);
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
+fn extracts_pptx_slides_slide_paths_match_structured_part_paths() {
+    let file = fixtures::build_package("pptx/text", "slides-deck.pptx");
+
+    let slides = oxdoc_core::extract_pptx_slides(&file).unwrap();
+    let structured = oxdoc_core::extract_pptx_structured_text(&file).unwrap();
+
+    let slide_text_paths: Vec<&str> = structured
+        .value
+        .blocks
+        .iter()
+        .filter(|block| block.part_type == "slide")
+        .map(|block| block.part_path.as_str())
+        .collect();
+    let record_paths: Vec<&str> = slides
+        .value
+        .iter()
+        .map(|record| record.slide_path.as_str())
+        .collect();
+
+    assert_eq!(record_paths, slide_text_paths);
+}
+
+#[test]
+fn extracts_pptx_slides_without_notes_key_on_basic_corpus() {
+    let file = fixtures::build_package("pptx/basic", "basic-deck.pptx");
+
+    let extraction = oxdoc_core::extract_pptx_slides(&file).unwrap();
+    let record = serde_json::to_value(&extraction.value[0]).unwrap();
+    let record = record.as_object().unwrap();
+
+    assert_eq!(extraction.value.len(), 1);
+    assert!(record["text"].is_string());
+    assert!(!record.contains_key("notes"));
+    assert_eq!(record["slide_id"], 256);
+    assert!(!record["slide_id"].is_null());
+    assert_eq!(extraction.warnings.len(), 0);
+}
+
+#[test]
+fn extracts_pptx_slides_from_reader_and_reader_with_limits() {
+    let file = fixtures::build_package("pptx/text", "slides-deck.pptx");
+    let bytes = fs::read(&file).unwrap();
+
+    let from_reader =
+        oxdoc_core::extract_pptx_slides_from_reader(Cursor::new(bytes.clone())).unwrap();
+    let with_limits = oxdoc_core::extract_pptx_slides_from_reader_with_limits(
+        Cursor::new(bytes),
+        OoxmlLimits::default(),
+    )
+    .unwrap();
+    let from_path = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert_eq!(from_reader.value, from_path.value);
+    assert_eq!(with_limits.value, from_path.value);
+    assert_eq!(with_limits.warnings, from_path.warnings);
+}
+
+#[test]
 fn keeps_partial_docx_text_and_warns_on_malformed_document_xml() {
     let file = create_ooxml(
         "malformed-document.docx",
