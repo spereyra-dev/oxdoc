@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v1/oxdoc-pptx-slides.schema.json",
+  "title": "oxdoc PPTX slides JSON / JSONL output",
+  "description": "Schema for `oxdoc extract slides --format json` payloads and `--format jsonl` records in oxdoc schema version 1. slide_ordinal is the 1-based position of the p:sldId element within p:sldIdLst; skipped slides leave gaps in the emitted ordinal sequence.",
+  "type": "object",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/documentPayload"
+    },
+    {
+      "$ref": "#/$defs/jsonlRecord"
+    }
+  ],
+  "$defs": {
+    "documentPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "file", "document_type", "slides", "warnings"],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "file": {
+          "type": "string",
+          "description": "File name derived from the provided input path; <stdin> for stdin input."
+        },
+        "document_type": {
+          "type": "string",
+          "const": "pptx"
+        },
+        "slides": {
+          "type": "array",
+          "description": "One slide record per non-skipped slide, in p:sldIdLst order; skipped slides are simply absent and the remaining records keep their presentation ordinals.",
+          "items": {
+            "$ref": "#/$defs/slide"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/warning"
+          }
+        }
+      }
+    },
+    "jsonlRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "file", "slide_ordinal", "slide_path", "text"],
+      "description": "One compact JSON object per non-skipped slide on its own stdout line (no wrapping array).",
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "file": {
+          "type": "string",
+          "description": "File name derived from the provided input path; <stdin> for stdin input."
+        },
+        "slide_id": {
+          "$ref": "#/$defs/slide/properties/slide_id"
+        },
+        "slide_ordinal": {
+          "$ref": "#/$defs/slide/properties/slide_ordinal"
+        },
+        "slide_path": {
+          "$ref": "#/$defs/slide/properties/slide_path"
+        },
+        "text": {
+          "$ref": "#/$defs/slide/properties/text"
+        },
+        "notes": {
+          "$ref": "#/$defs/slide/properties/notes"
+        }
+      }
+    },
+    "slide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slide_ordinal", "slide_path", "text"],
+      "description": "One slide record. slide_id is omitted when p:sldId/@id is absent or unparsable; notes is omitted when the slide links no readable notes part; slide_ordinal keeps its p:sldIdLst position so skipped slides leave gaps.",
+      "properties": {
+        "slide_id": {
+          "type": "integer",
+          "description": "p:sldId/@id (xsd:unsignedInt); omitted when the attribute is absent or unparsable."
+        },
+        "slide_ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based position of the p:sldId element within p:sldIdLst, counting every element; skipped slides leave gaps (for example 1, 4)."
+        },
+        "slide_path": {
+          "type": "string",
+          "description": "Resolved package part path of the slide, for example ppt/slides/slide2.xml."
+        },
+        "text": {
+          "type": "string",
+          "description": "Slide body text; \"\" for a textless slide. The record set stays aligned with the presentation."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Speaker notes text; omitted when the slide links no readable notes part (possibly \"\" for a readable-but-empty notes part)."
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "code", "path", "message"],
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["parser", "data", "custom"]
+        },
+        "code": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
