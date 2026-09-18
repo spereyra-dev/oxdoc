@@ -1829,9 +1829,17 @@ fn shared_formulas_corpus_loads_and_carries_the_documented_cells() {
         },
     )
     .unwrap();
-    // The dangling-si per-cell warning wording arrives with S5b's warning
-    // emission; S5a proves resolution and cell emission only.
-    assert!(shared_extraction.warnings.is_empty());
+    // B2's dangling si=9 produces exactly one per-cell warning at the
+    // worksheet path with the exact spec wording.
+    assert_eq!(shared_extraction.warnings.len(), 1);
+    assert_eq!(
+        shared_extraction.warnings[0].path,
+        "xl/worksheets/sheet1.xml"
+    );
+    assert_eq!(
+        shared_extraction.warnings[0].message,
+        "unresolved shared formula index '9': formula expression omitted"
+    );
 
     // Sheet "Shared", row 2: shared master, dangling-si slave, array master.
     assert_eq!(shared_rows[0].row_index, 1);
@@ -1859,7 +1867,7 @@ fn shared_formulas_corpus_loads_and_carries_the_documented_cells() {
         XlsxCellValue::Number { raw, .. } if raw == "6"
     ));
     // B2: dangling si=9 slave — has_formula true, expression unresolved,
-    // cached value retained.
+    // cached value retained, exactly one per-cell warning above.
     assert!(shared_row2[1].has_formula);
     assert!(shared_row2[1].formula.is_none());
     assert!(matches!(
@@ -1988,8 +1996,12 @@ fn shared_formulas_corpus_loads_and_carries_the_documented_cells() {
     )
     .unwrap();
     // Prefixed sheet: B1 is a slave before its master (single-pass,
-    // unresolved); its per-cell warning wording arrives with S5b.
-    assert!(prefixed_extraction.warnings.is_empty());
+    // unresolved) — one per-cell warning at the worksheet path.
+    assert_eq!(prefixed_extraction.warnings.len(), 1);
+    assert_eq!(
+        prefixed_extraction.warnings[0].message,
+        "unresolved shared formula index '0': formula expression omitted"
+    );
 
     // Sheet "Prefixed": every element namespace-prefixed; slave before master,
     // later master, slave after master — local-name attribute matching.

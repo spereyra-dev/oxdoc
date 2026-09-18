@@ -39,13 +39,15 @@ fn estimated_formula_memory_cost(expression: &str) -> usize {
 }
 
 /// Per-worksheet shared-formula table: raw `si` attribute text → master
-/// expression. Bounded by a saturating memory check and first-wins.
-/// `BTreeMap` keeps fuzz/replay behavior deterministic.
+/// expression. Bounded by a saturating memory check, first-wins, and latching
+/// its overflow warning once per worksheet. `BTreeMap` keeps fuzz/replay
+/// behavior deterministic.
 #[derive(Debug)]
 struct SharedFormulaTable {
     expressions: BTreeMap<String, String>,
     memory_bytes: usize,
     memory_limit: usize,
+    overflow_warned: bool,
 }
 
 impl SharedFormulaTable {
@@ -54,13 +56,20 @@ impl SharedFormulaTable {
             expressions: BTreeMap::new(),
             memory_bytes: 0,
             memory_limit,
+            overflow_warned: false,
         }
     }
 
     /// Registers `si → expression`. Check order: empty expressions register
     /// nothing; the first registration wins and later duplicates never
-    /// overwrite it; overflow records nothing (latched warning in S5b).
-    fn register(&mut self, si: &str, expression: &str) {
+    /// overwrite it; overflow records nothing and warns once (latched).
+    fn register(
+        &mut self,
+        si: &str,
+        expression: &str,
+        path: &str,
+        warnings: &mut Vec<OutputWarning>,
+    ) {
         if expression.is_empty() {
             return;
         }
@@ -71,6 +80,10 @@ impl SharedFormulaTable {
             .memory_bytes
             .saturating_add(estimated_formula_memory_cost(expression));
         if next_memory_bytes > self.memory_limit {
+            if !self.overflow_warned {
+                warnings.push(OutputWarning::shared_formula_table_limit_reached(path));
+                self.overflow_warned = true;
+            }
             return;
         }
         self.memory_bytes = next_memory_bytes;
@@ -780,9 +793,14 @@ fn parse_sheet_rows_with_shared_formula_limit<R: BufRead>(
                                 cell.formula = Some(master_text.to_owned());
                             }
                             // A miss (dangling `si`, slave before master, or
-                            // an overflow-refused entry) stays unresolved; the
-                            // per-cell warning emission lands in S5b.
-                            None => cell.formula = None,
+                            // an overflow-refused entry) stays unresolved with
+                            // one per-cell warning. No buffering, no second
+                            // pass.
+                            None => {
+                                cell.formula = None;
+                                warnings
+                                    .push(OutputWarning::unresolved_shared_formula_index(path, si));
+                            }
                         }
                     } else {
                         // Every other empty `<f/>` stores an empty
@@ -839,7 +857,7 @@ fn parse_sheet_rows_with_shared_formula_limit<R: BufRead>(
                         if cell.formula_type.as_deref() == Some("shared")
                             && let Some(si) = &cell.formula_si
                         {
-                            shared_formulas.register(si, &expression);
+                            shared_formulas.register(si, &expression, path, &mut warnings);
                         }
                         cell.formula = Some(expression);
                     }
@@ -1389,8 +1407,9 @@ mod tests {
     use super::{
         CellFormat, CellState, DEFAULT_SHARED_FORMULA_MEMORY_LIMIT, DateSystem, SheetFormatContext,
         SheetRowSink, XlsxStyles, classify_number_format, format_cell_value, format_number,
-        parse_cell_column, parse_sheet_rows, parse_styles, parse_workbook_date_system,
-        parse_workbook_sheets, select_sheet, visit_rows_with_read_options, write_sheet_csv,
+        parse_cell_column, parse_sheet_rows, parse_sheet_rows_with_shared_formula_limit,
+        parse_styles, parse_workbook_date_system, parse_workbook_sheets, select_sheet,
+        visit_rows_with_read_options, write_sheet_csv,
     };
 
     #[derive(Default)]
@@ -1678,6 +1697,57 @@ mod tests {
         cell.formula.as_ref().map(|f| f.expression.as_str())
     }
 
+    fn parse_formula_rows_with_shared_formula_limit(
+        xml: &str,
+        shared_formula_memory_limit: usize,
+    ) -> (Vec<XlsxRow>, Vec<OutputWarning>) {
+        let mut shared_strings = SharedStringStore::empty();
+        let mut sink = CollectRows::default();
+        let extraction = parse_sheet_rows_with_shared_formula_limit(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            &raw_context(&XlsxStyles::default()),
+            &mut sink,
+            shared_formula_memory_limit,
+        )
+        .unwrap();
+        (sink.rows, extraction.warnings)
+    }
+
+    #[test]
+    fn warns_per_cell_for_dangling_si() {
+        let xml = r#"<worksheet><sheetData><row r="1">
+<c r="A1"><f t="shared" si="9"/><v>4</v></c>
+<c r="B1"><f t="shared" si="9"/></c>
+</row></sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows(xml);
+
+        // One warning per affected cell, with the exact spec wording.
+        assert_eq!(warnings.len(), 2);
+        for warning in &warnings {
+            assert_eq!(warning.path, "xl/worksheets/sheet1.xml");
+            assert_eq!(
+                warning.message,
+                "unresolved shared formula index '9': formula expression omitted"
+            );
+        }
+
+        // Both cells still emit: has_formula true, expression unresolved,
+        // cached values intact.
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].cells.len(), 2);
+        assert!(rows[0].cells[0].has_formula);
+        assert!(rows[0].cells[0].formula.is_none());
+        assert!(matches!(
+            &rows[0].cells[0].value,
+            XlsxCellValue::Number { raw, .. } if raw == "4"
+        ));
+        assert!(rows[0].cells[1].has_formula);
+        assert!(rows[0].cells[1].formula.is_none());
+        assert_eq!(rows[0].cells[1].value, XlsxCellValue::Blank);
+    }
+
     #[test]
     fn resolves_cached_and_uncached_shared_slaves_verbatim() {
         let xml = r#"<worksheet><sheetData>
@@ -1717,9 +1787,11 @@ mod tests {
 <row r="3"><c r="A1"><f t="shared" si="0"/></c></row>
 </sheetData></worksheet>"#;
         let (rows, warnings) = parse_formula_rows(xml);
-        // No buffering or second pass: the slave misses immediately (the
-        // per-cell warning wording arrives with S5b's warning emission).
-        assert!(warnings.is_empty());
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0].message,
+            "unresolved shared formula index '0': formula expression omitted"
+        );
 
         // Slave before master: single-pass stream has not registered it yet.
         assert!(rows[0].cells[0].has_formula);
@@ -1770,11 +1842,62 @@ mod tests {
         assert!(rows[0].cells[0].has_formula);
         assert_eq!(resolved_expression(&rows[0].cells[0]), Some(""));
 
-        // The slave therefore misses (the per-cell warning wording arrives
-        // with S5b's warning emission).
-        assert!(warnings.is_empty());
+        // The slave therefore misses and warns per cell.
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0].message,
+            "unresolved shared formula index '5': formula expression omitted"
+        );
         assert!(rows[1].cells[0].has_formula);
         assert!(rows[1].cells[0].formula.is_none());
+    }
+
+    #[test]
+    fn latches_overflow_warning_once_per_worksheet() {
+        // "AAAAA()" costs 7 + 16 = 23 bytes, above the tiny 20-byte limit:
+        // both masters are refused, the latch fires once, and both slaves
+        // still warn per cell while their cached values still emit.
+        let xml = r#"<worksheet><sheetData>
+<row r="1">
+<c r="A1"><f t="shared" si="0">AAAAA()</f><v>1</v></c>
+<c r="B1"><f t="shared" si="1">BBBBB()</f><v>2</v></c>
+</row>
+<row r="2">
+<c r="A2"><f t="shared" si="0"/><v>3</v></c>
+<c r="B2"><f t="shared" si="1"/><v>4</v></c>
+</row>
+</sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows_with_shared_formula_limit(xml, 20);
+
+        assert_eq!(
+            warnings
+                .iter()
+                .filter(|warning| warning.message
+                    == "shared formula table limit reached: expressions beyond it are omitted")
+                .count(),
+            1,
+            "the overflow warning latches to once per worksheet"
+        );
+        assert!(warnings.iter().any(|warning| warning.message
+            == "unresolved shared formula index '0': formula expression omitted"));
+        assert!(warnings.iter().any(|warning| warning.message
+            == "unresolved shared formula index '1': formula expression omitted"));
+        assert_eq!(warnings.len(), 3);
+
+        // Affected slaves still emit their cached values; the refused
+        // masters keep their own text (registration refusal never erases a
+        // master's own expression).
+        assert_eq!(rows.len(), 2);
+        assert_eq!(resolved_expression(&rows[0].cells[0]), Some("AAAAA()"));
+        assert_eq!(resolved_expression(&rows[0].cells[1]), Some("BBBBB()"));
+        assert!(matches!(
+            &rows[1].cells[0].value,
+            XlsxCellValue::Number { raw, .. } if raw == "3"
+        ));
+        assert!(matches!(
+            &rows[1].cells[1].value,
+            XlsxCellValue::Number { raw, .. } if raw == "4"
+        ));
     }
 
     #[test]
