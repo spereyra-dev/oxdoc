@@ -454,7 +454,7 @@ does not depend on S7's snapshot). `schema_version` stays `1` in CLI payloads he
   scenario reachable (all v1 fields remain *declared* in v2) and strengthens every existing
   schema test. Implements: `xlsx-formula-provenance` → Rows-jsonl schema version 2 →
   "v1 payload fails v2 validation".
-- [ ] 33. Create `schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`: JSON Schema draft 2020-12,
+- [x] 33. Create `schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`: JSON Schema draft 2020-12,
   stable `$id` ending `/schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`,
   `additionalProperties: false`, `properties.schema_version` = `const: 2`;
   `$defs.cellBaseProperties` gains `formula` (string, description states the stored
@@ -466,7 +466,7 @@ does not depend on S7's snapshot). `schema_version` stays `1` in CLI payloads he
   `not: {required: [sheet_name, sheet_index]}`, sparse-cell description) is byte-preserved.
   Implements: `xlsx-formula-provenance` → Rows-jsonl schema version 2 → "Representative v2
   record validates", "Presence coupling is enforced".
-- [ ] 34. Copy it byte-identically to `docs/schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`
+- [x] 34. Copy it byte-identically to `docs/schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`
   and do **not** modify any file under `schemas/v1/**` or `docs/schemas/v1/**` (verify with
   `git status --porcelain schemas/v1 docs/schemas/v1`). Run `cargo test --workspace` and
   `make docs-schemas-check` → GREEN. Implements: `xlsx-formula-provenance` → Rows-jsonl
