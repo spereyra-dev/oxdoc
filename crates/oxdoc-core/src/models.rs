@@ -197,6 +197,10 @@ pub struct TextBlock {
     pub part_path: String,
     pub ordinal: usize,
     pub text: String,
+    /// DOCX header/footer variant (`first` | `even` | `default`); omitted
+    /// from serialization for every other block kind.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
 }
 
 impl TextBlock {
@@ -211,7 +215,14 @@ impl TextBlock {
             part_path: part_path.into(),
             ordinal,
             text: text.into(),
+            variant: None,
         }
+    }
+
+    /// Builder for the section-referenced DOCX header/footer path.
+    pub fn with_variant(mut self, variant: impl Into<String>) -> Self {
+        self.variant = Some(variant.into());
+        self
     }
 }
 

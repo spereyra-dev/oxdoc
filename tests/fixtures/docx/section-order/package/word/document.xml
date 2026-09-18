@@ -16,7 +16,7 @@
       </w:pPr>
     </w:p>
     <w:sectPr>
-      <w:headerReference r:id="rIdHeaderDefault"/>
+      <w:headerReference w:type="first" r:id="rIdHeaderDefault"/>
       <w:headerReference w:type="title" r:id="rIdHeaderTitled"/>
       <w:footerReference w:type="default" r:id="rIdFooterTwo"/>
     </w:sectPr>

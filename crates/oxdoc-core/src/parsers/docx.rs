@@ -47,8 +47,8 @@ pub(crate) fn extract_text<R: Read + Seek>(
         options,
         &mut warnings,
     )?;
-    for index in plan {
-        let relationship = &relationships[index];
+    for entry in plan {
+        let relationship = &relationships[entry.index];
         if !is_related_docx_text_part(relationship.relationship_type.as_deref(), options) {
             continue;
         }
@@ -81,7 +81,7 @@ pub(crate) fn extract_structured_text<R: Read + Seek>(
     let document_path = find_office_document_path(package, "word/document.xml")?;
     let document = extract_part_text(package, &document_path, options)?;
     let mut blocks = Vec::new();
-    push_text_block(&mut blocks, "main", &document_path, document.value);
+    push_text_block(&mut blocks, "main", &document_path, None, document.value);
     let mut warnings = document.warnings;
 
     if !options.include_related_parts {
@@ -117,8 +117,8 @@ pub(crate) fn extract_structured_text<R: Read + Seek>(
         options,
         &mut warnings,
     )?;
-    for index in plan {
-        let relationship = &relationships[index];
+    for entry in plan {
+        let relationship = &relationships[entry.index];
         let Some(part_type) =
             related_docx_text_part_type(relationship.relationship_type.as_deref(), options)
         else {
@@ -132,7 +132,13 @@ pub(crate) fn extract_structured_text<R: Read + Seek>(
         )?;
         match extract_part_text(package, &part_path, options) {
             Ok(part) => {
-                push_text_block(&mut blocks, part_type, &part_path, part.value);
+                push_text_block(
+                    &mut blocks,
+                    part_type,
+                    &part_path,
+                    entry.variant,
+                    part.value,
+                );
                 warnings.extend(part.warnings);
             }
             Err(OxdocError::MissingPart(part)) => warnings.push(OutputWarning::new(
@@ -194,8 +200,8 @@ pub(crate) fn extract_tables<R: Read + Seek>(
         options,
         &mut warnings,
     )?;
-    for index in plan {
-        let relationship = &relationships[index];
+    for entry in plan {
+        let relationship = &relationships[entry.index];
         let Some(part_type) =
             related_docx_text_part_type(relationship.relationship_type.as_deref(), options)
         else {
@@ -301,8 +307,32 @@ struct SectionReference {
 }
 
 /// The iteration order shared by all three extraction paths.
-/// Indices into the `parse_relationships` result vector.
-type RelatedPartPlan = Vec<usize>;
+/// Indices into the `parse_relationships` result vector, plus the variant
+/// carried by the section reference that positioned each part.
+type RelatedPartPlan = Vec<RelatedPartPlanEntry>;
+
+/// One entry of the shared related-part iteration order: which relationship
+/// to emit, plus the section-assigned variant when the reference that
+/// positioned the part carried one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RelatedPartPlanEntry {
+    /// Index into the `parse_relationships` result vector.
+    index: usize,
+    /// `Some(v)` only for header/footer parts positioned by a `sectPr`
+    /// reference; `None` for orphans, footnotes, endnotes, and comments.
+    variant: Option<RelatedRefVariant>,
+}
+
+impl RelatedRefVariant {
+    /// Public label for the structured path; matches the ordering rank names.
+    fn label(self) -> &'static str {
+        match self {
+            Self::First => "first",
+            Self::Even => "even",
+            Self::Default => "default",
+        }
+    }
+}
 
 fn related_ref_kind(name: &str) -> Option<RelatedRefKind> {
     if name_eq(name, "headerReference") {
@@ -463,7 +493,10 @@ fn plan_related_part_order<R: Read + Seek>(
                 relationships_path,
             )?;
             if emitted_paths.insert(part_path) {
-                plan.push(index);
+                plan.push(RelatedPartPlanEntry {
+                    index,
+                    variant: Some(reference.variant),
+                });
                 referenced[index] = true;
             }
         }
@@ -482,7 +515,10 @@ fn plan_related_part_order<R: Read + Seek>(
             relationships_path,
         )?;
         if emitted_paths.insert(part_path) {
-            plan.push(index);
+            plan.push(RelatedPartPlanEntry {
+                index,
+                variant: None,
+            });
             referenced[index] = true;
         }
     }
@@ -500,17 +536,31 @@ fn plan_related_part_order<R: Read + Seek>(
         if part_type == "header" || part_type == "footer" {
             continue;
         }
-        plan.push(index);
+        plan.push(RelatedPartPlanEntry {
+            index,
+            variant: None,
+        });
     }
 
     Ok(plan)
 }
 
-fn push_text_block(blocks: &mut Vec<TextBlock>, part_type: &str, part_path: &str, text: String) {
+fn push_text_block(
+    blocks: &mut Vec<TextBlock>,
+    part_type: &str,
+    part_path: &str,
+    variant: Option<RelatedRefVariant>,
+    text: String,
+) {
     if text.is_empty() {
         return;
     }
-    blocks.push(TextBlock::new(part_type, part_path, blocks.len() + 1, text));
+    let block = TextBlock::new(part_type, part_path, blocks.len() + 1, text);
+    let block = match variant {
+        Some(v) => block.with_variant(v.label()),
+        None => block,
+    };
+    blocks.push(block);
 }
 
 fn append_related_text(text: &mut String, related_text: &str) {
@@ -1278,9 +1328,9 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        DocxCellBlock, DocxVerticalMerge, RelatedRefKind, RelatedRefVariant, SectionReference,
-        collect_section_references, extract_structured_text, extract_tables, extract_text,
-        extract_xml_text, parse_xml_tables, plan_related_part_order,
+        DocxCellBlock, DocxVerticalMerge, RelatedPartPlanEntry, RelatedRefKind, RelatedRefVariant,
+        SectionReference, collect_section_references, extract_structured_text, extract_tables,
+        extract_text, extract_xml_text, parse_xml_tables, plan_related_part_order,
     };
     use crate::OxdocError;
     use crate::models::{DocxRevisionMode, DocxTextOptions};
@@ -2153,7 +2203,19 @@ mod tests {
 
         // headers before footers, first/even/default within each kind,
         // section order preserved.
-        assert_eq!(plan, vec![2, 3, 1, 4, 5, 0]);
+        assert_eq!(
+            plan.iter()
+                .map(|entry| (entry.index, entry.variant))
+                .collect::<Vec<_>>(),
+            vec![
+                (2, Some(RelatedRefVariant::First)),
+                (3, Some(RelatedRefVariant::Even)),
+                (1, Some(RelatedRefVariant::Default)),
+                (4, Some(RelatedRefVariant::Default)),
+                (5, Some(RelatedRefVariant::Default)),
+                (0, Some(RelatedRefVariant::Default)),
+            ]
+        );
         assert!(warnings.is_empty());
     }
 
@@ -2251,7 +2313,10 @@ mod tests {
 
         // Referenced header first, orphan header next in rels order, then
         // footnotes/comments/endnotes in rels order.
-        assert_eq!(plan, vec![3, 1, 0, 2, 4]);
+        assert_eq!(
+            plan.iter().map(|entry| entry.index).collect::<Vec<_>>(),
+            vec![3, 1, 0, 2, 4]
+        );
         assert!(warnings.is_empty());
 
         let mut package = ooxml_package(&[
@@ -2272,7 +2337,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(plan, vec![3, 1, 0, 4]);
+        assert_eq!(
+            plan.iter().map(|entry| entry.index).collect::<Vec<_>>(),
+            vec![3, 1, 0, 4]
+        );
     }
 
     #[test]
@@ -2300,7 +2368,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(plan, vec![0]);
+        assert_eq!(
+            plan.iter().map(|entry| entry.index).collect::<Vec<_>>(),
+            vec![0]
+        );
         let messages: Vec<&str> = warnings
             .iter()
             .map(|warning| warning.message.as_str())
@@ -2360,7 +2431,128 @@ mod tests {
 
         // Duplicate rid in one section, shared part across sections, and two
         // rids aliasing one path all dedup by resolved path at first reference.
-        assert_eq!(plan, vec![0, 2, 3]);
+        assert_eq!(
+            plan.iter().map(|entry| entry.index).collect::<Vec<_>>(),
+            vec![0, 2, 3]
+        );
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn label_maps_variants_to_public_names() {
+        assert_eq!(RelatedRefVariant::First.label(), "first");
+        assert_eq!(RelatedRefVariant::Even.label(), "even");
+        assert_eq!(RelatedRefVariant::Default.label(), "default");
+    }
+
+    #[test]
+    fn labels_plan_entries_with_section_reference_variants() {
+        let xml = r#"<w:document xmlns:w="w" xmlns:r="r"><w:body>
+            <w:p>
+              <w:pPr>
+                <w:sectPr>
+                  <w:headerReference w:type="first" r:id="rFirst"/>
+                  <w:headerReference w:type="even" r:id="rEven"/>
+                  <w:footerReference w:type="default" r:id="rFooter"/>
+                </w:sectPr>
+              </w:pPr>
+            </w:p>
+          </w:body></w:document>"#;
+        let rels = [
+            relationship("rFirst", HEADER_TYPE, "header1.xml"),
+            relationship("rEven", HEADER_TYPE, "header2.xml"),
+            relationship("rFooter", FOOTER_TYPE, "footer1.xml"),
+            relationship("rOrphan", HEADER_TYPE, "header3.xml"),
+            relationship(
+                "rNotes",
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes",
+                "footnotes.xml",
+            ),
+        ];
+        let mut package = ooxml_package(&[
+            ("word/document.xml", xml),
+            ("word/_rels/document.xml.rels", r#"<Relationships/>"#),
+        ]);
+        let mut warnings = Vec::new();
+        let plan = plan_related_part_order(
+            &mut package,
+            "word/document.xml",
+            &rels,
+            "word/_rels/document.xml.rels",
+            DocxTextOptions::default(),
+            &mut warnings,
+        )
+        .unwrap();
+
+        // Section-referenced entries carry the sorted reference's variant;
+        // orphan and notes entries carry none.
+        assert_eq!(
+            plan,
+            vec![
+                RelatedPartPlanEntry {
+                    index: 0,
+                    variant: Some(RelatedRefVariant::First)
+                },
+                RelatedPartPlanEntry {
+                    index: 1,
+                    variant: Some(RelatedRefVariant::Even)
+                },
+                RelatedPartPlanEntry {
+                    index: 2,
+                    variant: Some(RelatedRefVariant::Default)
+                },
+                RelatedPartPlanEntry {
+                    index: 3,
+                    variant: None
+                },
+                RelatedPartPlanEntry {
+                    index: 4,
+                    variant: None
+                },
+            ]
+        );
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn plans_deduped_part_with_first_reference_variant() {
+        let xml = r#"<w:document xmlns:w="w" xmlns:r="r"><w:body>
+            <w:p>
+              <w:pPr>
+                <w:sectPr>
+                  <w:headerReference w:type="default" r:id="rShared"/>
+                </w:sectPr>
+              </w:pPr>
+            </w:p>
+            <w:sectPr>
+              <w:headerReference w:type="first" r:id="rShared"/>
+            </w:sectPr>
+          </w:body></w:document>"#;
+        let rels = [relationship("rShared", HEADER_TYPE, "shared.xml")];
+        let mut package = ooxml_package(&[
+            ("word/document.xml", xml),
+            ("word/_rels/document.xml.rels", r#"<Relationships/>"#),
+        ]);
+        let mut warnings = Vec::new();
+        let plan = plan_related_part_order(
+            &mut package,
+            "word/document.xml",
+            &rels,
+            "word/_rels/document.xml.rels",
+            DocxTextOptions::default(),
+            &mut warnings,
+        )
+        .unwrap();
+
+        // One deduped part referenced as two variants: the first reference's
+        // variant wins.
+        assert_eq!(
+            plan,
+            vec![RelatedPartPlanEntry {
+                index: 0,
+                variant: Some(RelatedRefVariant::Default)
+            }]
+        );
         assert!(warnings.is_empty());
     }
 
