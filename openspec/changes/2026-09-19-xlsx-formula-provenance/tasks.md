@@ -427,7 +427,7 @@ does not depend on S7's snapshot). `schema_version` stays `1` in CLI payloads he
 
 ### RED
 
-- [ ] 31. Add failing tests to `crates/oxdoc-core/tests/schema.rs`: register
+- [x] 31. Add failing tests to `crates/oxdoc-core/tests/schema.rs`: register
   `"oxdoc-xlsx-rows-jsonl.schema.json"` under the `v2` entry of `SCHEMA_VERSIONS`
   (~line 253, v1 entry unchanged),
   `representative_xlsx_rows_v2_jsonl_record_matches_schema_shape` (cached-formula number
@@ -448,7 +448,7 @@ does not depend on S7's snapshot). `schema_version` stays `1` in CLI payloads he
 
 ### GREEN
 
-- [ ] 32. Extend `validate_against` (~line 446) and the cell path in `validate_cell`
+- [x] 32. Extend `validate_against` (~line 446) and the cell path in `validate_cell`
   (~line 544) with the ~10-line `const` equality check: for each output field whose
   subschema declares `const`, assert equality. This is what makes the v1-payload-fails-v2
   scenario reachable (all v1 fields remain *declared* in v2) and strengthens every existing
@@ -474,7 +474,7 @@ does not depend on S7's snapshot). `schema_version` stays `1` in CLI payloads he
 
 ### TRIANGULATE
 
-- [ ] 35. Prove the additive delta: a v2 payload for a formula-free workbook differs from
+- [x] 35. Prove the additive delta: a v2 payload for a formula-free workbook differs from
   its v1 payload only by `schema_version` (assert on the `xlsx/basic` corpus record shape
   built inline), and the v2 schema declares `formula`/`formula_cached` on all five
   variants. Re-confirm `docs/schemas/v1` and `schemas/v1` are byte-frozen. Implements:
@@ -483,7 +483,7 @@ does not depend on S7's snapshot). `schema_version` stays `1` in CLI payloads he
 
 ### REFACTOR / Gate S6
 
-- [ ] 36. Run `cargo fmt --all -- --check`,
+- [x] 36. Run `cargo fmt --all -- --check`,
   `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`,
   `make docs-schemas-check`, and the coverage gate; compare `git diff --stat` against
   ~280–380 lines.

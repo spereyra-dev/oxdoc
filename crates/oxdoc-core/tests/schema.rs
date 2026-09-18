@@ -456,6 +456,171 @@ fn representative_xlsx_rows_v2_jsonl_record_matches_schema_shape() {
     }
 }
 
+#[test]
+fn xlsx_rows_v2_enforces_formula_presence_coupling() {
+    // The hand-rolled harness below does not evaluate `allOf`/`if`/`then`
+    // conditionals; the coupling constraint is enforced here instead — never
+    // silently dropped. This test reads the coupling declared once on the
+    // shared `cell` shape and applies it directly in Rust.
+    let schema = read_json_schema("v2", "oxdoc-xlsx-rows-jsonl.schema.json");
+    let coupling = schema["$defs"]["cell"]["allOf"]
+        .as_array()
+        .expect("the shared cell shape declares the formula presence coupling");
+    assert_eq!(
+        coupling.len(),
+        2,
+        "the coupling is declared as if/then twice"
+    );
+
+    let cached_without_formula: Value = serde_json::json!({
+        "column_index": 0, "kind": "blank", "has_formula": true, "formula_cached": false
+    });
+    assert!(
+        !coupling_accepts(coupling, &cached_without_formula),
+        "a cell carrying formula_cached without formula must be rejected"
+    );
+
+    let without_both: Value = serde_json::json!({
+        "column_index": 0, "kind": "blank", "has_formula": false
+    });
+    let with_both: Value = serde_json::json!({
+        "column_index": 0, "kind": "blank", "has_formula": true,
+        "formula": "SUM(B1:B1)", "formula_cached": true
+    });
+    assert!(coupling_accepts(coupling, &without_both));
+    assert!(coupling_accepts(coupling, &with_both));
+}
+
+#[test]
+fn v1_rows_payload_fails_frozen_v2_validation() {
+    // A v1 payload's fields are all still *declared* in v2; the only delta is
+    // the `schema_version` const (1 vs 2). The documented, intentional break
+    // is reachable only because the harness asserts declared `const` values.
+    let v2_schema = read_json_schema("v2", "oxdoc-xlsx-rows-jsonl.schema.json");
+    let v1_payload = serde_json::json!({
+        "schema_version": 1,
+        "file": "typed.xlsx",
+        "row_index": 0,
+        "cells": [
+            {"column_index": 0, "kind": "blank", "has_formula": false}
+        ]
+    });
+
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = std::panic::catch_unwind(move || {
+        let schema = v2_schema.clone();
+        let payload = v1_payload.clone();
+        validate_object(&schema, &payload)
+    });
+    std::panic::set_hook(previous_hook);
+
+    assert!(
+        result.is_err(),
+        "a v1 payload must fail the v2 schema (schema_version const 2)"
+    );
+}
+
+#[test]
+fn xlsx_rows_v2_formula_free_record_differs_from_v1_only_by_schema_version() {
+    let v1_schema = read_json_schema("v1", "oxdoc-xlsx-rows-jsonl.schema.json");
+    let v2_schema = read_json_schema("v2", "oxdoc-xlsx-rows-jsonl.schema.json");
+
+    let v1_payload = serde_json::json!({
+        "schema_version": 1,
+        "file": "basic.xlsx",
+        "row_index": 0,
+        "cells": [
+            {"column_index": 0, "kind": "string", "raw": "alpha", "value": "alpha", "has_formula": false},
+            {"column_index": 1, "kind": "number", "raw": "42", "has_formula": false}
+        ]
+    });
+    let mut v2_payload = v1_payload.clone();
+    v2_payload["schema_version"] = serde_json::json!(2);
+
+    // Additive delta: identical apart from the envelope version.
+    let mut v1_without_version = v1_payload.clone();
+    v1_without_version
+        .as_object_mut()
+        .unwrap()
+        .remove("schema_version");
+    let mut v2_without_version = v2_payload.clone();
+    v2_without_version
+        .as_object_mut()
+        .unwrap()
+        .remove("schema_version");
+    assert_eq!(v1_without_version, v2_without_version);
+
+    validate_object(&v1_schema, &v1_payload);
+    validate_object(&v2_schema, &v2_payload);
+
+    // The v2 schema declares the two new optional fields on all five
+    // variants; the frozen v1 schema declares none of them.
+    for definition_name in [
+        "blankCell",
+        "stringCell",
+        "booleanCell",
+        "numberCell",
+        "errorCell",
+    ] {
+        let v2_properties = &v2_schema["$defs"][definition_name]["properties"];
+        assert_eq!(
+            v2_properties["formula"]["$ref"],
+            "#/$defs/cellBaseProperties/formula"
+        );
+        assert_eq!(
+            v2_properties["formula_cached"]["$ref"],
+            "#/$defs/cellBaseProperties/formula_cached"
+        );
+        let v1_properties = &v1_schema["$defs"][definition_name]["properties"];
+        assert!(v1_properties.get("formula").is_none());
+        assert!(v1_properties.get("formula_cached").is_none());
+    }
+}
+
+/// Applies the formula presence coupling declared on the shared `cell` shape
+/// (two `allOf`/`if`/`then` branches) directly in Rust. Supports only the two
+/// declared shapes — `if.required`/`then.required` and
+/// `if.not.required`/`then.not.required` — and panics on anything else so an
+/// undeclared shape can never pass silently.
+fn coupling_accepts(coupling: &[Value], cell: &Value) -> bool {
+    coupling.iter().all(|branch| {
+        let condition = &branch["if"];
+        let consequence = &branch["then"];
+        let antecedent = match (condition.get("required"), condition.get("not")) {
+            (Some(required), None) => required
+                .as_array()
+                .expect("coupling condition declares required fields")
+                .iter()
+                .all(|field| cell.get(field.as_str().unwrap()).is_some()),
+            (None, Some(not)) => not
+                .get("required")
+                .and_then(Value::as_array)
+                .expect("coupling condition declares not.required fields")
+                .iter()
+                .any(|field| cell.get(field.as_str().unwrap()).is_none()),
+            _ => panic!("unsupported coupling condition; extend the harness honestly"),
+        };
+        if !antecedent {
+            return true;
+        }
+        match (consequence.get("required"), consequence.get("not")) {
+            (Some(required), None) => required
+                .as_array()
+                .expect("coupling consequence declares required fields")
+                .iter()
+                .all(|field| cell.get(field.as_str().unwrap()).is_some()),
+            (None, Some(not)) => not
+                .get("required")
+                .and_then(Value::as_array)
+                .expect("coupling consequence declares not.required fields")
+                .iter()
+                .all(|field| cell.get(field.as_str().unwrap()).is_none()),
+            _ => panic!("unsupported coupling consequence; extend the harness honestly"),
+        }
+    })
+}
+
 fn assert_schema_metadata(version: &str, name: &str) {
     let schema = read_json_schema(version, name);
 
@@ -573,6 +738,13 @@ fn validate_against(definition: &Value, output: &Value, root: &Value) {
             assert!(
                 value.as_u64().is_some(),
                 "field {field} must be a non-negative integer"
+            );
+        }
+
+        if let Some(expected) = property.get("const") {
+            assert_eq!(
+                value, expected,
+                "field {field} does not match the schema constant"
             );
         }
     }
