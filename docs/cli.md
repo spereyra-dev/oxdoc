@@ -438,6 +438,27 @@ Row and column indices in each record are 0-based. Requested `sheet_index`
 values remain 1-based. Sparse cells are omitted, raw numbers remain strings,
 and warnings are emitted to stderr without contaminating the JSONL stream.
 
+Each record carries `schema_version: 2`. Formula cells carry two additional
+optional keys after `has_formula`, always together and both omitted for
+non-formula cells: `formula` (the stored expression text, never recalculated
+or rewritten; shared-formula slaves carry the master's text verbatim) and
+`formula_cached` (whether the workbook stored a cached value for the cell).
+A formula cell without a cached value is `kind: "blank"` with `formula_cached:
+false`.
+
+Two recoverable warnings can appear on stderr during rows extraction:
+
+- `unresolved shared formula index '{si}': formula expression omitted` — one
+  per cell whose shared-formula master is unresolvable (dangling `si` or a
+  master that appears later in the stream).
+- `shared formula table limit reached: expressions beyond it are omitted` —
+  latched once per worksheet when the internal 1 MiB shared-formula table
+  bound is exceeded.
+
+The rows-jsonl contract is versioned by
+[`schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`](schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json);
+see [JSON Output](json-output.md#xlsx-rows-jsonl) for the record shape.
+
 ## Infer an XLSX Schema
 
 ```bash

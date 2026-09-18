@@ -108,6 +108,36 @@ Hidden and very hidden sheets are intentionally skipped by default. Use `--inclu
 
 Formula cells use their cached workbook value. If the workbook does not contain a cached value, the CSV field remains empty.
 
+## Formula Provenance
+
+Formulas are **never recalculated**. `oxdoc` performs no evaluation, builds no dependency graph, and never derives a value from a formula expression: every emitted value is the workbook's stored value exactly as written in the worksheet XML. A formula cell's CSV field is its cached `<v>` value; a formula cell without a cached value yields an empty CSV field, as before.
+
+The stored expression text is available through typed rows (`oxdoc extract rows --format jsonl` and the library's `visit_xlsx_rows`), not through CSV. Each formula cell in a row record carries `formula` (the stored `<f>` text) and `formula_cached` (whether the workbook carried a cached value). Three cases are distinguishable in typed rows:
+
+| Case | `formula` | `formula_cached` | `kind` |
+| --- | --- | --- | --- |
+| Cached formula | stored expression | `true` | value kind with the cached value |
+| Uncached formula | stored expression | `false` | `blank` |
+| Empty-but-cached value | stored expression | `true` | `blank` |
+
+Cells without an `<f>` element carry no formula fields at all — no expression is ever synthesized.
+
+### Shared formulas
+
+Shared formulas (`<f t="shared" si="N">`) are resolved per worksheet from a bounded, first-wins table keyed by the raw `si` attribute text:
+
+- A master cell keeps its own expression text; each slave resolves to the master's text **verbatim** — no reference translation, no rewriting, no evaluation.
+- The first master registered for an `si` wins; duplicate masters never overwrite it.
+- A slave whose master appears later in the worksheet stream (or not at all) is reported with `has_formula: true`, no `formula` fields, and one warning per affected cell: `unresolved shared formula index '{si}': formula expression omitted`. The cell, its `kind`, and its cached value are still emitted.
+
+The shared-formula table holds one entry per distinct `si` group in memory and is bounded at 1 MiB with saturating checks, consistent with the shared-string memory conventions; it never spills to temporary files. When an insertion would exceed the bound, the entry is not recorded and one warning is latched per worksheet: `shared formula table limit reached: expressions beyond it are omitted`. Cells whose expressions are then unresolvable still emit the per-cell unresolved warning above.
+
+Because the same parser backs CSV and rows extraction, CSV extraction of a workbook with unresolvable shared formulas now surfaces these warnings on stderr; the CSV bytes themselves are unchanged.
+
+### Array formulas
+
+An array formula master (`<f t="array" ref="…">EXPR</f>`) captures its expression and cache flag exactly like a normal formula. Cells inside the `ref` region that carry no `<f>` element of their own stay non-formula — no formula is ever synthesized for a cell whose XML carries none. Every other `<f>` with text (for example `t="dataTable"`) captures its text as-is; `t="shared"` with an `si` attribute is the only special case.
+
 ## Memory Notes
 
 Worksheet XML is streamed to the caller-provided writer. Shared strings use a bounded store: values stay in memory up to an internal threshold and spill to temporary files after that. Temporary files are created in the OS temporary directory and are removed when the extraction finishes or errors.

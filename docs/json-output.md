@@ -11,13 +11,13 @@ Machine-readable schemas live under `schemas/v1/` in the repository and are mirr
 | `oxdoc info --format json` | [`schemas/v1/oxdoc-info.schema.json`](schemas/v1/oxdoc-info.schema.json) |
 | `oxdoc extract text --format json` | [`schemas/v1/oxdoc-extract-text.schema.json`](schemas/v1/oxdoc-extract-text.schema.json) |
 | `oxdoc extract text --format structured-json` | [`schemas/v2/oxdoc-structured-text.schema.json`](schemas/v2/oxdoc-structured-text.schema.json) |
+| `oxdoc extract tables --format json` | [`schemas/v1/oxdoc-docx-tables.schema.json`](schemas/v1/oxdoc-docx-tables.schema.json) |
 
 The v1 schema for structured-json output remains available at [`schemas/v1/oxdoc-structured-text.schema.json`](schemas/v1/oxdoc-structured-text.schema.json) for outputs captured before schema v2. It stays frozen: new output fields are never added to it.
-| `oxdoc extract tables --format json` | [`schemas/v1/oxdoc-docx-tables.schema.json`](schemas/v1/oxdoc-docx-tables.schema.json) |
 | `oxdoc audit --format json` | [`schemas/v1/oxdoc-audit.schema.json`](schemas/v1/oxdoc-audit.schema.json) |
 | Each `oxdoc audit --format jsonl` line | [`schemas/v1/oxdoc-audit-jsonl.schema.json`](schemas/v1/oxdoc-audit-jsonl.schema.json) |
 | `oxdoc extract csv --all-sheets --output-dir <DIR>` manifest | [`schemas/v1/oxdoc-all-sheets-manifest.schema.json`](schemas/v1/oxdoc-all-sheets-manifest.schema.json) |
-| Each `oxdoc extract rows --format jsonl` line | [`schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json`](schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json) |
+| `oxdoc extract rows --format jsonl` | [`schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`](schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json) |
 | `oxdoc infer schema FILE` | [`schemas/v1/oxdoc-xlsx-schema.schema.json`](schemas/v1/oxdoc-xlsx-schema.schema.json) |
 | `oxdoc extract slides --format json` | [`schemas/v1/oxdoc-pptx-slides.schema.json`](schemas/v1/oxdoc-pptx-slides.schema.json) |
 | Each `oxdoc extract slides --format jsonl` line | [`schemas/v1/oxdoc-pptx-slides.schema.json`](schemas/v1/oxdoc-pptx-slides.schema.json) |
@@ -64,7 +64,7 @@ oxdoc extract rows workbook.xlsx --sheet "Sales Q1" --format jsonl
 Each stdout line is a standalone row record:
 
 ```json
-{"schema_version":1,"file":"workbook.xlsx","sheet_name":"Sales Q1","row_index":2,"cells":[{"column_index":0,"kind":"string","raw":"Widget","value":"Widget","has_formula":false},{"column_index":2,"kind":"number","raw":"42.50","has_formula":true}]}
+{"schema_version":2,"file":"workbook.xlsx","sheet_name":"Sales Q1","row_index":2,"cells":[{"column_index":0,"kind":"string","raw":"Widget","value":"Widget","has_formula":false},{"column_index":2,"kind":"number","raw":"42.50","has_formula":true,"formula":"B2*2","formula_cached":true}]}
 ```
 
 `row_index` and `column_index` are 0-based. `sheet_index`, when requested, is
@@ -74,8 +74,40 @@ Raw numbers are always JSON strings; they are never converted to JSON numbers.
 String and decoded boolean cells may include `value`, while formatted numeric
 cells may include `formatted`. Every cell includes `has_formula`.
 
+Formula cells additionally carry two trailing keys, `formula` and
+`formula_cached`, always together and both omitted for non-formula cells:
+
+- `formula` is the stored expression text exactly as written in the workbook's
+  `<f>` element. It is **never recalculated, evaluated, or rewritten**; the
+  emitted value is always the workbook's stored value, never a computed one.
+  For shared formulas, the master's expression text is repeated verbatim on
+  each slave cell (no coordinate rewriting).
+- `formula_cached` reports whether the workbook stored a cached `<v>` value for
+  the cell: `true` when a cache exists, `false` when the formula has no cached
+  value (such a cell is `kind: "blank"` with the expression still present).
+
+A workbook whose shared-formula references cannot be resolved (for example a
+slave cell whose `si` master is missing) emits the cell with `has_formula:
+true` and without the two formula fields, plus a per-cell warning on stderr:
+`unresolved shared formula index '{si}': formula expression omitted`. When a
+worksheet's shared-formula table exceeds the internal 1 MiB bound, one latched
+warning names the worksheet: `shared formula table limit reached: expressions
+beyond it are omitted`. Warnings never contaminate the JSONL stream.
+
 Rows extraction accepts one XLSX input, including `-` for stdin. Recoverable
 warnings are written to stderr so stdout remains a valid JSONL stream.
+
+Rows-jsonl payloads are versioned as schema v2
+([`schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`](schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json)).
+The previous v1 schema remains frozen at
+[`schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json`](schemas/v1/oxdoc-xlsx-rows-jsonl.schema.json)
+for previously captured payloads: it stays valid for v1 records, and new
+fields are never added to it. Strict v1 validation of rows-jsonl payloads is
+intentionally broken by schema v2 — because v1 sets `additionalProperties` to
+`false`, any v2 payload fails v1 validation through its undeclared-field rule,
+even for formula-free workbooks whose records differ from v1 only by
+`schema_version: 2`. If you validate rows-jsonl output against a schema, point
+consumers at the v2 schema.
 
 ## XLSX Inferred Schema JSON
 

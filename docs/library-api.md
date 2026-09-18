@@ -203,6 +203,37 @@ Repeated columns use the last cell in XML order. Formulas are not recalculated;
 value. Returning `XlsxRowControl::Stop` ends traversal successfully after the
 current row. Returning an `OxdocError` aborts traversal.
 
+### Formula provenance
+
+Formula cells carry an optional `formula` field of type `XlsxFormula`:
+
+```rust
+#[non_exhaustive]
+pub struct XlsxFormula {
+    pub expression: String,
+    pub cached: bool,
+}
+```
+
+`expression` is the stored `<f>` text exactly as written in the workbook —
+never recalculated, never evaluated, never rewritten — and `cached` reports
+whether the cell carried a cached `<v>` value. Shared-formula slave cells
+carry the master's expression text verbatim, with no reference translation.
+The emitted value is always the workbook's stored value, never a computed one.
+
+The relationship between `has_formula` and `formula` follows this invariant:
+`has_formula == false` always implies `formula == None`, but the converse does
+not hold — a shared-formula slave whose master is unresolvable reports
+`has_formula: true` with `formula: None` and emits a per-cell warning on the
+library's warning channel. `XlsxCellValue` variants keep their semantics: an
+uncached formula cell stays `XlsxCellValue::Blank`, and the formula never
+influences the value.
+
+**Migration note:** `XlsxCell` gained the `formula` field as its last field,
+which is a source break for external struct literals — adding
+`formula: None` to each literal restores compilation, or read the field when
+constructing parser output. The change is versioned in `CHANGELOG.md`.
+
 `visit_xlsx_rows_from_reader` provides the equivalent `Read + Seek` entry
 point. `XlsxSheetOptions` selects a sheet independently from CSV delimiter
 configuration.

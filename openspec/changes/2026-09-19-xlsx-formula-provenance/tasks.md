@@ -570,30 +570,30 @@ are never recalculated" (documentation half).
 Depends on S7 merged (docs describe the shipped v2 payload). Docs only — no Rust, no
 schema file change.
 
-- [ ] 45. Update `docs/json-output.md`: point the `oxdoc extract rows --format jsonl` row
+- [x] 45. Update `docs/json-output.md`: point the `oxdoc extract rows --format jsonl` row
   at `schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`, keep the v1 link marked as frozen for
   previously captured payloads, update the sample record to `schema_version: 2` with the two
   trailing keys, and state the no-recalculation guarantee, the shared-formula provenance
   rule (master text repeated on slaves, no coordinate rewriting), and the uncached-formula
   case. Implements: `xlsx-formula-provenance` → Documentation and CHANGELOG versioning →
   "Docs state the no-recalculation guarantee".
-- [ ] 46. Update `docs/formats/xlsx.md`: extend the current formula-cells line with the
+- [x] 46. Update `docs/formats/xlsx.md`: extend the current formula-cells line with the
   explicit guarantee that formulas are never recalculated and cached values are emitted as
   stored, that an uncached formula yields an empty CSV field (CSV behavior unchanged), that
   typed rows carry the expression and the missing-cache flag, and that CSV extraction now
   surfaces the new unresolved-shared-formula warnings on stderr while CSV bytes stay
   unchanged. Implements: `xlsx-formula-provenance` → Documentation and CHANGELOG
   versioning → "Docs state the no-recalculation guarantee".
-- [ ] 47. Update `docs/cli.md` (`extract rows` section): `schema_version: 2`, the two
+- [x] 47. Update `docs/cli.md` (`extract rows` section): `schema_version: 2`, the two
   optional cell fields, and both exact warning wordings. Implements:
   `xlsx-formula-provenance` → Documentation and CHANGELOG versioning → "Docs state the
   no-recalculation guarantee".
-- [ ] 48. Update `docs/library-api.md` typed-rows section: describe `XlsxFormula`, the
+- [x] 48. Update `docs/library-api.md` typed-rows section: describe `XlsxFormula`, the
   `has_formula`/`formula` relationship (including `has_formula: true` with
   `formula: None` for unresolved slaves), the no-recalculation guarantee, and the
   `formula: None` migration note for struct-literal consumers. Implements:
   `xlsx-formula-provenance` → Core API → "Migration is mechanical for struct literals".
-- [ ] 49. Update `README.md` rows example so the new fields appear as two trailing keys,
+- [x] 49. Update `README.md` rows example so the new fields appear as two trailing keys,
   and add the `CHANGELOG.md` entry: **Added** the `formula`/`formula_cached` cell fields,
   expression capture, bounded shared-formula resolution, and the explicit
   no-recalculation statement; **Changed** the rows-jsonl move to schema v2 with the
@@ -605,36 +605,36 @@ schema file change.
 
 ### Gate S8
 
-- [ ] 50. Run `make docs-check docs-links docs-schemas-check`,
+- [x] 50. Run `make docs-check docs-links docs-schemas-check`,
   `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`, and the coverage gate; compare `git diff --stat` against
   ~190–260 lines.
 
 ## Cross-slice final guards
 
-- [ ] 51. Confirm the frozen-v1 invariant on the whole change diff:
+- [x] 51. Confirm the frozen-v1 invariant on the whole change diff:
   `git diff --name-only` (and `--diff-filter=D`) lists no path under `schemas/v1/**` or
   `docs/schemas/v1/**`, and `schemas/v2/oxdoc-structured-text.schema.json` plus its mirror
   are untouched. Implements: `xlsx-formula-provenance` → Rows-jsonl schema version 2 →
   "v1 stays frozen and mirror stays identical".
-- [ ] 52. Confirm the snapshot inventory: the only changed or added snapshot is
+- [x] 52. Confirm the snapshot inventory: the only changed or added snapshot is
   `tests/fixtures/snapshots/cli_xlsx_rows_v2_jsonl.jsonl`; `xlsx_basic_csv.txt`,
   `xlsx_cell_types_csv.txt`, `xlsx_formatted_locale_csv.txt`, `xlsx_openpyxl_csv.txt`,
   `all_sheets_manifest.json`, and every DOCX/PPTX snapshot are byte-identical. Any other
   snapshot diff is a stop-and-investigate signal, not a mechanical update.
-- [ ] 53. Confirm no manifest, digest, or binary churn: `git status --porcelain
+- [x] 53. Confirm no manifest, digest, or binary churn: `git status --porcelain
   tests/fixtures/files tests/fixtures/compatibility-matrix.json` is empty and
   `make compatibility-corpus-check` passes, with both new provenance notes present in the
   `fixture_provenance_notes_are_present` lists of `crates/oxdoc-core/tests/api.rs` and
   `crates/oxdoc-cli/tests/cli.rs`. Implements: `xlsx-formula-provenance` → Fixture corpus
   with provenance → "Provenance and corpus gates stay green".
-- [ ] 54. Run the full release gate once on the final stacked state:
+- [x] 54. Run the full release gate once on the final stacked state:
   `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`, `cargo llvm-cov --workspace --all-features --all-targets
   --fail-under-lines 95 --summary-only`, `python -m pytest python/tests`,
   `make compatibility-corpus-check`, and `make docs-schemas-check`. Implements:
   `xlsx-formula-provenance` → all requirements' verification clauses.
-- [ ] 55. Preserve work-unit commit boundaries: each slice keeps its tests with its code,
+- [x] 55. Preserve work-unit commit boundaries: each slice keeps its tests with its code,
   S3's `formula: None` migration lands in the same commit as the model field, S5 ships its
   wordings with their emission points, S7 is the only envelope bump, and S8 lands after
   S7 so no documentation describes an unshipped payload.

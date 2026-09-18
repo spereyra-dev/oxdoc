@@ -248,9 +248,12 @@ oxdoc extract rows data.xlsx --sheet "Ventas Q1" --value-mode formatted
 ```
 
 The command accepts one workbook, including `-` for stdin, and emits one JSON
-object per worksheet row. Row and column indices are 0-based, while requested
-`--sheet-index` values are 1-based. Sparse cells are omitted, raw numbers remain
-strings, and recoverable warnings stay on stderr.
+object per worksheet row (`schema_version: 2`). Row and column indices are
+0-based, while requested `--sheet-index` values are 1-based. Sparse cells are
+omitted, raw numbers remain strings, and recoverable warnings stay on stderr.
+Formula cells carry two optional trailing keys, `formula` (the stored
+expression, never recalculated) and `formula_cached`; non-formula cells omit
+both.
 
 ### Extract PPTX Slides
 
@@ -369,7 +372,7 @@ inferred conversion while keeping columnar dependencies out of `oxdoc-core`.
 | --- | --- |
 | DOCX text | Main document text from `<w:t>`, paragraph breaks, tabs, and line breaks. |
 | PPTX text | Slide text boxes and linked speaker notes in presentation order. |
-| XLSX CSV, rows, and schema inference | Workbook relationship lookup, sheet name/index selection, hidden-sheet opt-in, shared strings, inline strings, sparse cells, typed JSONL rows, experimental inferred schemas, booleans, errors, cached formula values, CSV escaping. |
+| XLSX CSV, rows, and schema inference | Workbook relationship lookup, sheet name/index selection, hidden-sheet opt-in, shared strings, inline strings, sparse cells, typed JSONL rows with formula provenance (`formula` expression and cache flag, never recalculated), experimental inferred schemas, booleans, errors, cached formula values, CSV escaping. |
 | Metadata | Core/app properties plus basic macro detection. |
 | Audit | Factual signals for macros, custom properties, suspicious relationships, hidden XLSX sheets, and recoverable parser warnings. |
 | Output | Plain text, CSV, JSONL rows, JSON metadata, JSON text extraction, slide-scoped PPTX JSON/JSONL, experimental XLSX schema JSON. |

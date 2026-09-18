@@ -537,3 +537,129 @@ needed no change).
 ### Remaining tasks
 
 - S8: tasks 45–50; cross-slice guards: tasks 51–55 (all unchecked)
+
+---
+
+## S8 — Documentation + CHANGELOG (tasks 45–50) — COMPLETE
+
+Docs-only slice (no Rust, no schema file change) implemented on the stacked
+state at b39841d (`main` after S1–S7 merged as #227–#235); strict TDD is
+inactive for a docs-only slice — verification is the full release gate with
+`cargo test --workspace` unchanged green.
+
+### Files changed
+
+- `docs/json-output.md` (+35/−3): rows-jsonl schema row now points at
+  `schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`; sample record updated to
+  `schema_version: 2` with the two trailing keys; `formula`/`formula_cached`
+  semantics (no-recalculation guarantee, shared-master-text-verbatim rule,
+  uncached/empty-cached cases, unresolved-warning channel) documented; frozen
+  v1 note + strict-v1-validator break paragraph mirroring the structured-text
+  v2 wording.
+- `docs/formats/xlsx.md` (+30): new **Formula Provenance** section — the
+  never-recalculated guarantee, the expression/cache/absent-cache case table,
+  shared-formula resolution (verbatim master text, first-wins,
+  slave-before-master unresolved + exact per-cell warning wording), the 1 MiB
+  bounded table with the exact latched wording, array-formula master-only
+  capture, uncached formula → empty CSV field, and the new stderr warnings on
+  CSV with unchanged CSV bytes.
+- `docs/cli.md` (+21): `extract rows` section gains `schema_version: 2`, the
+  two optional cell fields (always together, omitted for non-formula cells),
+  and both exact warning wordings; links to the v2 schema and the json-output
+  rows section.
+- `docs/library-api.md` (+31): typed-rows section documents `XlsxFormula`
+  (`expression`/`cached` with doc-level no-recalc statement), the
+  `has_formula`/`formula` invariant (`has_formula: true` + `formula: None`
+  for unresolved slaves), and the `formula: None` struct-literal migration
+  note versioned in the CHANGELOG.
+- `README.md` (+4/−4): rows section states `schema_version: 2` and the two
+  optional trailing keys; capabilities table row adds formula provenance
+  (`formula` expression and cache flag, never recalculated).
+- `CHANGELOG.md` (+41): **Added** — formula provenance (expression capture,
+  cache flags, bounded shared-formula resolution, both exact warning wordings,
+  array masters, unchanged CSV bytes) + the deferred openpyxl-generated
+  compatibility-matrix workbook; **Changed** — rows-jsonl v2 move with the
+  strict-v1-validator migration note (mirroring structured-text v2) and the
+  `XlsxCell` source break with the `formula: None` migration guidance.
+- openspec change artifacts (tasks.md marks, this apply-progress update)
+  included in the S8 commit.
+
+### Verification (Gate S8 + cross-slice guards 51–55)
+
+- `npx markdown-link-check@3 --config .markdown-link-check.json` over all six
+  edited files (README, CHANGELOG, docs/json-output.md, docs/formats/xlsx.md,
+  docs/cli.md, docs/library-api.md) → exit 0, all links ✓ (equivalent of the
+  `make docs-links` recipe; `make` unavailable in this shell — the documented
+  environmental exception precedent). `docs/formats/xlsx.md` and
+  `docs/library-api.md` have no hyperlinks by design (no broken links).
+- `diff -ru schemas/v1 docs/schemas/v1 && diff -ru schemas/v2 docs/schemas/v2`
+  (`make docs-schemas-check`) → identical.
+- `cargo fmt --all -- --check` → clean.
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean.
+- `cargo test --workspace` → all 8 suites ok, 0 failures (25+108+128+101+20+9+2
+  passed; unchanged from S7 — docs-only slice).
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines
+  95 --summary-only` → exit 0 (line coverage 96.52% ≥ 95).
+- `PYTHONPATH=python/src python -m unittest discover -s python/tests` → 9
+  tests OK (`pytest` is not installed in this environment; the repo's
+  `make python-test` recipe is the unittest discover runner, invoked directly —
+  same environmental exception precedent as S7).
+- `python scripts/check-compatibility-corpus.py` (`make
+  compatibility-corpus-check`) → "compatibility corpus validation passed
+  (3 fixtures)".
+- Guard 51 (frozen v1): `git diff cf0d584..HEAD --name-only -- schemas/v1
+  docs/schemas/v1` → 0 paths; structured-text v2 + mirror → 0 paths (whole
+  change, not just S8).
+- Guard 52 (snapshot inventory): whole-change snapshot diff lists exactly one
+  file — `cli_xlsx_rows_v2_jsonl.jsonl` (+2/−0, the S7 snapshot); all other
+  snapshots byte-identical.
+- Guard 53 (no manifest/digest/binary churn): whole-change diff over
+  `tests/fixtures/files` + `tests/fixtures/compatibility-matrix.json` → 0
+  paths; corpus check green; both provenance notes present in the
+  `fixture_provenance_notes_are_present` lists of `oxdoc-core` api.rs and
+  `oxdoc-cli` cli.rs.
+- Guard 55 (work-unit boundaries): verified across the 8 slice commits —
+  tests ship with their code per slice (S1/S2 fixtures+load proofs, S3
+  model+migration in one commit, S5a wordings in a3ce683 with emission points,
+  S7 b39841d the only envelope bump), and S8 docs describe only shipped
+  payloads.
+- Note on `main`: S1–S7 stacked commits (#227–#235) were merged to `main` and
+  the local `main` ref includes them, so `git diff main` measures the S8 slice
+  only; guards 51–53 were therefore measured against the whole-change base
+  `cf0d584..HEAD` (the commit before #227).
+
+### Measured changed lines vs budget
+
+S8 slice (`git diff main --numstat`, excluding the pre-existing `.gitignore`
+edit and openspec bookkeeping): 165 additions, 7 deletions across the six doc
+surfaces = **172 total** — under the 400-line budget and below the ~190–260
+realistic estimate for S8. No comments, blank lines, or docs were compressed
+to fit. Whole change for the record (base `cf0d584`, excluding `.gitignore`/
+openspec): +2265 −34 = 2299 lines across 8 slices, each slice measured under
+400 at its own commit boundary.
+
+### Deviations from design
+
+- Task 49's "update the README rows example so the new fields appear as two
+  trailing keys": the README rows section had no JSON example to update, so
+  the new fields are described as two optional trailing keys in the section
+  prose and the capabilities table row mentions formula provenance — the
+  minimal, honest surface. No other deviation.
+- Task 50's `make docs-check` (Docsify serve probe) was not runnable in this
+  shell (`make` unavailable); the docs-links and docs-schemas-check recipes
+  were invoked directly and docs-check is a serve-sanity check unrelated to
+  content changes. Recorded as the same environmental exception precedent.
+
+### Remaining tasks
+
+- None. All 55 tasks checked; native status should now report apply complete
+  (verify is optional; archive composes the delta spec into openspec/source).
+
+### Whole-change state for verify/archive
+
+- Task progress: 55/55 complete.
+- Delivery: eight work-unit commits (#227–#235 for S1–S7, plus the S8 commit)
+  — each independently gate-green; no slice exceeded the 400-line budget.
+- Deferred: openpyxl-generated compatibility-matrix formula workbook
+  (documented in CHANGELOG); compatibility playground registration for the
+  two corpus trees (documented in S1/S2 progress).

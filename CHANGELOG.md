@@ -8,6 +8,26 @@ The format is based on human-readable release notes.
 
 ### Added
 
+- XLSX formula provenance in typed rows: the stored `<f>` expression text is
+  captured per cell (with the same entity/CDATA decoding used for cell values),
+  each formula cell reports whether the workbook carried a cached value, and
+  the contract guarantees formulas are never recalculated, evaluated, or
+  rewritten — every emitted value is the workbook's stored value. Shared
+  formulas resolve from a bounded (1 MiB), first-wins per-worksheet table;
+  slaves carry the master's text verbatim with no reference translation.
+  Formula cells without a resolvable expression warn per cell with
+  `unresolved shared formula index '{si}': formula expression omitted`, and an
+  overflowing table warns once per worksheet with `shared formula table limit
+  reached: expressions beyond it are omitted`; the cell, its kind, and its
+  cached value are still emitted in both cases. Array-formula masters capture
+  their expression; region cells stay non-formula. CSV output is unchanged
+  apart from the new stderr warnings on workbooks with unresolvable shared
+  formulas.
+
+- Deferred: an openpyxl-generated formula workbook for the
+  `tests/fixtures/compatibility-matrix.json` compatibility corpus (the formula
+  case matrix is covered by hand-authored runtime-zipped fixtures instead).
+
 - New `oxdoc extract slides` CLI subcommand for slide-scoped PPTX extraction:
   one record per slide with `slide_id` (the `p:sldId/@id` integer, omitted
   when absent), `slide_ordinal` (the 1-based `p:sldIdLst` position, with gaps
@@ -21,6 +41,27 @@ The format is based on human-readable release notes.
   the structured-text v1/v2 schemas are unchanged.
 
 ### Changed
+
+- XLSX rows JSONL (`oxdoc extract rows --format jsonl`) is now versioned as
+  schema v2 (`schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`): payloads carry
+  `schema_version: 2` and formula cells may carry the optional `formula` and
+  `formula_cached` fields as two trailing keys (always together, omitted for
+  non-formula cells). Formula-free workbooks produce records identical to v1
+  apart from the `schema_version` key. **Migration note:** this intentionally
+  breaks strict v1 validation of rows-jsonl payloads — because v1 sets
+  `additionalProperties` to `false`, any v2 payload fails v1 validation
+  through its undeclared-field rule, even for formula-free workbooks. The v1
+  schema is frozen and kept only for previously captured outputs; point
+  consumers at `schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json`. Mirroring the
+  structured-text v2 migration, this break is documented and precedented.
+
+- The `oxdoc-core` `XlsxCell` type gains a `formula: Option<XlsxFormula>`
+  field, a source break for external struct literals. **Migration note:** add
+  `formula: None` to `XlsxCell` struct literals (or read the field when
+  constructing parser output) to restore compilation; `has_formula`,
+  `XlsxCellValue`, and all value semantics are unchanged, and `formula` is
+  `None` exactly when the cell has no `<f>` element or its shared-formula
+  expression is unresolvable.
 
 - `oxdoc extract text --format structured-json` output is now versioned as
   schema v2: payloads carry a top-level `schema_version: 2` field and blocks
