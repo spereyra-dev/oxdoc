@@ -613,7 +613,7 @@ fn extracts_sparse_typed_xlsx_rows_as_jsonl() {
     let records = jsonl_lines(&output);
     assert_eq!(records.len(), 1);
     let row = &records[0];
-    assert_eq!(row["schema_version"], 1);
+    assert_eq!(row["schema_version"], 2);
     assert!(
         row["file"]
             .as_str()
@@ -644,6 +644,101 @@ fn extracts_sparse_typed_xlsx_rows_as_jsonl() {
     assert_eq!(cells[4]["raw"], "44927");
     assert_eq!(cells[4]["formatted"], "2023-01-01");
     assert_eq!(cells[4]["has_formula"], true);
+    assert_eq!(cells[4]["formula"], "TODAY()");
+    assert_eq!(cells[4]["formula_cached"], true);
+}
+
+#[test]
+fn extracts_formula_provenance_as_rows_jsonl_v2() {
+    let xlsx = fixtures::build_package("xlsx/formulas", "formula-provenance.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "rows",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Data",
+        "--format",
+        "jsonl",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let records = jsonl_lines(&output);
+    assert_eq!(records.len(), 2);
+    let row = &records[1];
+    assert_eq!(row["schema_version"], 2);
+    assert_eq!(row["file"], "formula-provenance.xlsx");
+    assert_eq!(row["sheet_name"], "Data");
+    assert_eq!(row["row_index"], 1);
+    let cells = row["cells"].as_array().unwrap();
+    assert_eq!(cells.len(), 9);
+    // B2: cached number formula carries both fields together.
+    assert_eq!(cells[0]["column_index"], 1);
+    assert_eq!(cells[0]["kind"], "number");
+    assert_eq!(cells[0]["raw"], "2");
+    assert_eq!(cells[0]["has_formula"], true);
+    assert_eq!(cells[0]["formula"], "SUM(B1:B1)");
+    assert_eq!(cells[0]["formula_cached"], true);
+    // C2: uncached formula keeps kind "blank", emits no raw, and carries
+    // formula with formula_cached: false (presence coupling intact).
+    assert_eq!(cells[1]["kind"], "blank");
+    assert!(cells[1].get("raw").is_none());
+    assert_eq!(cells[1]["has_formula"], true);
+    assert_eq!(cells[1]["formula"], "SUM(C1:C1)");
+    assert_eq!(cells[1]["formula_cached"], false);
+    // D2: empty-but-cached `<v></v>` keeps cached semantics.
+    assert_eq!(cells[2]["kind"], "blank");
+    assert_eq!(cells[2]["formula"], "IF(1=1,\"\",\"x\")");
+    assert_eq!(cells[2]["formula_cached"], true);
+    // E2: cached error formula keeps the stored error as raw.
+    assert_eq!(cells[3]["kind"], "error");
+    assert_eq!(cells[3]["raw"], "#DIV/0!");
+    assert_eq!(cells[3]["formula"], "1/0");
+    assert_eq!(cells[3]["formula_cached"], true);
+    // F2: decoded entities inside the stored expression.
+    assert_eq!(cells[4]["kind"], "string");
+    assert_eq!(cells[4]["formula"], "CONCATENATE(A2,\" & \",<B2>)");
+    assert_eq!(cells[4]["formula_cached"], true);
+    // G2: shared-string cached result resolves the value.
+    assert_eq!(cells[5]["kind"], "string");
+    assert_eq!(cells[5]["value"], "alpha");
+    assert_eq!(cells[5]["formula"], "LEN(A2)");
+    assert_eq!(cells[5]["formula_cached"], true);
+    // H2: CDATA formula text is decoded.
+    assert_eq!(cells[6]["formula"], "IF(A2<>\"\",\"y\",\"n\")");
+    assert_eq!(cells[6]["formula_cached"], true);
+    // I2: numeric character references are decoded.
+    assert_eq!(cells[7]["formula"], "LEN(A2)");
+    assert_eq!(cells[7]["formula_cached"], true);
+    // J2: non-formula error control omits both fields entirely.
+    assert_eq!(cells[8]["kind"], "error");
+    assert_eq!(cells[8]["raw"], "#N/A");
+    assert_eq!(cells[8]["has_formula"], false);
+    assert!(cells[8].get("formula").is_none());
+    assert!(cells[8].get("formula_cached").is_none());
+}
+
+#[test]
+fn extracts_xlsx_rows_as_v2_jsonl_snapshot() {
+    let xlsx = fixtures::build_package("xlsx/formulas", "formula-provenance.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "rows",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Data",
+        "--format",
+        "jsonl",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        stdout(&output),
+        fixtures::read_snapshot("cli_xlsx_rows_v2_jsonl.jsonl")
+    );
 }
 
 #[test]
@@ -790,6 +885,25 @@ fn keeps_rows_jsonl_stdout_clean_when_warnings_are_emitted() {
     assert!(!stdout(&shared_output).contains("unresolved"));
     assert!(
         stderr(&shared_output)
+            .contains("unresolved shared formula index '9': formula expression omitted")
+    );
+
+    // The shared-formulas corpus (real CLI output) keeps stdout a valid JSONL
+    // stream while the dangling si cell warns on stderr with the exact wording.
+    let corpus = fixtures::build_package("xlsx/shared-formulas", "shared-formulas.xlsx");
+
+    let corpus_output = oxdoc(["extract", "rows", corpus.to_str().unwrap()]);
+
+    assert!(corpus_output.status.success());
+    let corpus_records = jsonl_lines(&corpus_output);
+    assert!(!corpus_records.is_empty());
+    for record in &corpus_records {
+        assert!(record["schema_version"].is_u64());
+        assert!(record["cells"].is_array());
+    }
+    assert!(!stdout(&corpus_output).contains("unresolved"));
+    assert!(
+        stderr(&corpus_output)
             .contains("unresolved shared formula index '9': formula expression omitted")
     );
 }
