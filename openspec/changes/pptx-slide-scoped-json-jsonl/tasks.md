@@ -132,7 +132,7 @@ output stays byte-identical.
   `make coverage` (≥ 95% lines), `make docs-schemas-check`,
   `make compatibility-corpus-check`. Diff the frozen snapshot list from task 8:
   any diff is a stop-and-investigate event, not a snapshot update.
-- [ ] 14. WU1 exit: re-measure realized changed lines
+- [x] 14. WU1 exit: re-measure realized changed lines
   (`git diff --stat` against the WU1 base). Expect ~240–300; if > 400, pause and
   ask before opening PR 1. Then open **PR 1 (WU1)** against the current main and
   note in its description that no user-visible behavior changed.
@@ -146,13 +146,13 @@ implemented with the exact spec warnings and R1–R8 covered.
 
 ### RED/GREEN — model
 
-- [ ] 15. RED (model, R4): in `crates/oxdoc-core/src/models.rs` add a test module
+- [x] 15. RED (model, R4): in `crates/oxdoc-core/src/models.rs` add a test module
   case asserting `serde_json::to_value(&PptxSlideText { slide_id: None, … })`
   omits the `slide_id` key, that `notes: None` omits the `notes` key, that
   `notes: Some("".into())` serializes `"notes": ""`, that `text: String::new()`
   serializes `"text": ""`, and that no key is ever `null`. Fails to compile until
   the model exists.
-- [ ] 16. GREEN: add `pub struct PptxSlideText { slide_id: Option<u32>,
+- [x] 16. GREEN: add `pub struct PptxSlideText { slide_id: Option<u32>,
   slide_ordinal: usize, slide_path: String, text: String, notes: Option<String> }`
   with `#[derive(Debug, Clone, PartialEq, Eq, Serialize)]` and
   `skip_serializing_if = "Option::is_none"` on `slide_id` and `notes`
@@ -162,7 +162,7 @@ implemented with the exact spec warnings and R1–R8 covered.
 
 ### RED/GREEN — three lib entry points + happy path
 
-- [ ] 17. RED (R1/R2/R3/R4, `crates/oxdoc-core/tests/api.rs`): tests that
+- [x] 17. RED (R1/R2/R3/R4, `crates/oxdoc-core/tests/api.rs`): tests that
   `extract_pptx_slides` on `corpus/pptx/text` yields ordinals `1,2`, slide ids
   `256,257`, `slide_path` `ppt/slides/slide2.xml` then `ppt/slides/slide1.xml`,
   `notes: Some("Speaker note\n")` on the first record only, and that each record's
@@ -170,14 +170,14 @@ implemented with the exact spec warnings and R1–R8 covered.
   `corpus/pptx/basic` → one record with no `notes` key and no slide-id/notes
   nulls. Also add the reader variants coverage: `extract_pptx_slides_from_reader`
   and `extract_pptx_slides_from_reader_with_limits` on the same bytes.
-- [ ] 18. GREEN: add `pptx::extract_slides<R: Read + Seek>(package) -> Result<Extraction<Vec<PptxSlideText>>>`
+- [x] 18. GREEN: add `pptx::extract_slides<R: Read + Seek>(package) -> Result<Extraction<Vec<PptxSlideText>>>`
   (`design.md` §2 steps 1–3) and `pub(crate) fn extract_pptx_slides[_from_reader[_with_limits]]`
   in `crates/oxdoc-core/src/lib.rs` delegating exactly like the PPTX text family.
   `cargo test -p oxdoc-core --test api` → green for the happy path.
 
 ### RED/GREEN — skip-with-warning loop and locked warning texts
 
-- [ ] 19. RED (R5, path `ppt/presentation.xml`): `api.rs` test on the
+- [x] 19. RED (R5, path `ppt/presentation.xml`): `api.rs` test on the
   `missing-target` fixture asserting the exact strings
   `skipped PPTX slide rId999: unknown relationship id`,
   `skipped related PPTX slide part ppt/slides/absent.xml: missing part`
@@ -186,12 +186,12 @@ implemented with the exact spec warnings and R1–R8 covered.
   (warning path = `ppt/notesSlides/notesSlide3.xml`), that the extraction returns
   `Ok`, that the intact slides are present, and that ordinals are `1,4` (gap
   `2,3` is intentional and not renumbered).
-- [ ] 20. RED (R5, missing rels part + all-skipped): inline zip package with no
+- [x] 20. RED (R5, missing rels part + all-skipped): inline zip package with no
   `ppt/_rels/presentation.xml.rels` → only
   `skipped PPTX slide {rid}: unknown relationship id` per `r:id`, no
   missing-rels warning of its own, `Ok`, empty record set; and an inline
   all-skipped deck asserting `warnings` non-empty with `value.len() == 0`.
-- [ ] 21. GREEN: implement the loop's skip branches at the single emission site in
+- [x] 21. GREEN: implement the loop's skip branches at the single emission site in
   `extract_slides` with inline `format!` warnings (`design.md` §2 step 3): unknown
   relationship id → warn + `continue`; `MissingPart` from `read_text_part` → warn
   + `continue`; `read_notes_text_for_slides` returning `Err(MissingPart)` → warn
@@ -201,13 +201,13 @@ implemented with the exact spec warnings and R1–R8 covered.
 
 ### RED/GREEN — malformed partial text and textless slides
 
-- [ ] 22. RED (R6): test on the `malformed-xml` fixture asserting record 1 is
+- [x] 22. RED (R6): test on the `malformed-xml` fixture asserting record 1 is
   intact, record 2 is emitted with recovered partial text plus exactly one
   `W001`/`malformed_xml` warning whose path is `ppt/slides/slide2.xml`, and
   ordinals are `1,2` with no gap.
-- [ ] 23. RED (R4 textless): inline package with an empty `txBody` slide →
+- [x] 23. RED (R4 textless): inline package with an empty `txBody` slide →
   record emitted with `text == ""` and the slide is not dropped.
-- [ ] 24. GREEN: ensure slide reads merge the `read_text_part` warnings (including
+- [x] 24. GREEN: ensure slide reads merge the `read_text_part` warnings (including
   `W001`) into the record's extraction warnings and never convert a readable
   malformed part into a skip; confirm the record is pushed unconditionally.
   `cargo test -p oxdoc-core --test api` → green.
@@ -238,12 +238,12 @@ implemented with the exact spec warnings and R1–R8 covered.
 
 ### WU2 gate
 
-- [ ] 30. WU2 gate — run and record: `cargo test -p oxdoc-core`,
+- [x] 30. WU2 gate — run and record: `cargo test -p oxdoc-core`,
   `cargo test --workspace` (frozen snapshots must still pass untouched),
   `cargo fmt --all -- --check`,
   `cargo clippy --workspace --all-targets -- -D warnings`, `make coverage`
   (new parser branches in tasks 19–28 must be covered ≥ 95%).
-- [ ] 31. WU2 exit: re-measure realized changed lines. Expect ~360–400; if > 400,
+- [x] 31. WU2 exit: re-measure realized changed lines. Expect ~360–400; if > 400,
   apply the agreed fallback (move the task 25–29 test group to a follow-up
   stacked unit) or pause and ask — never relax coverage and never inline the
   group into an oversized PR. Then open **PR 2 (WU2)** stacked on PR 1.
