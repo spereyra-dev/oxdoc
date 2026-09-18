@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="s"><v>0</v></c>
+      <c r="B1" t="s"><v>1</v></c>
+      <c r="C1" t="s"><v>0</v></c>
+    </row>
+    <row r="2">
+      <c r="B2"><f>SUM(B1:B1)</f><v>2</v></c>
+      <c r="C2"><f>SUM(C1:C1)</f></c>
+      <c r="D2"><f>IF(1=1,&quot;&quot;,&quot;x&quot;)</f><v></v></c>
+      <c r="E2" t="e"><f>1/0</f><v>#DIV/0!</v></c>
+      <c r="F2" t="str"><f>CONCATENATE(A2,&quot; &amp; &quot;,&lt;B2&gt;)</f><v>alpha &amp; beta</v></c>
+      <c r="G2" t="s"><f>LEN(A2)</f><v>0</v></c>
+      <c r="H2"><f><![CDATA[IF(A2<>"","y","n")]]></f><v>1</v></c>
+      <c r="I2"><f>LEN&#40;A2&#41;</f><v>5</v></c>
+      <c r="J2" t="e"><v>#N/A</v></c>
+    </row>
+  </sheetData>
+</worksheet>

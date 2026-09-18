@@ -34,6 +34,7 @@ Current fixtures:
 - `corpus/xlsx/basic`
 - `corpus/xlsx/app-metadata`
 - `corpus/xlsx/formatted-locale`
+- `corpus/xlsx/formulas`
 - `corpus/pptx/basic`
 - `corpus/pptx/text`
 - `files/docx/python-docx-basic.docx`
