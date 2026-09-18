@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Cursor, Read, Seek, Write};
 
 use quick_xml::Reader;
@@ -24,6 +24,64 @@ struct WorkbookSheet {
     name: String,
     relation_id: String,
     visibility: XlsxSheetVisibility,
+}
+
+pub(crate) const DEFAULT_SHARED_FORMULA_MEMORY_LIMIT: usize = 1024 * 1024;
+
+// Same per-entry constant as the shared-string store: expression length plus
+// a fixed key/entry overhead, checked with saturating arithmetic.
+const ESTIMATED_FORMULA_ENTRY_COST: usize = 16;
+
+fn estimated_formula_memory_cost(expression: &str) -> usize {
+    expression
+        .len()
+        .saturating_add(ESTIMATED_FORMULA_ENTRY_COST)
+}
+
+/// Per-worksheet shared-formula table: raw `si` attribute text → master
+/// expression. Bounded by a saturating memory check and first-wins.
+/// `BTreeMap` keeps fuzz/replay behavior deterministic.
+#[derive(Debug)]
+struct SharedFormulaTable {
+    expressions: BTreeMap<String, String>,
+    memory_bytes: usize,
+    memory_limit: usize,
+}
+
+impl SharedFormulaTable {
+    fn new(memory_limit: usize) -> Self {
+        Self {
+            expressions: BTreeMap::new(),
+            memory_bytes: 0,
+            memory_limit,
+        }
+    }
+
+    /// Registers `si → expression`. Check order: empty expressions register
+    /// nothing; the first registration wins and later duplicates never
+    /// overwrite it; overflow records nothing (latched warning in S5b).
+    fn register(&mut self, si: &str, expression: &str) {
+        if expression.is_empty() {
+            return;
+        }
+        if self.expressions.contains_key(si) {
+            return;
+        }
+        let next_memory_bytes = self
+            .memory_bytes
+            .saturating_add(estimated_formula_memory_cost(expression));
+        if next_memory_bytes > self.memory_limit {
+            return;
+        }
+        self.memory_bytes = next_memory_bytes;
+        self.expressions
+            .insert(si.to_owned(), expression.to_owned());
+    }
+
+    /// Master text for `si`, if registered.
+    fn resolve(&self, si: &str) -> Option<&str> {
+        self.expressions.get(si).map(String::as_str)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -631,6 +689,24 @@ fn parse_sheet_rows<R: BufRead>(
     format_context: &SheetFormatContext<'_>,
     sink: &mut impl SheetRowSink,
 ) -> Result<Extraction<()>> {
+    parse_sheet_rows_with_shared_formula_limit(
+        source,
+        path,
+        shared_strings,
+        format_context,
+        sink,
+        DEFAULT_SHARED_FORMULA_MEMORY_LIMIT,
+    )
+}
+
+fn parse_sheet_rows_with_shared_formula_limit<R: BufRead>(
+    source: R,
+    path: &str,
+    shared_strings: &mut impl SharedStringLookup,
+    format_context: &SheetFormatContext<'_>,
+    sink: &mut impl SheetRowSink,
+    shared_formula_memory_limit: usize,
+) -> Result<Extraction<()>> {
     let mut reader = Reader::from_reader(source);
     reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
@@ -638,6 +714,7 @@ fn parse_sheet_rows<R: BufRead>(
     let mut row: Option<ParsedRow> = None;
     let mut current_cell: Option<CellState> = None;
     let mut next_row_index = 0;
+    let mut shared_formulas = SharedFormulaTable::new(shared_formula_memory_limit);
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -691,11 +768,24 @@ fn parse_sheet_rows<R: BufRead>(
                     // the Start arm never fires for it.
                     let formula_type = attr_value(&element, "t");
                     let formula_si = attr_value(&element, "si");
-                    let shared_si =
-                        formula_type.as_deref() == Some("shared") && formula_si.is_some();
-                    if !shared_si {
-                        // A shared slave (`<f t="shared" si="N"/>`) resolves
-                        // in S5; every other empty `<f/>` stores an empty
+                    if formula_type.as_deref() == Some("shared")
+                        && let Some(si) = formula_si
+                    {
+                        // A shared slave resolves immediately against the
+                        // table: a miss (dangling `si`, slave before master,
+                        // or an overflow-refused entry) stays unresolved with
+                        // one per-cell warning. No buffering, no second pass.
+                        match shared_formulas.resolve(&si) {
+                            Some(master_text) => {
+                                cell.formula = Some(master_text.to_owned());
+                            }
+                            // A miss (dangling `si`, slave before master, or
+                            // an overflow-refused entry) stays unresolved; the
+                            // per-cell warning emission lands in S5b.
+                            None => cell.formula = None,
+                        }
+                    } else {
+                        // Every other empty `<f/>` stores an empty
                         // expression. `in_formula` stays false: there is no
                         // open element to route text into.
                         cell.formula = Some(String::new());
@@ -743,8 +833,15 @@ fn parse_sheet_rows<R: BufRead>(
                     } else if name_eq(element.name().as_ref(), "f") {
                         cell.in_formula = false;
                         // The cell's own stored expression (possibly empty).
-                        // S5 registers shared masters from this same text.
-                        cell.formula = Some(std::mem::take(&mut cell.formula_buffer));
+                        // A shared master registers the same text (first
+                        // wins, bounded) while keeping its own expression.
+                        let expression = std::mem::take(&mut cell.formula_buffer);
+                        if cell.formula_type.as_deref() == Some("shared")
+                            && let Some(si) = &cell.formula_si
+                        {
+                            shared_formulas.register(si, &expression);
+                        }
+                        cell.formula = Some(expression);
                     }
                 }
 
@@ -900,8 +997,8 @@ fn push_typed_cell(
         }
     };
 
-    // Own expression + pure XML `<v>` presence; shared slaves still carry
-    // `formula: None` until S5 resolves them.
+    // Own expression + pure XML `<v>` presence; shared slaves resolved at
+    // their `Empty <f/>` emission point, unresolved slaves stay `None`.
     let formula = cell.formula.map(|expression| XlsxFormula {
         expression,
         cached: cell.had_value,
@@ -1290,10 +1387,10 @@ mod tests {
     use zip::write::SimpleFileOptions;
 
     use super::{
-        CellFormat, CellState, DateSystem, SheetFormatContext, SheetRowSink, XlsxStyles,
-        classify_number_format, format_cell_value, format_number, parse_cell_column,
-        parse_sheet_rows, parse_styles, parse_workbook_date_system, parse_workbook_sheets,
-        select_sheet, visit_rows_with_read_options, write_sheet_csv,
+        CellFormat, CellState, DEFAULT_SHARED_FORMULA_MEMORY_LIMIT, DateSystem, SheetFormatContext,
+        SheetRowSink, XlsxStyles, classify_number_format, format_cell_value, format_number,
+        parse_cell_column, parse_sheet_rows, parse_styles, parse_workbook_date_system,
+        parse_workbook_sheets, select_sheet, visit_rows_with_read_options, write_sheet_csv,
     };
 
     #[derive(Default)]
@@ -1575,6 +1672,121 @@ mod tests {
         )
         .unwrap();
         (sink.rows, extraction.warnings)
+    }
+
+    fn resolved_expression(cell: &crate::models::XlsxCell) -> Option<&str> {
+        cell.formula.as_ref().map(|f| f.expression.as_str())
+    }
+
+    #[test]
+    fn resolves_cached_and_uncached_shared_slaves_verbatim() {
+        let xml = r#"<worksheet><sheetData>
+<row r="1"><c r="A1"><f t="shared" si="0" ref="A1:A3">SUM(B1:B3)</f><v>6</v></c></row>
+<row r="2"><c r="A2"><f t="shared" si="0"/><v>9</v></c></row>
+<row r="3"><c r="A3"><f t="shared" si="0"/></c></row>
+</sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows(xml);
+
+        assert!(warnings.is_empty());
+        assert_eq!(rows.len(), 3);
+
+        // Master keeps its own expression and cache flag.
+        assert_eq!(resolved_expression(&rows[0].cells[0]), Some("SUM(B1:B3)"));
+        assert!(rows[0].cells[0].formula.as_ref().unwrap().cached);
+
+        // Cached slave carries the master text verbatim, with its own cache
+        // presence and cached value still emitted.
+        assert_eq!(resolved_expression(&rows[1].cells[0]), Some("SUM(B1:B3)"));
+        assert!(rows[1].cells[0].formula.as_ref().unwrap().cached);
+        assert!(matches!(
+            &rows[1].cells[0].value,
+            XlsxCellValue::Number { raw, .. } if raw == "9"
+        ));
+
+        // Uncached slave carries the master text verbatim and stays blank.
+        assert_eq!(resolved_expression(&rows[2].cells[0]), Some("SUM(B1:B3)"));
+        assert!(!rows[2].cells[0].formula.as_ref().unwrap().cached);
+        assert_eq!(rows[2].cells[0].value, XlsxCellValue::Blank);
+    }
+
+    #[test]
+    fn treats_slave_before_master_as_unresolved_without_buffering() {
+        let xml = r#"<worksheet><sheetData>
+<row r="1"><c r="A1"><f t="shared" si="0"/></c></row>
+<row r="2"><c r="A1"><f t="shared" si="0">PrefixedSum()</f><v>1</v></c></row>
+<row r="3"><c r="A1"><f t="shared" si="0"/></c></row>
+</sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows(xml);
+        // No buffering or second pass: the slave misses immediately (the
+        // per-cell warning wording arrives with S5b's warning emission).
+        assert!(warnings.is_empty());
+
+        // Slave before master: single-pass stream has not registered it yet.
+        assert!(rows[0].cells[0].has_formula);
+        assert!(rows[0].cells[0].formula.is_none());
+
+        // The later master still registers and captures its own text.
+        assert_eq!(
+            resolved_expression(&rows[1].cells[0]),
+            Some("PrefixedSum()")
+        );
+        assert!(rows[1].cells[0].formula.as_ref().unwrap().cached);
+
+        // A slave after the master resolves to it.
+        assert_eq!(
+            resolved_expression(&rows[2].cells[0]),
+            Some("PrefixedSum()")
+        );
+    }
+
+    #[test]
+    fn first_registration_wins() {
+        let xml = r#"<worksheet><sheetData>
+<row r="1"><c r="A1"><f t="shared" si="1">FIRST()</f><v>1</v></c></row>
+<row r="2"><c r="A2"><f t="shared" si="1">SECOND()</f><v>2</v></c></row>
+<row r="3"><c r="A3"><f t="shared" si="1"/></c></row>
+</sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows(xml);
+
+        assert!(warnings.is_empty());
+        assert_eq!(rows.len(), 3);
+
+        // Both masters keep their own text.
+        assert_eq!(resolved_expression(&rows[0].cells[0]), Some("FIRST()"));
+        assert_eq!(resolved_expression(&rows[1].cells[0]), Some("SECOND()"));
+
+        // The slave resolves to the first registered master text.
+        assert_eq!(resolved_expression(&rows[2].cells[0]), Some("FIRST()"));
+    }
+
+    #[test]
+    fn registers_nothing_for_empty_master_text() {
+        let xml = r#"<worksheet><sheetData>
+<row r="1"><c r="A1"><f t="shared" si="5"></f></c></row>
+<row r="2"><c r="A2"><f t="shared" si="5"/></c></row>
+</sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows(xml);
+        // An empty master registers nothing, but keeps its own empty text.
+        assert!(rows[0].cells[0].has_formula);
+        assert_eq!(resolved_expression(&rows[0].cells[0]), Some(""));
+
+        // The slave therefore misses (the per-cell warning wording arrives
+        // with S5b's warning emission).
+        assert!(warnings.is_empty());
+        assert!(rows[1].cells[0].has_formula);
+        assert!(rows[1].cells[0].formula.is_none());
+    }
+
+    #[test]
+    fn default_shared_formula_limit_is_one_mib_and_ooxml_limits_unchanged() {
+        assert_eq!(DEFAULT_SHARED_FORMULA_MEMORY_LIMIT, 1024 * 1024);
+
+        // The public OOXML limits stay exactly as before this change.
+        let limits = OoxmlLimits::default();
+        assert_eq!(limits.max_package_uncompressed_size, 256 * 1024 * 1024);
+        assert_eq!(limits.max_part_uncompressed_size, 64 * 1024 * 1024);
+        assert_eq!(limits.max_part_compression_ratio, 200);
+        assert_eq!(limits.min_ratio_check_size, 4 * 1024 * 1024);
     }
 
     #[test]
