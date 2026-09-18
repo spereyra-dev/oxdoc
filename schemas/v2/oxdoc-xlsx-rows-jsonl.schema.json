@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/spereyra-dev/oxdoc/schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json",
+  "title": "oxdoc XLSX rows JSONL record",
+  "description": "Schema for each JSON object line emitted by `oxdoc extract rows --format jsonl` in oxdoc schema version 2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "file", "row_index", "cells"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 2,
+      "description": "Version of the XLSX rows JSONL record contract."
+    },
+    "file": {
+      "type": "string",
+      "description": "File name derived from the provided input path, or `<stdin>` for standard input."
+    },
+    "sheet_name": {
+      "type": "string",
+      "description": "Sheet name supplied with `--sheet`, when that selector was used."
+    },
+    "sheet_index": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-based sheet index supplied with `--sheet-index`, when that selector was used."
+    },
+    "row_index": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0-based worksheet row index."
+    },
+    "cells": {
+      "type": "array",
+      "description": "Present worksheet cells in ascending column order; omitted sparse cells are not synthesized.",
+      "items": {
+        "$ref": "#/$defs/cell"
+      }
+    }
+  },
+  "not": {
+    "required": ["sheet_name", "sheet_index"]
+  },
+  "$defs": {
+    "cell": {
+      "oneOf": [
+        { "$ref": "#/$defs/blankCell" },
+        { "$ref": "#/$defs/stringCell" },
+        { "$ref": "#/$defs/booleanCell" },
+        { "$ref": "#/$defs/numberCell" },
+        { "$ref": "#/$defs/errorCell" }
+      ],
+      "allOf": [
+        { "if": { "required": ["formula"] },
+          "then": { "required": ["formula_cached"] } },
+        { "if": { "not": { "required": ["formula"] } },
+          "then": { "not": { "required": ["formula_cached"] } } }
+      ]
+    },
+    "cellBaseProperties": {
+      "column_index": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "0-based worksheet column index."
+      },
+      "has_formula": {
+        "type": "boolean",
+        "description": "Whether the cell contains a formula."
+      },
+      "formula": {
+        "type": "string",
+        "description": "Stored formula expression text. For shared formulas the master text is repeated on slave cells. Never recalculated or rewritten."
+      },
+      "formula_cached": {
+        "type": "boolean",
+        "description": "Present only with `formula`: true when the workbook stored a cached <v> value for the cell, false when no cache exists."
+      }
+    },
+    "blankCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_index", "kind", "has_formula"],
+      "properties": {
+        "column_index": { "$ref": "#/$defs/cellBaseProperties/column_index" },
+        "kind": { "type": "string", "const": "blank" },
+        "has_formula": { "$ref": "#/$defs/cellBaseProperties/has_formula" },
+        "formula": { "$ref": "#/$defs/cellBaseProperties/formula" },
+        "formula_cached": { "$ref": "#/$defs/cellBaseProperties/formula_cached" }
+      }
+    },
+    "stringCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_index", "kind", "raw", "value", "has_formula"],
+      "properties": {
+        "column_index": { "$ref": "#/$defs/cellBaseProperties/column_index" },
+        "kind": { "type": "string", "const": "string" },
+        "raw": { "type": "string" },
+        "value": { "type": "string" },
+        "has_formula": { "$ref": "#/$defs/cellBaseProperties/has_formula" },
+        "formula": { "$ref": "#/$defs/cellBaseProperties/formula" },
+        "formula_cached": { "$ref": "#/$defs/cellBaseProperties/formula_cached" }
+      }
+    },
+    "booleanCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_index", "kind", "raw", "has_formula"],
+      "properties": {
+        "column_index": { "$ref": "#/$defs/cellBaseProperties/column_index" },
+        "kind": { "type": "string", "const": "boolean" },
+        "raw": { "type": "string" },
+        "value": { "type": "boolean" },
+        "has_formula": { "$ref": "#/$defs/cellBaseProperties/has_formula" },
+        "formula": { "$ref": "#/$defs/cellBaseProperties/formula" },
+        "formula_cached": { "$ref": "#/$defs/cellBaseProperties/formula_cached" }
+      }
+    },
+    "numberCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_index", "kind", "raw", "has_formula"],
+      "properties": {
+        "column_index": { "$ref": "#/$defs/cellBaseProperties/column_index" },
+        "kind": { "type": "string", "const": "number" },
+        "raw": {
+          "type": "string",
+          "description": "Stored worksheet number preserved as a JSON string."
+        },
+        "formatted": { "type": "string" },
+        "has_formula": { "$ref": "#/$defs/cellBaseProperties/has_formula" },
+        "formula": { "$ref": "#/$defs/cellBaseProperties/formula" },
+        "formula_cached": { "$ref": "#/$defs/cellBaseProperties/formula_cached" }
+      }
+    },
+    "errorCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column_index", "kind", "raw", "has_formula"],
+      "properties": {
+        "column_index": { "$ref": "#/$defs/cellBaseProperties/column_index" },
+        "kind": { "type": "string", "const": "error" },
+        "raw": { "type": "string" },
+        "has_formula": { "$ref": "#/$defs/cellBaseProperties/has_formula" },
+        "formula": { "$ref": "#/$defs/cellBaseProperties/formula" },
+        "formula_cached": { "$ref": "#/$defs/cellBaseProperties/formula_cached" }
+      }
+    }
+  }
+}

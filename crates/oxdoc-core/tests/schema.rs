@@ -266,7 +266,13 @@ fn schemas_have_stable_public_metadata() {
                 "oxdoc-pptx-slides.schema.json",
             ],
         ),
-        ("v2", &["oxdoc-structured-text.schema.json"]),
+        (
+            "v2",
+            &[
+                "oxdoc-structured-text.schema.json",
+                "oxdoc-xlsx-rows-jsonl.schema.json",
+            ],
+        ),
     ];
 
     for (version, names) in SCHEMA_VERSIONS {
@@ -362,6 +368,90 @@ fn slides_payload_fails_frozen_structured_text_validation() {
         assert!(
             result.is_err(),
             "a slides payload must fail the frozen {version} structured-text schema"
+        );
+    }
+}
+
+#[test]
+fn xlsx_rows_v2_schema_and_mirror_are_identical() {
+    let canonical = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json"),
+    )
+    .unwrap();
+    let mirror = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/schemas/v2/oxdoc-xlsx-rows-jsonl.schema.json"),
+    )
+    .unwrap();
+
+    assert_eq!(canonical, mirror, "docs mirror must be byte-identical");
+}
+
+#[test]
+fn representative_xlsx_rows_v2_jsonl_record_matches_schema_shape() {
+    let schema = read_json_schema("v2", "oxdoc-xlsx-rows-jsonl.schema.json");
+    let output: Value = serde_json::from_str(
+        r##"{
+            "schema_version": 2,
+            "file": "formula-provenance.xlsx",
+            "sheet_name": "Data",
+            "row_index": 2,
+            "cells": [
+                {"column_index": 1, "kind": "number", "raw": "2", "has_formula": true, "formula": "SUM(B1:B1)", "formula_cached": true},
+                {"column_index": 2, "kind": "blank", "has_formula": true, "formula": "SUM(C1:C1)", "formula_cached": false},
+                {"column_index": 4, "kind": "error", "raw": "#DIV/0!", "has_formula": true, "formula": "1/0", "formula_cached": true},
+                {"column_index": 0, "kind": "number", "raw": "9", "has_formula": true, "formula": "SUM(B2:B4)", "formula_cached": true}
+            ]
+        }"##,
+    )
+    .unwrap();
+
+    validate_object(&schema, &output);
+    assert_eq!(
+        output["schema_version"],
+        schema["properties"]["schema_version"]["const"]
+    );
+    assert!(output["row_index"].as_u64().is_some());
+
+    let variants = schema["$defs"]["cell"]["oneOf"].as_array().unwrap();
+    let cells = output["cells"].as_array().unwrap();
+
+    // Every variant declares the two optional formula fields through the
+    // shared cell base properties, and every cell keeps its `kind` const.
+    for variant in variants {
+        let name = variant["$ref"]
+            .as_str()
+            .unwrap()
+            .rsplit('/')
+            .next()
+            .unwrap();
+        let properties = &schema["$defs"][name]["properties"];
+        assert_eq!(
+            properties["formula"]["$ref"],
+            "#/$defs/cellBaseProperties/formula"
+        );
+        assert_eq!(
+            properties["formula_cached"]["$ref"],
+            "#/$defs/cellBaseProperties/formula_cached"
+        );
+    }
+
+    for cell in cells {
+        let kind = cell["kind"].as_str().unwrap();
+        let definition_name = format!("{kind}Cell");
+        let definition = schema["$defs"].get(&definition_name).unwrap();
+        validate_cell(&schema, definition, cell);
+        assert_eq!(definition["properties"]["kind"]["const"], kind);
+    }
+
+    // Presence coupling holds on every record cell: `formula` present iff
+    // `formula_cached` present.
+    for cell in cells {
+        assert_eq!(
+            cell.get("formula").is_some(),
+            cell.get("formula_cached").is_some(),
+            "cell {cell} must carry both formula fields or neither"
         );
     }
 }
