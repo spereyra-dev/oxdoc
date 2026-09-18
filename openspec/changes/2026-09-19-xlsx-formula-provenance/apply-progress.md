@@ -461,3 +461,79 @@ enforced there instead.
 - S6b commit (uncommitted, gate-green): completes tasks 31, 32, 35 and the S6 gate run
   (task 36) — then check those boxes.
 - S7: tasks 37–44; S8: tasks 45–50; cross-slice guards: tasks 51–55 (all unchecked)
+
+---
+
+## S7 — CLI emission + Python pass-through (tasks 37–44) — COMPLETE
+
+Status note: the S5b and S6b work units that S6's progress section left uncommitted
+landed as commits a3ce683 (#232), 1a0a7e2 (#233), and 1b5a217 (#234); tasks 22–36 are
+checked in tasks.md. This executor resumed from the clean stacked state at 1b5a217.
+
+### TDD Cycle Evidence
+
+| Task | Cycle | Test | RED evidence | GREEN evidence |
+| --- | --- | --- | --- | --- |
+| 37 | RED | `extracts_sparse_typed_xlsx_rows_as_jsonl` (version 1→2 + TODAY() formula fields), `extracts_formula_provenance_as_rows_jsonl_v2` (per-cell field sets), `extracts_xlsx_rows_as_v2_jsonl_snapshot` (byte-compare), corpus-warning case in `keeps_rows_jsonl_stdout_clean_when_warnings_are_emitted`; python pin `test_extract_rows_passes_v2_formula_fields_through` | `cargo test -p oxdoc-cli --test cli`: 3 failed — sparse: `left: Null, right: "TODAY()"`; corpus: `left: Number(1), right: 2`; snapshot: `NotFound` (snapshot absent). Warning-channel case passed (S5b already landed the stderr wording; it is a channel pin). Python pin passed immediately (the wrapper already passes dicts through verbatim — no wrapper change by design, so a RED cannot occur without artificially breaking it) | See tasks 38–42 |
+| 38–39 | GREEN | `RowsJsonlCell` gains `formula: Option<&'a str>` + `formula_cached: Option<bool>` after `has_formula` (declaration order = byte order); `TryFrom<&XlsxCell>` derives both from the single `cell.formula` match (both-or-neither) | — | Snapshot + corpus tests pass |
+| 40 | GREEN | single `RowsJsonlRecord` construction site in `extract_rows_command` → `schema_version: 2` | — | `grep 'schema_version: 1' main.rs` → 6 remaining literals (text/tables/audit/slides) untouched |
+| 41 | GREEN | snapshot generated once from real CLI output over the runtime-zipped `formulas` corpus (package name `formula-provenance.xlsx`, zip built with Stored compression, sorted entries — mirrors `build_package`); content reviewed against design §5.1 before commit (all 9 cells match the table; header row carries no formula fields; field order `column_index, kind, raw?, value?, formatted?, has_formula, formula?, formula_cached?`) | — | `cargo test -p oxdoc-cli --test cli` → 108 passed, 0 failed |
+| 42 | GREEN | python audit: the two `fake_oxdoc` tests hardcode `schema_version: 1` payloads but do **not** mirror live CLI output (fake binary fixtures per design §3.3) → stay as-is; new pass-through pin passes; `python/src/oxdoc/client.py` unchanged | — | `PYTHONPATH=python/src python -m unittest discover -s python/tests` → 9 tests OK |
+| 43 | TRIANGULATE | snapshot test run twice → identical bytes (sha256 `3002440a…aef4c6` both runs); formula-free `xlsx/basic` CLI run → `schema_version: 2`, 0 formula-bearing cells, key order `column_index, kind, raw, value, has_formula` (record differs from v1 only by the envelope, matching the S6 record-shape delta); `git status` on snapshots → only `cli_xlsx_rows_v2_jsonl.jsonl` added | — | Confirmed |
+| 44 | REFACTOR/Gate | full gate | — | See Verification |
+
+### Files changed
+
+- `crates/oxdoc-cli/src/main.rs` (+12/−1): `RowsJsonlCell.formula`/`formula_cached`
+  after `has_formula`; `TryFrom<&XlsxCell>` derives both from the single
+  `cell.formula` match; the single `extract_rows_command` site flips to
+  `schema_version: 2` (no `--schema-version` flag, no dual emission, catch-all
+  unchanged).
+- `crates/oxdoc-cli/tests/cli.rs` (+115/−1): sparse rows test version bump + TODAY()
+  formula assertions; new `extracts_formula_provenance_as_rows_jsonl_v2`; new
+  `extracts_xlsx_rows_as_v2_jsonl_snapshot`; corpus warning case in
+  `keeps_rows_jsonl_stdout_clean_when_warnings_are_emitted`.
+- `python/tests/test_oxdoc.py` (+18): `test_extract_rows_passes_v2_formula_fields_through`
+  pin (wrapper unchanged).
+- `tests/fixtures/snapshots/cli_xlsx_rows_v2_jsonl.jsonl` (new, 2 lines, generated once
+  from real CLI output; divergence would be stop-and-investigate, never regeneration).
+- openspec change artifacts (tasks.md marks, apply-progress.md) included in the commit.
+
+### Verification (Gate S7)
+
+- `cargo fmt --all -- --check` → clean
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean
+- `cargo test --workspace` → 8 suites ok, 0 failures (cli suite: 108 passed)
+- `PYTHONPATH=python/src python -m unittest discover -s python/tests` → 9 tests OK
+  (note: `pytest` is not installed in this environment; the repo's `make python-test`
+  recipe is the unittest discover runner and was invoked directly)
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95
+  --summary-only` → exit 0 (line coverage 96.52% ≥ 95)
+- `python scripts/check-compatibility-corpus.py` (`make compatibility-corpus-check`;
+  `make` unavailable in this shell) → "compatibility corpus validation passed (3 fixtures)"
+- `git status --porcelain tests/fixtures/snapshots tests/fixtures/files
+  tests/fixtures/compatibility-matrix.json schemas/v1 docs/schemas/v1` → only the new
+  snapshot file (frozen v1, manifests, digests, binaries, and every existing snapshot
+  untouched; stop-and-investigate guards hold)
+- Envelope honesty: the rows-jsonl payload is the only format at `schema_version: 2`;
+  text/tables/audit/slides payloads stay at `1`; no other snapshot changed.
+
+### Measured changed lines vs budget
+
+`git diff main --numstat` excluding `.gitignore` (pre-existing local edit) and
+openspec bookkeeping: 145 additions, 2 deletions across
+main.rs/cli.rs/test_oxdoc.py = **145 code lines**, plus the new 2-line snapshot file
+(149 total) — under the 400-line budget and below the ~210–290 realistic estimate for
+S7 (the stderr-warning extension was already landed in S5b, and the python wrapper
+needed no change).
+
+### Deviations from design
+
+- None. The task-37 stderr-warning case uses the `xlsx/shared-formulas` corpus as
+  specified; the corpus case in `keeps_rows_jsonl_stdout_clean_when_warnings_are_emitted`
+  passed on first run because S5b already established the exact wording and channel —
+  recorded honestly as a channel pin rather than a RED.
+
+### Remaining tasks
+
+- S8: tasks 45–50; cross-slice guards: tasks 51–55 (all unchecked)

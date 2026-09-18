@@ -496,7 +496,7 @@ Depends on S6. This is the **only** slice that moves the payload envelope to `2`
 
 ### RED
 
-- [ ] 37. Add failing CLI assertions in `crates/oxdoc-cli/tests/cli.rs`:
+- [x] 37. Add failing CLI assertions in `crates/oxdoc-cli/tests/cli.rs`:
   `extracts_sparse_typed_xlsx_rows_as_jsonl` (~line 616) moves its `schema_version`
   assertion to `2` and additionally asserts `formula`/`formula_cached` for its `TODAY()`
   cell; add `extracts_formula_provenance_as_rows_jsonl_v2` over
@@ -517,31 +517,31 @@ Depends on S6. This is the **only** slice that moves the payload envelope to `2`
 
 ### GREEN
 
-- [ ] 38. Add to `RowsJsonlCell` in `crates/oxdoc-cli/src/main.rs` (~line 1618), after
+- [x] 38. Add to `RowsJsonlCell` in `crates/oxdoc-cli/src/main.rs` (~line 1618), after
   `has_formula`: `#[serde(skip_serializing_if = "Option::is_none")] formula: Option<&'a str>`
   and `#[serde(skip_serializing_if = "Option::is_none")] formula_cached: Option<bool>`.
   Declaration order is the emitted byte order. Implements: `xlsx-formula-provenance` → CLI
   emission of formula fields → "Cached formula cell carries both fields".
-- [ ] 39. Update `TryFrom<&XlsxCell>` (~line 1638) to derive both fields from the single
+- [x] 39. Update `TryFrom<&XlsxCell>` (~line 1638) to derive both fields from the single
   nested value:
   `match &cell.formula { Some(formula) => (Some(formula.expression.as_str()), Some(formula.cached)), None => (None, None) }`
   so the two fields are structurally always-both-or-neither, and leave the `_ => Err(InvalidArgument)`
   catch-all for unknown `kind` values unchanged. Implements: `xlsx-formula-provenance` → CLI
   emission of formula fields → "Uncached formula cell carries expression without cache".
-- [ ] 40. Change the **single** `RowsJsonlRecord { schema_version: 1, … }` construction site
+- [x] 40. Change the **single** `RowsJsonlRecord { schema_version: 1, … }` construction site
   in `extract_rows_command` (`crates/oxdoc-cli/src/main.rs`, ~line 979) to
   `schema_version: 2`; leave the other `schema_version: 1` literals (text/tables/audit/
   slides payloads at ~lines 649/690/707/1762/1814/1829) untouched. No `--schema-version`
   flag and no dual emission. Implements: `xlsx-formula-provenance` → CLI emission of
   formula fields → "Cached formula cell carries both fields".
-- [ ] 41. Generate and freeze
+- [x] 41. Generate and freeze
   `tests/fixtures/snapshots/cli_xlsx_rows_v2_jsonl.jsonl` once from the implementation
   output over `tests/fixtures/corpus/xlsx/formulas/` with the fixed package name
   `formula-provenance.xlsx` (so the `file` key is deterministic); review the content
   against the design §5.1 table before commit, then run
   `cargo test -p oxdoc-cli --test cli` → GREEN. Implements: `xlsx-formula-provenance` →
   Rows-jsonl schema version 2 → "Snapshot byte-compare locks v2 output".
-- [ ] 42. Add the Python pass-through case body (no wrapper change in
+- [x] 42. Add the Python pass-through case body (no wrapper change in
   `python/src/oxdoc/client.py`), audit `python/tests/test_oxdoc.py` for hardcoded
   `schema_version: 1` rows payloads and move only those mirroring live CLI output to `2`,
   and run `python -m pytest python/tests` → GREEN. Implements: `xlsx-formula-provenance` →
@@ -549,7 +549,7 @@ Depends on S6. This is the **only** slice that moves the payload envelope to `2`
 
 ### TRIANGULATE
 
-- [ ] 43. Prove field order and determinism: the snapshot comparison locks
+- [x] 43. Prove field order and determinism: the snapshot comparison locks
   `column_index, kind, raw?, value?, formatted?, has_formula, formula?, formula_cached?`;
   run the snapshot test twice and confirm identical bytes; confirm a formula-free workbook
   record differs from v1 only by `schema_version`; and confirm no other snapshot changed.
@@ -558,7 +558,7 @@ Depends on S6. This is the **only** slice that moves the payload envelope to `2`
 
 ### REFACTOR / Gate S7
 
-- [ ] 44. Run `cargo fmt --all -- --check`,
+- [x] 44. Run `cargo fmt --all -- --check`,
   `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`,
   `python -m pytest python/tests`, the coverage gate, and
   `make compatibility-corpus-check`; compare `git diff --stat` against ~210–290 lines.

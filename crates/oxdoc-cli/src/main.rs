@@ -976,7 +976,7 @@ fn extract_rows_command(
     let extraction = input
         .visit_xlsx_rows(options, value_mode, |row| {
             let record = RowsJsonlRecord {
-                schema_version: 1,
+                schema_version: 2,
                 file: &file_name,
                 sheet_name: options.sheet_name,
                 sheet_index: options.sheet_index,
@@ -1625,6 +1625,10 @@ struct RowsJsonlCell<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     formatted: Option<&'a str>,
     has_formula: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    formula: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    formula_cached: Option<bool>,
 }
 
 impl<'a> TryFrom<&'a XlsxCell> for RowsJsonlCell<'a> {
@@ -1656,6 +1660,11 @@ impl<'a> TryFrom<&'a XlsxCell> for RowsJsonlCell<'a> {
             }
         };
 
+        let (formula, formula_cached) = match &cell.formula {
+            Some(formula) => (Some(formula.expression.as_str()), Some(formula.cached)),
+            None => (None, None),
+        };
+
         Ok(Self {
             column_index: cell.column_index,
             kind,
@@ -1663,6 +1672,8 @@ impl<'a> TryFrom<&'a XlsxCell> for RowsJsonlCell<'a> {
             value,
             formatted,
             has_formula: cell.has_formula,
+            formula,
+            formula_cached,
         })
     }
 }
