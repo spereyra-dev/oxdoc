@@ -254,3 +254,93 @@ when opening PRs.
 
 - Consumed native `gentle-ai.sdd-status` v2 before work: change `pptx-slide-scoped-json-jsonl`, `applyState: ready`, `nextRecommended: apply`, `taskProgress 26/60`, `blockedReasons: []`, `actionContext.mode: repo-local`, `allowedEditRoots: [repo root]`.
 - After WU2c: tasks 25-29 marked `[x]`; `taskProgress` moves to 31/60. Remaining: WU3 (32-40), WU4a (41-51), WU4b (52-57), final verification (58-60).
+
+---
+
+## WU3 — Versioned schema contract and snapshots (this session)
+
+- Store: openspec
+- Branch: `issue-180-pptx-slides-wu3` (PR position 5 of the stacked-to-main chain after the WU2 split)
+- Base at apply start: `8152760` (`main` after WU1 #217/#218, WU2 #219/#220, WU2c #221)
+- Scope: exactly tasks 32-40 (schema + mirror, oneOf-aware harness, snapshots, validation + negative tests). Strict TDD active.
+
+### Completed tasks (tasks.md updated to `[x]`)
+
+| Task | Result |
+| --- | --- |
+| 32 | RED (harness, R11): `"oxdoc-pptx-slides.schema.json"` added to `SCHEMA_VERSIONS` v1 list; `assert_schema_metadata` made oneOf-aware (for `$ref` branches it asserts `additionalProperties == false` on every resolved branch; schemas with inline oneOf discrimination branches — `oxdoc-audit-jsonl` — keep the top-level strictness assertion, discovered when the first cut broke that test). `cargo test -p oxdoc-core --test schema` → FAILED `schemas_have_stable_public_metadata` (schema file absent) while the other 11 tests passed: genuine RED. |
+| 33 | GREEN: `schemas/v1/oxdoc-pptx-slides.schema.json` created per design §3.1 — draft 2020-12, stable `$id`, top-level `type: object` + `oneOf` over `$defs.documentPayload`/`$defs.jsonlRecord`, shared `$defs.slide` with property-level `$ref`s (`#/$defs/slide/properties/…`) in the record branch, `additionalProperties: false` on both branches + `$defs.slide`, `schema_version` const 1, `document_type` const "pptx", `slide_id` integer, `slide_ordinal` integer minimum 1, `warning` def mirroring `oxdoc-docx-tables`'s, ordinal-gap rule in `description` fields. 15 metadata tests green (12 previous + registration). |
+| 34 | Mirror copied byte-identically to `docs/schemas/v1/oxdoc-pptx-slides.schema.json`; `diff -ru schemas/v1 docs/schemas/v1` and `diff -ru schemas/v2 docs/schemas/v2` both silent; `cargo test -p oxdoc-core --test schema` → 12 passed. |
+| 35 | Snapshots generated from WU2's real core output via a throwaway test `crates/oxdoc-core/tests/wu3-snapshot-generator.rs` (`cargo test -p oxdoc-core --test wu3-snapshot-generator` → 1 passed): built `corpus/pptx/text` as `slides-deck.pptx` with `fixtures::build_package`, called the real `extract_pptx_slides`, serialized (a) the pretty payload `{schema_version:1, file:"slides-deck.pptx", document_type:"pptx", slides, warnings:[]}` → `tests/fixtures/snapshots/cli_pptx_slides_json.json` (trailing newline) and (b) compact records `{schema_version:1, file:"slides-deck.pptx", ...slide}` via `#[serde(flatten)]` → `cli_pptx_slides_jsonl.jsonl`. Content verified against expectations: record 1 `slide_id 256`, ordinal 1, `ppt/slides/slide2.xml`, text `"First Slide\nAlpha\tBeta & Co\nGamma < Delta\n"`, notes `"Speaker note\n"`; record 2 `slide_id 257`, ordinal 2, `ppt/slides/slide1.xml`, text `"Second Slide\n"`, no `notes` key; `"warnings": []` present in the payload. Generator DELETED after generation (provenance: this apply-progress entry + the generation command in this table; no duplicate payload type left behind). |
+| 36 | RED (R11): tests `representative_pptx_slides_json_payload_matches_schema` + `representative_pptx_slides_jsonl_record_matches_schema_shape` (payload snapshot with local assertions `schema_version == 1`/`document_type == "pptx"`; JSONL first line; inline record with `slide_id` omitted to pin optionality). RED: compile error `E0425 cannot find function validate_slides_object`. |
+| 37 | GREEN: `validate_object` body extracted into `validate_against(definition, output, root)` (delegating wrapper unchanged in behavior; property-level local `#`-refs resolved against the schema root — the audit-jsonl schema's external same-dir `$ref` `"oxdoc-audit.schema.json"` is deliberately NOT resolved, preserving its old `type: object` check), plus `validate_slides_object` picking the branch whose `required` fields are all present. All 14 tests pass (nine pre-existing schema tests untouched and passing). Clippy `-D warnings` clean after fixing one `needless_borrow`. |
+| 38 | Negative test `slides_payload_fails_frozen_structured_text_validation`: `cli_pptx_slides_json.json` FAILS validation against `schemas/v2/oxdoc-structured-text.schema.json` AND `schemas/v1/oxdoc-structured-text.schema.json` using the `catch_unwind` pattern (undeclared `slides` field). `cargo test -p oxdoc-core --test schema` → 15 passed. |
+
+### Test commands run
+
+- `cargo test -p oxdoc-core --test schema` → RED (schema file missing), RED (`E0425 validate_slides_object`), then 12 → 14 → 15 passed
+- `cargo test -p oxdoc-core --test wu3-snapshot-generator` → 1 passed (throwaway, deleted)
+- `cargo test --workspace` → all 8 targets ok (cli bin 25, cli 99, core lib 112, api 99, schema 15, tabular 9 + 2 + 0); frozen snapshots untouched
+- `cargo fmt --all -- --check` → OK
+- `cargo clippy --workspace --all-targets -- -D warnings` → OK
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only` → **lines 96.37% TOTAL, exit 0**
+- `diff -ru schemas/v1 docs/schemas/v1` / `diff -ru schemas/v2 docs/schemas/v2` → silent (docs-schemas-check)
+- `python scripts/check-compatibility-corpus.py` → passed (3 fixtures); no change under `tests/fixtures/files/` or `tests/fixtures/compatibility-matrix.json`
+- `git status --porcelain schemas docs/schemas` → only the two new `oxdoc-pptx-slides.schema.json` files (frozen-schema guard respected)
+
+### TDD Cycle Evidence (strict TDD)
+
+| Cycle | RED | GREEN | Evidence |
+| --- | --- | --- | --- |
+| Harness registration + oneOf metadata (32-33) | `schemas_have_stable_public_metadata` fails (schema file missing) | schema created; first harness cut broke `oxdoc-audit-jsonl`'s inline-branch oneOf → corrected to `$ref`-branch resolution + top-level strictness for inline branches | 12 tests pass |
+| Snapshot validation (36-37) | `E0425 cannot find function validate_slides_object` (compile RED) | `validate_against`/`validate_object`/`validate_slides_object` refactor + branch picking | 14 tests pass, 9 pre-existing untouched |
+| Negative vs structured-text (38) | test written first (no RED achievable: it pins the frozen schemas' rejection, which already holds) | passes; asserts failure against BOTH v2 and v1 | 15 tests pass |
+
+### Files changed (vs `main`, staged but NOT committed — see STOP below)
+
+- `schemas/v1/oxdoc-pptx-slides.schema.json` (+129): new v1 contract.
+- `docs/schemas/v1/oxdoc-pptx-slides.schema.json` (+129): byte-identical mirror.
+- `crates/oxdoc-core/tests/schema.rs` (+157/−6): registration, oneOf-aware metadata, `validate_against`/`validate_slides_object`, 3 new tests.
+- `tests/fixtures/snapshots/cli_pptx_slides_json.json` (+21), `cli_pptx_slides_jsonl.jsonl` (+2): snapshots from real core output.
+- `openspec/.../tasks.md`, `apply-progress.md`: artifact updates.
+
+## ⚠ STOP — WU3 review budget exceeded (ask-on-risk)
+
+Measured at WU3 exit (task 40 measurement, changes staged):
+
+```
+git diff main --shortstat -- . ':(exclude).gitignore'
+6 files changed, 440 insertions(+), 14 deletions(-)          (incl. openspec artifacts)
+git diff main --shortstat -- . ':(exclude).gitignore' ':(exclude)openspec'
+5 files changed, 432 insertions(+), 6 deletions(-)           = 438 changed lines
+```
+
+438 > 400 review-budget lines (WU3 estimate was ~330–380). Breakdown: schema 129 + byte-identical
+mirror 129 (spec-mandated `docs-schemas-check` lockstep, review-trivial copy) + harness/tests 163 net
++ snapshots 23. The pre-agreed fallback ("move the two snapshot files into WU4a") is NOT viable as
+written: it only removes ~23 lines (→ ~415, still over) and tasks 36-38 read those snapshot files
+(`read_snapshot` panics), so the snapshot files cannot leave WU3 while its validation tests stay.
+Per `ask-on-risk`, apply is PAUSED before committing; the WU3 changes are staged (not committed),
+nothing pushed, no PRs.
+
+Decision needed from the maintainer (any one):
+
+1. `size:exception` — accept the 438-line PR (the byte-identical schema mirror is 129 of the lines
+1. `size:exception` — accept the 438-line PR (the byte-identical schema mirror is 129 of the lines
+   and cannot be split from the schema; schema + tests + snapshots are one cohesive contract unit).
+2. Re-slice WU3 into two stacked PRs (chain grows to 8 PRs): PR 5a = schema + mirror + registration/
+   metadata harness (~300 lines); PR 5b = validation tests + snapshots + negative tests (~140 lines).
+   Both are individually green (`cargo test` passes at each point).
+3. No other honest cut exists: the schema files, mirror, harness, and snapshots are spec-mandated
+   deliverables of R11; no comments/docs/tests were compressed to approach the number.
+
+### Remaining tasks (unchecked after WU3 pause)
+
+- [ ] 40. WU3 exit — measurement DONE (438 > 400 → paused); commit/PR awaits the budget decision above.
+- WU4a tasks 41-51, WU4b tasks 52-57, final verification tasks 58-60 (all unchecked, later units).
+
+### Structured status (WU3)
+
+- Consumed native `gentle-ai.sdd-status` v2 before work: change `pptx-slide-scoped-json-jsonl`, `applyState: ready`, `nextRecommended: apply`, `taskProgress 31/60`, `blockedReasons: []`, `actionContext.mode: repo-local`, `allowedEditRoots: [repo root]` — no blockers, no warnings.
+- After WU3: tasks 32-39 marked `[x]`; `taskProgress` moves to 39/60; apply remains in progress with the budget decision pending.
+- Verification-gate extras run this session (parent-prompt gate): `cargo llvm-cov` line coverage 96.37% (>= 95 gate, exit 0); compatibility-corpus script passed; `git diff main` measured and reported above.

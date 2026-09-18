@@ -258,14 +258,14 @@ structured-text schemas.
 
 ### RED/GREEN — registration and oneOf-aware harness
 
-- [ ] 32. RED (harness, R11): in `crates/oxdoc-core/tests/schema.rs` add
+- [x] 32. RED (harness, R11): in `crates/oxdoc-core/tests/schema.rs` add
   `"oxdoc-pptx-slides.schema.json"` to `SCHEMA_VERSIONS`'s `v1` list and make
   `assert_schema_metadata` oneOf-aware (when the schema declares a top-level
   `oneOf`, assert top-level `"type": "object"` and assert
   `additionalProperties == false` on **every** branch; keep the `$schema`/`$id`
   checks unchanged). `cargo test -p oxdoc-core --test schema` fails because the
   schema file does not exist yet.
-- [ ] 33. GREEN: create `schemas/v1/oxdoc-pptx-slides.schema.json` with the exact
+- [x] 33. GREEN: create `schemas/v1/oxdoc-pptx-slides.schema.json` with the exact
   structure in `design.md` §3.1 — draft 2020-12, `$id`
   `https://github.com/spereyra-dev/oxdoc/schemas/v1/oxdoc-pptx-slides.schema.json`,
   top-level `type: object` + `oneOf` over `$defs.documentPayload` and
@@ -276,14 +276,14 @@ structured-text schemas.
   `minimum: 1`, `warning` object mirroring
   `schemas/v1/oxdoc-docx-tables.schema.json`'s `$defs.warning`, and the
   ordinal-gap rule in `description`.
-- [ ] 34. GREEN: copy the schema byte-identically to
+- [x] 34. GREEN: copy the schema byte-identically to
   `docs/schemas/v1/oxdoc-pptx-slides.schema.json`, then run
   `make docs-schemas-check` (`diff -ru schemas/v1 docs/schemas/v1` must be
   silent) and `cargo test -p oxdoc-core --test schema` → green for metadata.
 
 ### Snapshots with documented provenance
 
-- [ ] 35. Generate the two snapshots from WU2's real core output and commit them:
+- [x] 35. Generate the two snapshots from WU2's real core output and commit them:
   add a throwaway generator test in `crates/oxdoc-core/tests/` that builds
   `corpus/pptx/text` with `fixtures::build_package("pptx/text", "slides-deck.pptx")`,
   calls `extract_pptx_slides`, and serializes (a) the pretty payload
@@ -298,7 +298,7 @@ structured-text schemas.
   `ppt/slides/slide1.xml`, text `"Second Slide\n"`, no `notes` key. Record the
   generation command in the PR description (the snapshot's provenance), then
   delete the throwaway generator so no duplicate payload type is left behind.
-- [ ] 36. RED (R11 → Snapshots validate against the new schema): add
+- [x] 36. RED (R11 → Snapshots validate against the new schema): add
   `validate_against(schema_branch, object)` extracted from `validate_object`, a
   delegating `validate_object`, and `validate_slides_object(schema, output)` that
   picks the branch whose `required` fields are all present (`design.md` §3.2);
@@ -306,9 +306,9 @@ structured-text schemas.
   `schema_version == 1` and `document_type == "pptx"`, and validate the first
   line of `cli_pptx_slides_jsonl.jsonl` plus an inline record with `slide_id`
   omitted (optionality pinned).
-- [ ] 37. GREEN: make 36 pass; all nine pre-existing schema tests must still pass
+- [x] 37. GREEN: make 36 pass; all nine pre-existing schema tests must still pass
   with the oneOf-aware harness (no existing assertion weakened).
-- [ ] 38. RED/GREEN negative test (R11 → Slides payload is not a structured-text
+- [x] 38. RED/GREEN negative test (R11 → Slides payload is not a structured-text
   payload): assert `cli_pptx_slides_json.json` FAILS validation against
   `schemas/v2/oxdoc-structured-text.schema.json` and
   `schemas/v1/oxdoc-structured-text.schema.json` using the existing
@@ -316,7 +316,7 @@ structured-text schemas.
 
 ### WU3 gate
 
-- [ ] 39. WU3 gate — run and record: `cargo test -p oxdoc-core --test schema`,
+- [x] 39. WU3 gate — run and record: `cargo test -p oxdoc-core --test schema`,
   `cargo test --workspace`, `make docs-schemas-check`,
   `cargo fmt --all -- --check`,
   `cargo clippy --workspace --all-targets -- -D warnings`, and
