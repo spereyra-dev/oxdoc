@@ -191,7 +191,7 @@ capture, no warnings emitted yet, `schema_version` stays `1`.
 
 ### RED
 
-- [ ] 9. Add failing unit tests in the `#[cfg(test)]` module of
+- [x] 9. Add failing unit tests in the `#[cfg(test)]` module of
   `crates/oxdoc-core/src/models.rs`: `xlsx_formula_model_preserves_the_has_formula_invariant`
   (`has_formula == false` implies `formula == None`; an unresolved slave case keeps
   `has_formula: true` with `formula: None`; an uncached formula keeps `XlsxCellValue::Blank`)
@@ -206,7 +206,7 @@ capture, no warnings emitted yet, `schema_version` stays `1`.
 
 ### GREEN
 
-- [ ] 10. In `crates/oxdoc-core/src/models.rs`, add
+- [x] 10. In `crates/oxdoc-core/src/models.rs`, add
   `#[derive(Debug, Clone, PartialEq, Eq)] #[non_exhaustive] pub struct XlsxFormula { pub expression: String, pub cached: bool }`
   with doc comments stating that `expression` is the stored `<f>` text (never recalculated,
   never rewritten, shared slaves carry the master text verbatim), and add
@@ -215,7 +215,7 @@ capture, no warnings emitted yet, `schema_version` stays `1`.
   `has_formula` or any `XlsxCellValue` variant. Implements: `xlsx-formula-provenance` →
   Core API → "Migration is mechanical for struct literals", "Invariant holds in both
   directions where guaranteed".
-- [ ] 11. Add the two warning constructors beside the existing family in
+- [x] 11. Add the two warning constructors beside the existing family in
   `crates/oxdoc-core/src/models.rs`, with byte-exact messages:
   `unresolved_shared_formula_index(path, si)` →
   `unresolved shared formula index '{si}': formula expression omitted`, and
@@ -223,7 +223,7 @@ capture, no warnings emitted yet, `schema_version` stays `1`.
   `shared formula table limit reached: expressions beyond it are omitted`. Add no
   `WarningCode` variant. Implements: `xlsx-formula-provenance` → Warning classification →
   "Formulas are never recalculated" (classification half).
-- [ ] 12. Migrate every in-tree `XlsxCell` struct literal in this same commit so the
+- [x] 12. Migrate every in-tree `XlsxCell` struct literal in this same commit so the
   workspace compiles and behavior is unchanged: `crates/oxdoc-core/src/parsers/xlsx.rs`
   `push_typed_cell` (~line 863) uses `formula: None` for now;
   `crates/oxdoc-tabular/src/xlsx_schema.rs` line ~557 and the `blank`/`string`/`boolean`/
@@ -234,7 +234,7 @@ capture, no warnings emitted yet, `schema_version` stays `1`.
 
 ### TRIANGULATE
 
-- [ ] 13. Assert the invariant over real parser output for both corpus trees
+- [x] 13. Assert the invariant over real parser output for both corpus trees
   (`crates/oxdoc-core/tests/api.rs`): every cell with `has_formula: false` has
   `formula == None`, and no value/`kind` changed for any previously asserted cell.
   Confirm the `oxdoc-tabular` behavior tests pass unmodified. Implements:
@@ -243,7 +243,7 @@ capture, no warnings emitted yet, `schema_version` stays `1`.
 
 ### REFACTOR / Gate S3
 
-- [ ] 14. Keep exactly one construction path for `XlsxFormula` (parser mapping, S4); run
+- [x] 14. Keep exactly one construction path for `XlsxFormula` (parser mapping, S4); run
   `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`, and the coverage gate; compare `git diff --stat` against
   ~230–300 lines and confirm no payload or snapshot changed.

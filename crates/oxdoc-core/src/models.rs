@@ -104,6 +104,23 @@ impl OutputWarning {
         )
     }
 
+    pub fn shared_formula_table_limit_reached(path: impl Into<String>) -> Self {
+        Self::new(
+            path,
+            "shared formula table limit reached: expressions beyond it are omitted",
+        )
+    }
+
+    pub fn unresolved_shared_formula_index(path: impl Into<String>, si: impl Into<String>) -> Self {
+        Self::new(
+            path,
+            format!(
+                "unresolved shared formula index '{}': formula expression omitted",
+                si.into()
+            ),
+        )
+    }
+
     pub fn category(&self) -> WarningCategory {
         match self.code() {
             WarningCode::MalformedXml => WarningCategory::Parser,
@@ -412,16 +429,34 @@ pub struct XlsxRow {
     pub cells: Vec<XlsxCell>,
 }
 
+/// A formula occurrence captured from a worksheet cell.
+///
+/// `expression` is the stored `<f>` text exactly as written in the workbook:
+/// it is never recalculated, never rewritten, and never evaluated. Shared
+/// formula slave cells carry the master's expression text verbatim.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct XlsxFormula {
+    /// The stored `<f>` expression text.
+    pub expression: String,
+    /// Whether the cell carried a cached `<v>` value alongside the formula.
+    pub cached: bool,
+}
+
 /// A typed XLSX worksheet cell.
 ///
 /// `column_index` is zero-based. `has_formula` reports the presence of a
 /// formula element; `value` is the cached cell value stored in the workbook,
-/// not a recalculation of the formula.
+/// not a recalculation of the formula. `formula` carries the captured
+/// expression and cache presence: it is `None` whenever `has_formula` is
+/// `false`, but a cell with `has_formula: true` MAY have `formula: None`
+/// when its shared expression is unresolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XlsxCell {
     pub column_index: usize,
     pub value: XlsxCellValue,
     pub has_formula: bool,
+    pub formula: Option<XlsxFormula>,
 }
 
 /// The cached value stored for an XLSX cell.
@@ -570,8 +605,8 @@ impl AuditSignal {
 #[cfg(test)]
 mod tests {
     use super::{
-        Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCsvOptions, XlsxReadOptions,
-        XlsxSheetOptions,
+        Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCell, XlsxCellValue,
+        XlsxCsvOptions, XlsxFormula, XlsxReadOptions, XlsxSheetOptions,
     };
 
     #[test]
@@ -693,6 +728,77 @@ mod tests {
             }
             assert!(!with_notes_value[key].is_null());
         }
+    }
+
+    #[test]
+    fn xlsx_formula_model_preserves_the_has_formula_invariant() {
+        // A non-formula cell never carries formula state: has_formula == false
+        // implies formula == None.
+        let plain = XlsxCell {
+            column_index: 0,
+            value: XlsxCellValue::Blank,
+            has_formula: false,
+            formula: None,
+        };
+        assert!(!plain.has_formula);
+        assert_eq!(plain.formula, None);
+
+        // The converse does not hold: an unresolved shared slave keeps
+        // has_formula: true with formula: None.
+        let unresolved = XlsxCell {
+            column_index: 1,
+            value: XlsxCellValue::Number {
+                raw: "4".to_owned(),
+                formatted: None,
+            },
+            has_formula: true,
+            formula: None,
+        };
+        assert!(unresolved.has_formula);
+        assert_eq!(unresolved.formula, None);
+
+        // An uncached formula reports the stored expression while the value
+        // stays Blank: the formula never influences the value.
+        let uncached = XlsxCell {
+            column_index: 2,
+            value: XlsxCellValue::Blank,
+            has_formula: true,
+            formula: Some(XlsxFormula {
+                expression: "SUM(C1:C1)".to_owned(),
+                cached: false,
+            }),
+        };
+        assert!(uncached.has_formula);
+        assert_eq!(uncached.value, XlsxCellValue::Blank);
+        assert_eq!(
+            uncached.formula,
+            Some(XlsxFormula {
+                expression: "SUM(C1:C1)".to_owned(),
+                cached: false,
+            })
+        );
+    }
+
+    #[test]
+    fn new_formula_warnings_classify_as_custom_w999() {
+        let unresolved =
+            OutputWarning::unresolved_shared_formula_index("xl/worksheets/sheet1.xml", "9");
+        assert_eq!(
+            unresolved.message,
+            "unresolved shared formula index '9': formula expression omitted"
+        );
+        assert_eq!(unresolved.code(), WarningCode::Custom);
+        assert_eq!(unresolved.code().as_str(), "W999");
+        assert_eq!(unresolved.category(), WarningCategory::Custom);
+
+        let limit = OutputWarning::shared_formula_table_limit_reached("xl/worksheets/sheet1.xml");
+        assert_eq!(
+            limit.message,
+            "shared formula table limit reached: expressions beyond it are omitted"
+        );
+        assert_eq!(limit.code(), WarningCode::Custom);
+        assert_eq!(limit.code().as_str(), "W999");
+        assert_eq!(limit.category(), WarningCategory::Custom);
     }
 
     #[test]

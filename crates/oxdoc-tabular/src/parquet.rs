@@ -1542,6 +1542,7 @@ mod tests {
                         formatted: None,
                     },
                     has_formula: true,
+                    formula: None,
                 }],
             })
             .unwrap()
@@ -1659,6 +1660,7 @@ mod tests {
             column_index,
             value,
             has_formula: false,
+            formula: None,
         }
     }
 
