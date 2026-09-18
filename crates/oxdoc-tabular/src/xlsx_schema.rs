@@ -561,6 +561,7 @@ mod tests {
                     value: None,
                 },
                 has_formula: false,
+                formula: None,
             },
         ]));
         inferrer.observe_row(&row_with_index(1, vec![number(0, "Infinity", None)]));
@@ -692,6 +693,7 @@ mod tests {
             column_index,
             value: XlsxCellValue::Blank,
             has_formula: false,
+            formula: None,
         }
     }
 
@@ -703,6 +705,7 @@ mod tests {
                 value: value.to_owned(),
             },
             has_formula: false,
+            formula: None,
         }
     }
 
@@ -715,6 +718,7 @@ mod tests {
                 value,
             },
             has_formula: false,
+            formula: None,
         }
     }
 
@@ -726,6 +730,7 @@ mod tests {
                 formatted: formatted.map(str::to_owned),
             },
             has_formula: false,
+            formula: None,
         }
     }
 }

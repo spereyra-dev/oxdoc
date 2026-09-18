@@ -1688,8 +1688,11 @@ fn xlsx_formulas_corpus_loads_and_carries_the_documented_cells() {
     );
     let cells = &rows[1].cells;
 
-    // B2: cached numeric formula.
+    // B2: cached numeric formula. S3 baseline: the parser emits no formula
+    // state yet (behavior-neutral slice); S4 fills own-text capture and
+    // asserts `formula.expression == "SUM(B1:B1)"` with `cached: true` here.
     assert!(cells[0].has_formula);
+    assert!(cells[0].formula.is_none());
     assert!(matches!(
         &cells[0].value,
         XlsxCellValue::Number { raw, .. } if raw == "2"
@@ -1754,6 +1757,20 @@ fn xlsx_formulas_corpus_loads_and_carries_the_documented_cells() {
             raw: "#N/A".to_owned(),
         }
     );
+
+    // Documented invariant over real parser output: `has_formula == false`
+    // implies `formula == None`, in both directions it is guaranteed. The
+    // converse does not hold in general (unresolved shared slaves in S5).
+    for row in &rows {
+        for cell in &row.cells {
+            assert!(
+                cell.has_formula || cell.formula.is_none(),
+                "cell in column {} of row {} violates the formula invariant",
+                cell.column_index,
+                row.row_index
+            );
+        }
+    }
 }
 
 #[test]
@@ -1902,6 +1919,19 @@ fn shared_formulas_corpus_loads_and_carries_the_documented_cells() {
     ));
     assert_eq!(prefixed_rows[0].cells[0].value, XlsxCellValue::Blank);
     assert_eq!(prefixed_rows[2].cells[0].value, XlsxCellValue::Blank);
+
+    // Documented invariant over real parser output on both sheets:
+    // `has_formula == false` implies `formula == None`.
+    for row in shared_rows.iter().chain(prefixed_rows.iter()) {
+        for cell in &row.cells {
+            assert!(
+                cell.has_formula || cell.formula.is_none(),
+                "cell in column {} of row {} violates the formula invariant",
+                cell.column_index,
+                row.row_index
+            );
+        }
+    }
 }
 
 #[test]

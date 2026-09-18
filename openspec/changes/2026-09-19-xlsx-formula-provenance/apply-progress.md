@@ -145,3 +145,74 @@ individually. No production code changed (S2 has none, by design).
 
 - S3: tasks 9–14; S4: tasks 15–21; S5: tasks 22–30; S6: tasks 31–36; S7: tasks 37–44;
   S8: tasks 45–50; cross-slice guards: tasks 51–55 (all unchecked)
+
+---
+
+## S3 — Core model: `XlsxFormula` + `XlsxCell.formula` + call-site migration (tasks 9–14) — COMPLETE
+
+### TDD Cycle Evidence
+
+| Task | Cycle | Test | RED evidence | GREEN evidence |
+| --- | --- | --- | --- | --- |
+| 9 | RED | `xlsx_formula_model_preserves_the_has_formula_invariant` + `new_formula_warnings_classify_as_custom_w999` (models unit) + corpus B2 api assertion | `cargo test -p oxdoc-core` compile failure as specified: `error[E0432]: unresolved import super::XlsxFormula` (no `XlsxFormula` in `models`), `error[E0560]: struct XlsxCell has no field named formula` (×3), `error[E0599]: no function ... unresolved_shared_formula_index / shared_formula_table_limit_reached`, `error[E0609]: no field formula on type XlsxCell` (×4) — lib test + `api` both failed to compile | See cycle note below |
+| 10–12 | GREEN | same tests | — | Unit: 10 passed (2 new); `cargo test --workspace`: all 8 suites ok, 0 failures |
+| 13 | TRIANGULATE | invariant loops added to both corpus tests (`has_formula == false` ⟹ `formula == None`) | — | Pass over real parser output for `xlsx/formulas` and `xlsx/shared-formulas` (both sheets incl. `Prefixed`) |
+| 14 | REFACTOR/Gate | fmt, clippy, workspace, coverage | — | All clean (see Verification) |
+
+Cycle note (task 9 api assertion — S4 boundary): the RED api assertion asserted
+`cells[0].formula.expression == "SUM(B1:B1)"`, which cannot pass inside S3 by design —
+S3 is the behavior-neutral slice (`push_typed_cell` uses `formula: None`; capture lands in
+S4 tasks 17–19, and S4 task 16 re-adds the per-cell `formula.expression`/`formula.cached`
+assertions as its own RED). Within S3 the assertion was re-scoped to the truthful baseline
+`cells[0].formula.is_none()` with a comment pointing at S4 task 16. No S4 behavior was
+implemented early; the corpus B2 expression assertion is unchanged work for S4.
+
+### Files changed
+
+- `crates/oxdoc-core/src/models.rs` (+109/−3): `#[non_exhaustive] XlsxFormula { expression, cached }`
+  with doc comments (stored `<f>` text, never recalculated/rewritten, master text verbatim on
+  slaves); `XlsxCell.formula: Option<XlsxFormula>` as the last field (`XlsxCell` stays
+  exhaustive; `has_formula`/`XlsxCellValue` untouched); two warning constructors
+  `unresolved_shared_formula_index` and `shared_formula_table_limit_reached` with byte-exact
+  spec wordings (no new `WarningCode` variant); two unit tests.
+- `crates/oxdoc-core/src/parsers/xlsx.rs` (+2): `push_typed_cell` maps `formula: None` (single
+  construction path preserved for S4).
+- `crates/oxdoc-core/tests/api.rs` (+31/−1): B2 baseline re-scoped + invariant loops over both
+  corpus trees (formulas rows incl. headers; shared-formulas both sheets).
+- `crates/oxdoc-tabular/src/parquet.rs` (+2): test literal + `cell` helper gain `formula: None`
+  (`number_cell` delegates to `cell`).
+- `crates/oxdoc-tabular/src/xlsx_schema.rs` (+5): inline literal + `blank`/`string`/`boolean`/
+  `number` helpers gain `formula: None`.
+- `classify_cell`, Parquet conversion, and schema inference were not changed (never read
+  `formula`).
+
+### Verification (Gate S3)
+
+- `cargo fmt --all -- --check` → clean (one fmt normalization pass applied first)
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean
+- `cargo test --workspace` → all 8 suites ok, 0 failures (372 tests incl. 2 new unit tests)
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only`
+  → exit 0 (gate passes)
+- `git status --porcelain schemas/v1 docs/schemas/v1 tests/fixtures/files
+  tests/fixtures/compatibility-matrix.json tests/fixtures/snapshots` → empty (frozen guards
+  hold; no snapshot, manifest, digest, or binary churn)
+- Envelope honesty: every payload stays at `schema_version: 1`; no JSON formula field is
+  emitted before S7 (CLI emission untouched in this slice).
+
+### Measured changed lines vs budget
+
+`git diff main --numstat` excluding `.gitignore` (pre-existing local edit, not committed):
+149 additions, 4 deletions, **153 total** — under the 400-line budget and below the
+~230–300 realistic estimate for S3 (the migration is genuinely mechanical: one line per
+struct literal).
+
+### Deviations from design
+
+- Task 9's api B2 assertion re-scoped to the S3-guaranteed invariant (`formula.is_none()`)
+  as documented in the cycle note above; the expression-level assertion is S4 task 16's RED.
+  No other deviation.
+
+### Remaining tasks
+
+- S4: tasks 15–21; S5: tasks 22–30; S6: tasks 31–36; S7: tasks 37–44; S8: tasks 45–50;
+  cross-slice guards: tasks 51–55 (all unchecked)

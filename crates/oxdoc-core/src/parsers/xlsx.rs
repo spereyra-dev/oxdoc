@@ -864,6 +864,8 @@ fn push_typed_cell(
         column_index: target_column,
         value,
         has_formula: cell.has_formula,
+        // S3 keeps every emitted cell formula-free; S4 fills own-text capture.
+        formula: None,
     });
 
     Ok(())
