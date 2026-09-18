@@ -637,6 +637,186 @@ fn extracts_pptx_slides_from_reader_and_reader_with_limits() {
 }
 
 #[test]
+fn skips_pptx_slides_with_locked_warnings_on_missing_target_fixture() {
+    let file = fixtures::build_package("pptx/missing-target", "missing-target.pptx");
+
+    let extraction = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert_eq!(extraction.value.len(), 2);
+    assert_eq!(extraction.value[0].slide_id, Some(256));
+    assert_eq!(extraction.value[0].slide_ordinal, 1);
+    assert_eq!(extraction.value[0].slide_path, "ppt/slides/slide1.xml");
+    assert_eq!(extraction.value[0].text, "Intact Slide\n");
+    assert_eq!(extraction.value[0].notes, None);
+    assert_eq!(extraction.value[1].slide_id, Some(259));
+    assert_eq!(extraction.value[1].slide_ordinal, 4);
+    assert_eq!(extraction.value[1].slide_path, "ppt/slides/slide3.xml");
+    assert_eq!(extraction.value[1].text, "Notes Slide\n");
+    assert_eq!(extraction.value[1].notes, None);
+
+    let warnings: Vec<(String, String)> = extraction
+        .warnings
+        .iter()
+        .map(|warning| (warning.path.clone(), warning.message.clone()))
+        .collect();
+    assert_eq!(
+        warnings,
+        vec![
+            (
+                "ppt/presentation.xml".to_owned(),
+                "skipped PPTX slide rId999: unknown relationship id".to_owned(),
+            ),
+            (
+                "ppt/slides/absent.xml".to_owned(),
+                "skipped related PPTX slide part ppt/slides/absent.xml: missing part".to_owned(),
+            ),
+            (
+                "ppt/notesSlides/notesSlide3.xml".to_owned(),
+                "skipped related PPTX notes part ppt/notesSlides/notesSlide3.xml: missing part"
+                    .to_owned(),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn treats_missing_presentation_rels_as_empty_relationship_map_without_warning() {
+    let file = create_ooxml(
+        "missing-presentation-rels.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/><p:sldId id="257" r:id="rId2"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"<p:sld><a:p><a:r><a:t>Alpha Slide</a:t></a:r></a:p></p:sld>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert_eq!(extraction.value.len(), 0);
+    let warnings: Vec<(String, String)> = extraction
+        .warnings
+        .iter()
+        .map(|warning| (warning.path.clone(), warning.message.clone()))
+        .collect();
+    assert_eq!(
+        warnings,
+        vec![
+            (
+                "ppt/presentation.xml".to_owned(),
+                "skipped PPTX slide rId1: unknown relationship id".to_owned(),
+            ),
+            (
+                "ppt/presentation.xml".to_owned(),
+                "skipped PPTX slide rId2: unknown relationship id".to_owned(),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn extracts_pptx_slides_empty_record_set_with_warnings_when_all_slides_skipped() {
+    let file = create_ooxml(
+        "all-skipped.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId404"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" Target="slides/slide1.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"<p:sld><a:p><a:r><a:t>Unreachable Slide</a:t></a:r></a:p></p:sld>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert_eq!(extraction.value.len(), 0);
+    assert_eq!(extraction.warnings.len(), 1);
+    assert_eq!(
+        extraction.warnings[0].message,
+        "skipped PPTX slide rId404: unknown relationship id"
+    );
+}
+
+#[test]
+fn keeps_partial_pptx_slide_text_and_warns_on_malformed_xml_fixture() {
+    let file = fixtures::build_package("pptx/malformed-xml", "malformed-xml.pptx");
+
+    let extraction = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert_eq!(extraction.value.len(), 2);
+    assert_eq!(extraction.value[0].slide_id, Some(256));
+    assert_eq!(extraction.value[0].slide_ordinal, 1);
+    assert_eq!(extraction.value[0].slide_path, "ppt/slides/slide1.xml");
+    assert_eq!(extraction.value[0].text, "Before Truncation\n");
+    assert_eq!(extraction.value[0].notes, None);
+    assert_eq!(extraction.value[1].slide_id, Some(257));
+    assert_eq!(extraction.value[1].slide_ordinal, 2);
+    assert_eq!(extraction.value[1].slide_path, "ppt/slides/slide2.xml");
+    assert_eq!(extraction.value[1].text, "Partial Text\n");
+    assert_eq!(extraction.value[1].notes, None);
+    assert_eq!(extraction.warnings.len(), 1);
+    assert_eq!(extraction.warnings[0].path, "ppt/slides/slide2.xml");
+    assert_eq!(extraction.warnings[0].code().as_str(), "W001");
+    assert!(
+        extraction.warnings[0]
+            .message
+            .starts_with("stopped after malformed XML: ")
+    );
+}
+
+#[test]
+fn emits_textless_pptx_slide_record_with_empty_text() {
+    let file = create_ooxml(
+        "textless-slide.pptx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                r#"<p:presentation xmlns:r="r"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="slide" Target="slides/slide1.xml"/></Relationships>"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"<p:sld xmlns:p="p" xmlns:a="a"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t></a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>"#,
+            ),
+        ],
+    );
+
+    let extraction = oxdoc_core::extract_pptx_slides(&file).unwrap();
+
+    assert_eq!(extraction.value.len(), 1);
+    assert_eq!(extraction.value[0].slide_ordinal, 1);
+    assert_eq!(extraction.value[0].slide_path, "ppt/slides/slide1.xml");
+    assert_eq!(extraction.value[0].text, "");
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
 fn keeps_partial_docx_text_and_warns_on_malformed_document_xml() {
     let file = create_ooxml(
         "malformed-document.docx",

@@ -97,3 +97,99 @@ Decision needed from the maintainer (any one):
 
 - Consumed native `gentle-ai.sdd-status` v2 before work: change `pptx-slide-scoped-json-jsonl`, `applyState: ready`, `nextRecommended: apply`, `actionContext.mode: repo-local`, `allowedEditRoots: [repo root]` — no blockers, no warnings.
 - After WU1: `taskProgress` moves from 0/60 to 13/60; apply remains in progress; budget decision pending (native status must be re-read before further apply work).
+
+
+---
+
+## WU2 — Core per-slide API (this session)
+
+- Store: openspec
+- Branch: `issue-180-pptx-slides-wu2` (PR 3 of the 6-PR stacked-to-main chain)
+- Base at apply start: `b1b9fb8` (`main` after WU1 merged as #217 + #218)
+- WU1 resolution recorded: the maintainer resolved WU1's 434-line budget stop by
+  splitting it into two stacked PRs (option 2), merged as #217 (fixtures,
+  `2be69d1`) and #218 (output-neutral `@id` parse, `b1b9fb8`). Task 14 marked
+  `[x]` accordingly.
+
+### Completed tasks (tasks.md updated to `[x]`)
+
+| Task | Result |
+| --- | --- |
+| 15 | RED (model serde): `models.rs` test asserting `serde_json::to_value(&PptxSlideText { slide_id: None, .. })` omits `slide_id`, `notes: None` omits `notes`, `notes: Some("")` serializes `"notes": ""`, `text: String::new()` serializes `"text": ""`, and no key is ever `null`. `cargo test -p oxdoc-core --lib models` compiled RED with `E0432 unresolved import crate::models::PptxSlideText`. |
+| 16 | GREEN: `pub struct PptxSlideText` with `#[derive(Debug, Clone, PartialEq, Eq, Serialize)]` and `skip_serializing_if = "Option::is_none"` on `slide_id: Option<u32>` and `notes: Option<String>` (design §1.1); re-exported in `lib.rs`'s `pub use models::{...}` list. `cargo test -p oxdoc-core --lib models` -> 8 passed. |
+| 17 | RED (api): 4 happy-path tests — text corpus order/ids/paths (`256`/`ppt/slides/slide2.xml` first, notes `Some("Speaker note\n")` on record 1 only, `slide_path` == structured `part_path`), basic corpus record with no `notes` key and integer `slide_id` (no nulls), reader + reader-with-limits variants byte-equal to the path variant. `cargo test -p oxdoc-core --test api extracts_pptx_slides` -> compile RED `E0425 cannot find function extract_pptx_slides`. One test-assertion correction during GREEN: `corpus/pptx/basic`'s single slide is textless (`<p:spTree/>`), so the record asserts a string `text` field and `slide_id: 256` rather than non-empty text (task 17's wording: "no notes key and no slide-id/notes nulls"). |
+| 18 | GREEN: `pptx::extract_slides` loop (main part via `find_office_document_path` first, presentation rels, per-reference loop pushing `PptxSlideText` always), `read_notes_text_for_slides` (rels missing -> `None`, no notesSlide rel -> `None`, readable -> `Some(joined)` via `append_part_text`, rel-id sort kept), and the three lib entry points delegating exactly like the PPTX text family. Initial GREEN deliberately used old-path semantics (hard errors) so cycle 3's skip tests are genuine RED; `has_notes_relationships.then_some(text)` (not text emptiness) is the `Some("")` discriminator. api `extracts_pptx_slides` -> 4 passed. |
+| 19 | RED: missing-target fixture test asserting the three exact spec strings, warning paths (`ppt/presentation.xml` / `ppt/slides/absent.xml` / `ppt/notesSlides/notesSlide3.xml`), `Ok`, intact slides present, ordinals `1,4` (gap `2,3` not renumbered). RED: `Err(MissingPart("rId999"))` panic. |
+| 20 | RED: inline package without `ppt/_rels/presentation.xml.rels` -> per-`r:id` unknown-relationship-id warnings only, no missing-rels warning, `Ok`, empty record set (RED: `Err(MissingPart("ppt/_rels/presentation.xml.rels"))`); inline all-skipped deck -> `Ok`, empty records, 1 warning (RED: `Err(MissingPart("rId404"))`; also fixed an `rId401`->`rId404` test typo). |
+| 21 | GREEN: skip branches implemented at the single emission site in `extract_slides` with inline `format!` warnings (design §2 step 3): unknown rel id -> warn + `continue`; `read_text_part` `MissingPart` -> warn + `continue`; `read_notes_text_for_slides` `Err(MissingPart(path))` -> warn with the notes path + record with `notes: None`; presentation rels `MissingPart` -> empty map, no warning. Suspicious-target and other errors propagate. `cargo test -p oxdoc-core --test api` -> 88 passed. |
+| 22 | RED (R6): malformed-xml fixture test asserting record 1 intact, record 2 emitted with recovered partial text + exactly one `W001`/`malformed_xml` warning at `ppt/slides/slide2.xml`, ordinals `1,2` with no gap. RED revealed a **WU1 fixture authoring defect**: `slide2.xml` ended after `<a:t>Partial Text` with the element merely unclosed at EOF — quick-xml tolerates that, so W001 could never fire (investigated: no existing test pinned the fixture's extraction behavior; provenance note unchanged in meaning). Fix per design §5.3's "cuts off mid-tag": appended an incomplete `<a:` so the truncation is mid-tag; recoverable text stays `"Partial Text\n"`, old-path output unchanged. Test then green. |
+| 23 | RED (R4 textless): inline empty-`txBody` slide -> record emitted with `text == ""`, not dropped. PASSED on first run against the already-correct unconditional push (pin, not driver — it pins task 24's "record pushed unconditionally"). |
+| 24 | GREEN: `read_text_part` warnings (incl. `W001`) merged into the record's extraction warnings and a readable-but-malformed part is never converted into a skip — pinned by the task-22 fixture test (record 2 emitted, 1 warning, no gap). |
+| 30 | WU2 gate: `cargo test -p oxdoc-core` -> lib 112 / api 90 / schema 12 / doc-compat 2 passed; `cargo test --workspace` -> all 8 targets ok (frozen snapshots untouched); `cargo fmt --all -- --check` OK; `cargo clippy --workspace --all-targets -- -D warnings` OK; `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only` -> **lines 96.34% TOTAL, exit 0** (pptx.rs lines 96.20%); `python scripts/check-compatibility-corpus.py` -> passed (3 fixtures); `git status --porcelain tests/fixtures/compatibility-matrix.json tests/fixtures/files` -> no changes. |
+| 31 | WU2 exit measurement: `git diff main --shortstat -- . ':(exclude).gitignore'` -> `5 files changed, 455 insertions(+), 3 deletions(-)` = **458 changed lines > 400**. Pre-agreed fallback applied (parent-authorized): tasks 25-29 (security/hard-error + wrapper test group) move WHOLE (never split) into a follow-up stacked unit; no coverage relaxation, no test splitting, no commit after the overage. PR opening is parent-owned (session contract: no push, no PRs); WU2 maps to PR 3 of the 6-PR chain. |
+
+### TDD Cycle Evidence (strict TDD)
+
+| Cycle | RED | GREEN | Evidence |
+| --- | --- | --- | --- |
+| Model serde (15-16) | `E0432 unresolved import PptxSlideText` (`--lib models`) | model + re-export | 8 lib models tests pass |
+| Entry points + happy path (17-18) | `E0425 cannot find function extract_pptx_slides[_from_reader[_with_limits]]` | `extract_slides` minimal loop + `read_notes_text_for_slides` + 3 lib wrappers | 4 api tests pass |
+| Skip-with-warning (19-21) | 3 tests fail on real behavior: `Err(MissingPart("rId999"))`, `Err(MissingPart("ppt/_rels/presentation.xml.rels"))`, `Err(MissingPart("rId404"))` | skip branches + empty-rels map at the single emission site | 88 api tests pass incl. exact warning strings and ordinals `1,4` |
+| Malformed partial text (22-24) | warnings `0` vs `1` on the fixture (WU1 fixture defect found and fixed) | fixture corrected to mid-tag truncation; warning-merge and unconditional push pinned | 90 api tests pass |
+
+### Files changed (vs `main`)
+
+- `crates/oxdoc-core/src/models.rs` (+60): `PptxSlideText` + serde unit test.
+- `crates/oxdoc-core/src/lib.rs` (+25/-3): 3 entry points + `PptxSlideText` re-export.
+- `crates/oxdoc-core/src/parsers/pptx.rs` (+111): `extract_slides`, `read_notes_text_for_slides`.
+- `crates/oxdoc-core/tests/api.rs` (+261): 11 new WU2 tests.
+- `tests/fixtures/corpus/pptx/malformed-xml/ppt/slides/slide2.xml` (+1): mid-tag truncation fix (WU1 fixture defect; no digest/matrix/snapshot impact).
+
+### Commits
+
+1. `aa1e61b` `feat(pptx): add slide-scoped PptxSlideText model and per-slide extraction API` (model + entry points + minimal loop + happy-path tests; 4 files, 245 insertions, 3 deletions)
+2. `1672cad` `feat(pptx): skip missing slide targets with locked per-slide warnings` (skip branches + api tests + malformed-xml fixture fix)
+
+### Test commands run
+
+- `cargo test -p oxdoc-core --lib models` -> RED (compile) then 8 passed
+- `cargo test -p oxdoc-core --test api extracts_pptx_slides` -> RED (compile) then 4 passed
+- `cargo test -p oxdoc-core --test api` -> RED (3 skip tests, 1 malformed test) then 88/90 passed
+- `cargo test --workspace` -> all 8 targets ok
+- `cargo test -p oxdoc-core` -> 112/90/12/2 passed
+- `cargo fmt --all -- --check` -> OK
+- `cargo clippy --workspace --all-targets -- -D warnings` -> OK
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95 --summary-only` -> lines 96.34% TOTAL, exit 0
+- `python scripts/check-compatibility-corpus.py` -> passed (3 fixtures)
+- `make` unavailable on this machine; gate equivalents run directly as above.
+
+### Deviations from design
+
+- **Task 17 basic-corpus expectation:** design/spec R4's "both carry non-empty text" scenario is not satisfiable by `corpus/pptx/basic` (its single slide is textless). Task 17's authoritative wording ("no notes key and no slide-id/notes nulls") is what the test asserts; the textless -> `text: ""` behavior is separately covered by the inline textless test.
+- **malformed-xml fixture amended (WU1 fix):** the merged WU1 `slide2.xml` could not produce W001 (unclosed-at-EOF is silently tolerated by quick-xml). Corrected to a genuine mid-tag truncation matching design §5.3; recoverable text and old-path output unchanged; no digest/matrix/snapshot impact.
+- **Fallback realized:** tasks 25-29 moved whole to a follow-up stacked unit (see below); hard-error propagation for suspicious targets and missing `ppt/presentation.xml` already exists in the implemented loop, but its slides-path regression tests land with the follow-up unit.
+- Tasks 30/31 marked `[x]`; the "open PR 2" clause is parent-owned (session forbids push/PR creation); WU2 maps to PR 3 of the 6-PR chain.
+
+## Remaining tasks (unchecked after WU2)
+
+- [ ] 25. RED (R7): suspicious-target hard-error api tests
+- [ ] 26. GREEN: propagation unchanged (lands with the 25-29 tests)
+- [ ] 27. RED (R8): old-path `MissingPart` asymmetry regression tests
+- [ ] 28. TRIANGULATE/RED: three-slide gap `1,3`, notes-readable-but-empty `Some("")`, absent slide `.rels` -> `notes: None`
+- [ ] 29. GREEN/REFACTOR: notes-resolution dedup pin (`read_notes_text_for_slides` stays the only notes path)
+- WU3 tasks 32-40, WU4a tasks 41-51, WU4b tasks 52-57, final verification tasks 58-60 (all unchecked, later units)
+
+### Follow-up unit needed (fallback applied)
+
+**WU2b — security/hard-error + wrapper regression tests (tasks 25-29, moved whole).**
+New stacked unit after WU2 (next PR position in the chain; later units shift by one).
+Content: only the task 25-29 api tests plus any small production adjustment they
+drive (none expected — propagation is already implemented). Reason: WU2 realized
+458 lines > 400 budget; the group was never split; coverage unaffected (96.34%
+TOTAL >= 95 gate). Per `ask-on-risk` the parent should confirm this unit boundary
+when opening PRs.
+
+### Structured status (WU2)
+
+- Consumed native `gentle-ai.sdd-status` v2 before WU2 work: `applyState: ready`, `nextRecommended: apply`, `blockedReasons: []`, `actionContext.mode: repo-local`, `allowedEditRoots: [repo root]`.
+- After WU2: `taskProgress` 26/60 completed (tasks 14, 15-24, 30, 31 checked; 25-29 + WU3/WU4/final unchecked). Apply remains in progress for the follow-up unit; the budget fallback pre-authorized by the parent instruction ("move the security/wrapper test group whole, never split its tests") was used instead of an `ask-on-risk` pause; no `size:exception` used or needed for this unit.
