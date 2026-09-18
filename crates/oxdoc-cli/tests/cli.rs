@@ -2016,6 +2016,8 @@ fn fixture_provenance_notes_are_present() {
         "pptx-text.md",
         "pptx-python-pptx-basic.md",
         "docx-external-target.md",
+        "pptx-missing-target.md",
+        "pptx-malformed-xml.md",
     ] {
         let note = fixtures::read_provenance(provenance);
         assert!(note.contains("Source:"), "{provenance}");
