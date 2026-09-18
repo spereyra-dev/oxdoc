@@ -1688,11 +1688,13 @@ fn xlsx_formulas_corpus_loads_and_carries_the_documented_cells() {
     );
     let cells = &rows[1].cells;
 
-    // B2: cached numeric formula. S3 baseline: the parser emits no formula
-    // state yet (behavior-neutral slice); S4 fills own-text capture and
-    // asserts `formula.expression == "SUM(B1:B1)"` with `cached: true` here.
+    // B2: cached numeric formula.
     assert!(cells[0].has_formula);
-    assert!(cells[0].formula.is_none());
+    assert_eq!(
+        cells[0].formula.as_ref().map(|f| f.expression.as_str()),
+        Some("SUM(B1:B1)")
+    );
+    assert!(cells[0].formula.as_ref().unwrap().cached);
     assert!(matches!(
         &cells[0].value,
         XlsxCellValue::Number { raw, .. } if raw == "2"
@@ -1700,14 +1702,29 @@ fn xlsx_formulas_corpus_loads_and_carries_the_documented_cells() {
 
     // C2: uncached formula stays blank.
     assert!(cells[1].has_formula);
+    assert_eq!(
+        cells[1].formula.as_ref().map(|f| f.expression.as_str()),
+        Some("SUM(C1:C1)")
+    );
+    assert!(!cells[1].formula.as_ref().unwrap().cached);
     assert_eq!(cells[1].value, XlsxCellValue::Blank);
 
     // D2: empty-but-cached value stays blank.
     assert!(cells[2].has_formula);
+    assert_eq!(
+        cells[2].formula.as_ref().map(|f| f.expression.as_str()),
+        Some("IF(1=1,\"\",\"x\")")
+    );
+    assert!(cells[2].formula.as_ref().unwrap().cached);
     assert_eq!(cells[2].value, XlsxCellValue::Blank);
 
     // E2: error formula keeps the cached error string.
     assert!(cells[3].has_formula);
+    assert_eq!(
+        cells[3].formula.as_ref().map(|f| f.expression.as_str()),
+        Some("1/0")
+    );
+    assert!(cells[3].formula.as_ref().unwrap().cached);
     assert_eq!(
         cells[3].value,
         XlsxCellValue::Error {
@@ -1717,6 +1734,11 @@ fn xlsx_formulas_corpus_loads_and_carries_the_documented_cells() {
 
     // F2: string-result formula with entity-decoded cached value.
     assert!(cells[4].has_formula);
+    assert_eq!(
+        cells[4].formula.as_ref().map(|f| f.expression.as_str()),
+        Some("CONCATENATE(A2,\" & \",<B2>)")
+    );
+    assert!(cells[4].formula.as_ref().unwrap().cached);
     assert_eq!(
         cells[4].value,
         XlsxCellValue::String {
@@ -1728,6 +1750,11 @@ fn xlsx_formulas_corpus_loads_and_carries_the_documented_cells() {
     // G2: shared-string formula cell resolves its index.
     assert!(cells[5].has_formula);
     assert_eq!(
+        cells[5].formula.as_ref().map(|f| f.expression.as_str()),
+        Some("LEN(A2)")
+    );
+    assert!(cells[5].formula.as_ref().unwrap().cached);
+    assert_eq!(
         cells[5].value,
         XlsxCellValue::String {
             raw: "0".to_owned(),
@@ -1737,6 +1764,11 @@ fn xlsx_formulas_corpus_loads_and_carries_the_documented_cells() {
 
     // H2: CDATA formula text with a numeric cached value.
     assert!(cells[6].has_formula);
+    assert_eq!(
+        cells[6].formula.as_ref().map(|f| f.expression.as_str()),
+        Some("IF(A2<>\"\",\"y\",\"n\")")
+    );
+    assert!(cells[6].formula.as_ref().unwrap().cached);
     assert!(matches!(
         &cells[6].value,
         XlsxCellValue::Number { raw, .. } if raw == "1"
@@ -1744,6 +1776,11 @@ fn xlsx_formulas_corpus_loads_and_carries_the_documented_cells() {
 
     // I2: numeric character references in the formula text.
     assert!(cells[7].has_formula);
+    assert_eq!(
+        cells[7].formula.as_ref().map(|f| f.expression.as_str()),
+        Some("LEN(A2)")
+    );
+    assert!(cells[7].formula.as_ref().unwrap().cached);
     assert!(matches!(
         &cells[7].value,
         XlsxCellValue::Number { raw, .. } if raw == "5"
@@ -1751,6 +1788,7 @@ fn xlsx_formulas_corpus_loads_and_carries_the_documented_cells() {
 
     // J2: error cell without a formula element is the non-formula control.
     assert!(!cells[8].has_formula);
+    assert!(cells[8].formula.is_none());
     assert_eq!(
         cells[8].value,
         XlsxCellValue::Error {

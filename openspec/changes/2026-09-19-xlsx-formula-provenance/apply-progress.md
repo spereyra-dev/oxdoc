@@ -216,3 +216,76 @@ struct literal).
 
 - S4: tasks 15–21; S5: tasks 22–30; S6: tasks 31–36; S7: tasks 37–44; S8: tasks 45–50;
   cross-slice guards: tasks 51–55 (all unchecked)
+
+---
+
+## S4 — Parser capture: `<f>` text and `<v>` presence (tasks 15–21) — COMPLETE
+
+### TDD Cycle Evidence
+
+| Task | Cycle | Test | RED evidence | GREEN evidence |
+| --- | --- | --- | --- | --- |
+| 15 | RED | 7 unit tests in `parsers::xlsx::tests` (via `parse_formula_rows` helper over `parse_sheet_rows`) | `cargo test -p oxdoc-core --lib parsers::xlsx`: 6 failed (`formula` is `None` — capture unimplemented: `captures_cached_formula_expression_and_cache_presence`, `decodes_formula_entities_cdata_and_numeric_references_like_cell_values`, `keeps_formula_and_value_buffers_disjoint`, `marks_cache_presence_for_empty_v_element`, `keeps_cached_true_when_shared_string_index_is_out_of_bounds`, `captures_empty_f_element_as_empty_expression`); `leaves_non_formula_cells_untouched` passed as expected (asserts current behavior) | All pass after tasks 17–19 |
+| 16 | RED | `xlsx_formulas_corpus_loads_and_carries_the_documented_cells` extended with per-cell `formula.expression`/`formula.cached` (design §5.1 shapes); S3 baseline B2 comment/assertion replaced per the documented handoff | `cargo test -p oxdoc-core --test api xlsx_formulas_corpus`: `left: None, right: Some("SUM(B1:B1)")` | Passes with all 9 cells asserted (B2–I2 expressions + cache flags, J2 `formula == None`) |
+| 17–19 | GREEN | same suites | — | `cargo test --workspace`: all 8 suites ok, 0 failures (379 tests incl. 7 new unit tests) |
+| 20 | TRIANGULATE | no-recalculation proof over the corpus | — | api test asserts every emitted `raw` equals the stored `<v>` (B2 `"2"`, E2 `"#DIV/0!"`, F2 `"alpha & beta"`, G2 index-resolved, H2 `"1"`, I2 `"5"`), C2/D2 stay `kind: blank`, `SUM`/`1/0` never yield a computed number, J2 stays `has_formula: false`; `git status` on `tests/fixtures/snapshots` empty (xlsx CSV snapshots + manifest byte-identical) |
+| 21 | REFACTOR/Gate | fmt, clippy, workspace, coverage, corpus | — | All clean (see Verification) |
+
+Implementation notes (task 18 detail worth keeping): the `Empty` `<f …/>` arm reads
+`t`/`si` via `attr_value` directly from the self-closing element (the `Start` arm never
+fires for it); a shared slave (`t="shared"` with `si`) leaves `formula: None` (S5
+resolves it), every other empty `<f/>` stores `Some("")` with `in_formula` staying
+false. `Start` `<f>` reads `t`/`si` by local name (prefixed sheets keep working);
+`End` `</f>` routes `formula = Some(mem::take(formula_buffer))` — Start-opened shared
+masters capture their own text in S4 (registration is S5). `had_value` is set on `<v>`
+`Start` **and** `Empty`; `push_typed_cell` maps `formula.cached` from `had_value` only
+(never type-resolution success — the out-of-bounds `t="s"` unit test pins `cached: true`
+with the unchanged W003 wording). Text/CData/GeneralRef route to `formula_buffer` via
+`append_decoded_xml_text`/`append_decoded_xml_reference` when `in_formula`, else to the
+value buffers — the three buffers stay disjoint with one routing flag each.
+
+### Files changed
+
+- `crates/oxdoc-core/src/parsers/xlsx.rs` (+308/−17): `CellState` gains `in_formula`,
+  `formula_buffer`, `formula: Option<String>`, `formula_type`, `formula_si`, `had_value`;
+  event arms (`Start`/`Empty` `<f>`, `<v>` Start+Empty `had_value`,
+  Text/CData/GeneralRef routing, `End` `</f>`); `push_typed_cell` maps own expression +
+  cache presence into `XlsxFormula` (single construction path); 7 unit tests +
+  `parse_formula_rows` helper.
+- `crates/oxdoc-core/tests/api.rs` (+42/−4): per-cell formula assertions over the
+  `xlsx/formulas` corpus per design §5.1 (S3 baseline replaced per handoff).
+- openspec change artifacts (tasks.md marks, apply-progress.md) included in the commit.
+
+### Verification (Gate S4)
+
+- `cargo fmt --all -- --check` → clean (one fmt normalization pass applied first)
+- `cargo clippy --workspace --all-targets -- -D warnings` → clean
+- `cargo test --workspace` → all 8 suites ok, 0 failures (379 tests)
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines 95
+  --summary-only` → exit 0 (line coverage 96.43% ≥ 95)
+- `python scripts/check-compatibility-corpus.py` (`make compatibility-corpus-check`;
+  `make` unavailable in this shell) → "compatibility corpus validation passed (3 fixtures)"
+- `git status --porcelain schemas/v1 docs/schemas/v1 tests/fixtures/files
+  tests/fixtures/compatibility-matrix.json tests/fixtures/snapshots` → empty (frozen
+  guards hold; no snapshot, manifest, digest, or binary churn)
+- Envelope honesty: `schema_version` stays `1`; no JSON formula field is emitted (CLI
+  untouched in this slice); no `OoxmlLimits`/public-option change; no new dependency.
+
+### Measured changed lines vs budget
+
+`git diff main --numstat` excluding `.gitignore` (pre-existing local edit, not
+committed): 350 additions, 21 deletions, **371 total** — under the 400-line budget and
+inside the ~300–400 realistic estimate for S4. No comments, tests, or blank lines were
+compressed to fit.
+
+### Deviations from design
+
+- None. Shared slaves (corpus `A3`/`A4`/`A7`/`B1`/`B3`, dangling `B2` `si=9`) keep
+  `has_formula: true` with `formula: None` — S4-stable behavior, resolved in S5. The
+  `shared-formulas` corpus api baseline assertions are unchanged (they assert only
+  `has_formula` and values, which did not move).
+
+### Remaining tasks
+
+- S5: tasks 22–30; S6: tasks 31–36; S7: tasks 37–44; S8: tasks 45–50; cross-slice
+  guards: tasks 51–55 (all unchecked)

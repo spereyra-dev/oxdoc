@@ -256,7 +256,7 @@ Depends on S3. This slice captures **own text only** — shared slaves remain
 
 ### RED
 
-- [ ] 15. Add failing unit tests to the `#[cfg(test)]` module of
+- [x] 15. Add failing unit tests to the `#[cfg(test)]` module of
   `crates/oxdoc-core/src/parsers/xlsx.rs` (via the existing `parse_sheet_rows*` helpers):
   `captures_cached_formula_expression_and_cache_presence`,
   `decodes_formula_entities_cdata_and_numeric_references_like_cell_values` (same
@@ -268,7 +268,7 @@ Depends on S3. This slice captures **own text only** — shared slaves remain
   record RED. Implements: `xlsx-formula-provenance` → Formula expression capture →
   "Cached formula captures expression and value", "Entity and CDATA decoding in formulas",
   "Non-formula cells are untouched"; → Cache-presence provenance → all three scenarios.
-- [ ] 16. Extend `crates/oxdoc-core/tests/api.rs` with per-cell assertions over the
+- [x] 16. Extend `crates/oxdoc-core/tests/api.rs` with per-cell assertions over the
   `xlsx/formulas` corpus (`B2`, `C2`, `D2`, `E2`, `F2`, `G2`, `H2`, `I2`, `J2`) expecting
   the design §5.1 record shapes: `kind`/`raw`/`value` unchanged, plus `formula.expression`
   and `formula.cached` per cell. Run `cargo test -p oxdoc-core --test api` and record RED.
@@ -278,14 +278,14 @@ Depends on S3. This slice captures **own text only** — shared slaves remain
 
 ### GREEN
 
-- [ ] 17. Extend `CellState` in `crates/oxdoc-core/src/parsers/xlsx.rs` (~line 28) with
+- [x] 17. Extend `CellState` in `crates/oxdoc-core/src/parsers/xlsx.rs` (~line 28) with
   `in_formula: bool`, `formula_buffer: String`, `formula: Option<String>`,
   `formula_type: Option<String>`, `formula_si: Option<String>`, `had_value: bool`.
   `formula: Option<String>` (not `String` + flag) is the design's refinement: `None` =
   no `<f>` or unresolved slave, `Some(text)` = stored expression possibly empty. Implements:
   `xlsx-formula-provenance` → Formula expression capture; → Shared formula resolution →
   "Dangling si warns per cell and still emits the cell".
-- [ ] 18. Implement the event arms inside the existing loop: `Start` `<f>` sets
+- [x] 18. Implement the event arms inside the existing loop: `Start` `<f>` sets
   `has_formula = true`, `in_formula = true`, and reads `t`/`si` through
   `attr_value(&element, "t")` / `attr_value(&element, "si")` (local-name matching keeps
   prefixed sheets working); `Empty` `<f …/>` sets `has_formula = true` and, when not
@@ -297,7 +297,7 @@ Depends on S3. This slice captures **own text only** — shared slaves remain
   Keep `aca`, `dt2D`, `dtr`, `cm`, and `ref` unread. Implements:
   `xlsx-formula-provenance` → Formula expression capture → all three scenarios; →
   Cache-presence provenance → "Cache flag survives failed type resolution".
-- [ ] 19. In `push_typed_cell` (~line 772) map the resolved expression:
+- [x] 19. In `push_typed_cell` (~line 772) map the resolved expression:
   `let formula = cell.formula.map(|expression| XlsxFormula { expression, cached: cell.had_value });`
   so `formula.cached` is pure XML `<v>` presence (`Event::Start` or `Event::Empty`), never
   the success of type resolution, and the value logic above it is untouched. Run
@@ -307,7 +307,7 @@ Depends on S3. This slice captures **own text only** — shared slaves remain
 
 ### TRIANGULATE
 
-- [ ] 20. Prove the no-recalculation guarantee on the corpus: every emitted `raw` equals
+- [x] 20. Prove the no-recalculation guarantee on the corpus: every emitted `raw` equals
   the stored `<v>` (and is absent for uncached formulas), `SUM`/`1/0` never yield a
   computed number, and `C2`/`D2` remain `kind: "blank"` while `J2` stays
   `has_formula: false`. Confirm `tests/fixtures/snapshots/xlsx_*_csv.txt` and
@@ -317,7 +317,7 @@ Depends on S3. This slice captures **own text only** — shared slaves remain
 
 ### REFACTOR / Gate S4
 
-- [ ] 21. Keep the three buffers (`value`, `inline`, `formula`) disjoint with one routing
+- [x] 21. Keep the three buffers (`value`, `inline`, `formula`) disjoint with one routing
   flag each and no duplicated decode logic; run
   `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`, the coverage gate, and `make compatibility-corpus-check`;

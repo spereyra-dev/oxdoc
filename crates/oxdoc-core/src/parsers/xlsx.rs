@@ -5,8 +5,9 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::models::{
-    Extraction, OutputWarning, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxReadOptions, XlsxRow,
-    XlsxRowControl, XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
+    Extraction, OutputWarning, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxFormula,
+    XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility,
+    XlsxValueMode,
 };
 use crate::parsers::xlsx_shared_strings::{
     DEFAULT_SHARED_STRING_MEMORY_LIMIT, SharedStringLookup, SharedStringStore,
@@ -34,6 +35,12 @@ struct CellState {
     has_formula: bool,
     in_value: bool,
     in_inline_text: bool,
+    in_formula: bool,
+    formula_buffer: String,
+    formula: Option<String>,
+    formula_type: Option<String>,
+    formula_si: Option<String>,
+    had_value: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -645,10 +652,14 @@ fn parse_sheet_rows<R: BufRead>(
                 } else if let Some(cell) = &mut current_cell {
                     if name_eq(element.name().as_ref(), "v") {
                         cell.in_value = true;
+                        cell.had_value = true;
                     } else if name_eq(element.name().as_ref(), "t") {
                         cell.in_inline_text = true;
                     } else if name_eq(element.name().as_ref(), "f") {
                         cell.has_formula = true;
+                        cell.in_formula = true;
+                        cell.formula_type = attr_value(&element, "t");
+                        cell.formula_si = attr_value(&element, "si");
                     }
                 }
             }
@@ -676,27 +687,51 @@ fn parse_sheet_rows<R: BufRead>(
                     && let Some(cell) = &mut current_cell
                 {
                     cell.has_formula = true;
+                    // Attributes live on this self-closing element itself;
+                    // the Start arm never fires for it.
+                    let formula_type = attr_value(&element, "t");
+                    let formula_si = attr_value(&element, "si");
+                    let shared_si =
+                        formula_type.as_deref() == Some("shared") && formula_si.is_some();
+                    if !shared_si {
+                        // A shared slave (`<f t="shared" si="N"/>`) resolves
+                        // in S5; every other empty `<f/>` stores an empty
+                        // expression. `in_formula` stays false: there is no
+                        // open element to route text into.
+                        cell.formula = Some(String::new());
+                    }
+                } else if name_eq(element.name().as_ref(), "v")
+                    && let Some(cell) = &mut current_cell
+                {
+                    // `<v/>` is present-but-empty cache: provenance only.
+                    cell.had_value = true;
                 }
             }
             Ok(Event::Text(value)) => {
-                if let Some(cell) = &mut current_cell
-                    && (cell.in_value || cell.in_inline_text)
-                {
-                    append_decoded_xml_text(value.as_ref(), &mut cell.value);
+                if let Some(cell) = &mut current_cell {
+                    if cell.in_formula {
+                        append_decoded_xml_text(value.as_ref(), &mut cell.formula_buffer);
+                    } else if cell.in_value || cell.in_inline_text {
+                        append_decoded_xml_text(value.as_ref(), &mut cell.value);
+                    }
                 }
             }
             Ok(Event::CData(value)) => {
-                if let Some(cell) = &mut current_cell
-                    && (cell.in_value || cell.in_inline_text)
-                {
-                    append_decoded_xml_text(value.as_ref(), &mut cell.value);
+                if let Some(cell) = &mut current_cell {
+                    if cell.in_formula {
+                        append_decoded_xml_text(value.as_ref(), &mut cell.formula_buffer);
+                    } else if cell.in_value || cell.in_inline_text {
+                        append_decoded_xml_text(value.as_ref(), &mut cell.value);
+                    }
                 }
             }
             Ok(Event::GeneralRef(value)) => {
-                if let Some(cell) = &mut current_cell
-                    && (cell.in_value || cell.in_inline_text)
-                {
-                    append_decoded_xml_reference(value.as_ref(), &mut cell.value);
+                if let Some(cell) = &mut current_cell {
+                    if cell.in_formula {
+                        append_decoded_xml_reference(value.as_ref(), &mut cell.formula_buffer);
+                    } else if cell.in_value || cell.in_inline_text {
+                        append_decoded_xml_reference(value.as_ref(), &mut cell.value);
+                    }
                 }
             }
             Ok(Event::End(element)) => {
@@ -705,6 +740,11 @@ fn parse_sheet_rows<R: BufRead>(
                         cell.in_value = false;
                     } else if name_eq(element.name().as_ref(), "t") {
                         cell.in_inline_text = false;
+                    } else if name_eq(element.name().as_ref(), "f") {
+                        cell.in_formula = false;
+                        // The cell's own stored expression (possibly empty).
+                        // S5 registers shared masters from this same text.
+                        cell.formula = Some(std::mem::take(&mut cell.formula_buffer));
                     }
                 }
 
@@ -860,12 +900,18 @@ fn push_typed_cell(
         }
     };
 
+    // Own expression + pure XML `<v>` presence; shared slaves still carry
+    // `formula: None` until S5 resolves them.
+    let formula = cell.formula.map(|expression| XlsxFormula {
+        expression,
+        cached: cell.had_value,
+    });
+
     row.set(XlsxCell {
         column_index: target_column,
         value,
         has_formula: cell.has_formula,
-        // S3 keeps every emitted cell formula-free; S4 fills own-text capture.
-        formula: None,
+        formula,
     });
 
     Ok(())
@@ -1234,7 +1280,7 @@ mod tests {
 
     use crate::OxdocError;
     use crate::models::{
-        XlsxCellValue, XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions,
+        OutputWarning, XlsxCellValue, XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions,
         XlsxSheetVisibility, XlsxValueMode,
     };
     use crate::parsers::xlsx_shared_strings::{SharedStringLookup, SharedStringStore};
@@ -1513,6 +1559,251 @@ mod tests {
             XlsxCellValue::String {
                 raw: "0".to_owned(),
                 value: "text".to_owned(),
+            }
+        );
+    }
+
+    fn parse_formula_rows(xml: &str) -> (Vec<XlsxRow>, Vec<OutputWarning>) {
+        let mut shared_strings = SharedStringStore::empty();
+        let mut sink = CollectRows::default();
+        let extraction = parse_sheet_rows(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            &raw_context(&XlsxStyles::default()),
+            &mut sink,
+        )
+        .unwrap();
+        (sink.rows, extraction.warnings)
+    }
+
+    #[test]
+    fn captures_cached_formula_expression_and_cache_presence() {
+        let xml = r#"<worksheet><sheetData><row r="1">
+<c r="A1"><f>SUM(B1:B1)</f><v>2</v></c>
+<c r="B1"><f>SUM(C1:C1)</f></c>
+</row></sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows(xml);
+
+        assert!(warnings.is_empty());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].cells.len(), 2);
+
+        // Cached formula: expression captured, cache flag true.
+        assert!(rows[0].cells[0].has_formula);
+        assert_eq!(
+            rows[0].cells[0]
+                .formula
+                .as_ref()
+                .map(|f| f.expression.as_str()),
+            Some("SUM(B1:B1)")
+        );
+        assert!(rows[0].cells[0].formula.as_ref().unwrap().cached);
+
+        // Uncached formula: expression captured, cache flag false.
+        assert!(rows[0].cells[1].has_formula);
+        assert_eq!(
+            rows[0].cells[1]
+                .formula
+                .as_ref()
+                .map(|f| f.expression.as_str()),
+            Some("SUM(C1:C1)")
+        );
+        assert!(!rows[0].cells[1].formula.as_ref().unwrap().cached);
+    }
+
+    #[test]
+    fn decodes_formula_entities_cdata_and_numeric_references_like_cell_values() {
+        let xml = r#"<worksheet><sheetData><row r="1">
+<c r="A1" t="str"><f>CONCATENATE(&quot;a&quot;,&amp;,&lt;b&gt;)</f><v>x &amp; y &lt;z&gt;</v></c>
+<c r="B1"><f><![CDATA[IF(A2<>"","y","n")]]></f><v>1</v></c>
+<c r="C1"><f>LEN&#40;A2&#41;</f><v>5</v></c>
+</row></sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows(xml);
+
+        assert!(warnings.is_empty());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].cells.len(), 3);
+
+        // Entities decode inside <f> exactly like inside <v>.
+        assert_eq!(
+            rows[0].cells[0]
+                .formula
+                .as_ref()
+                .map(|f| f.expression.as_str()),
+            Some("CONCATENATE(\"a\",&,<b>)")
+        );
+        assert_eq!(
+            rows[0].cells[0].value.csv_value(),
+            "x & y <z>",
+            "the same entity sequence must decode identically in a cached value"
+        );
+
+        // CDATA sections decode inside <f> like plain text.
+        assert_eq!(
+            rows[0].cells[1]
+                .formula
+                .as_ref()
+                .map(|f| f.expression.as_str()),
+            Some("IF(A2<>\"\",\"y\",\"n\")")
+        );
+
+        // Numeric character references decode inside <f>.
+        assert_eq!(
+            rows[0].cells[2]
+                .formula
+                .as_ref()
+                .map(|f| f.expression.as_str()),
+            Some("LEN(A2)")
+        );
+    }
+
+    #[test]
+    fn keeps_formula_and_value_buffers_disjoint() {
+        let xml = r#"<worksheet><sheetData><row r="1">
+<c r="A1"><f>FORMULA(&quot;f&quot;)</f><v>4</v></c>
+</row></sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows(xml);
+
+        assert!(warnings.is_empty());
+        assert_eq!(rows.len(), 1);
+        let cell = &rows[0].cells[0];
+
+        // The formula text never leaks into the value and vice versa.
+        assert_eq!(
+            cell.formula.as_ref().map(|f| f.expression.as_str()),
+            Some("FORMULA(\"f\")")
+        );
+        assert!(!cell.formula.as_ref().unwrap().expression.contains('4'));
+        assert_eq!(cell.value.csv_value(), "4");
+        assert!(!cell.value.csv_value().contains("FORMULA"));
+    }
+
+    #[test]
+    fn marks_cache_presence_for_empty_v_element() {
+        let xml = r#"<worksheet><sheetData><row r="1">
+<c r="A1"><f>X()</f><v/></c>
+<c r="B1"><f>Y()</f><v></v></c>
+</row></sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows(xml);
+
+        assert!(warnings.is_empty());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].cells.len(), 2);
+
+        // Self-closing <v/> still counts as cache presence.
+        assert!(rows[0].cells[0].formula.as_ref().unwrap().cached);
+        assert_eq!(rows[0].cells[0].value, XlsxCellValue::Blank);
+
+        // An empty <v></v> is present-but-empty: cached stays true.
+        assert!(rows[0].cells[1].formula.as_ref().unwrap().cached);
+        assert_eq!(rows[0].cells[1].value, XlsxCellValue::Blank);
+    }
+
+    #[test]
+    fn keeps_cached_true_when_shared_string_index_is_out_of_bounds() {
+        let xml = r#"<worksheet><sheetData><row r="1">
+<c r="A1" t="s"><f>LEN(A2)</f><v>999</v></c>
+</row></sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows(xml);
+
+        // The existing W003 path is unchanged.
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            warnings[0]
+                .message
+                .contains("shared string index 999 is out of bounds")
+        );
+        assert_eq!(
+            rows[0].cells[0].value,
+            XlsxCellValue::String {
+                raw: "999".to_owned(),
+                value: String::new(),
+            }
+        );
+
+        // Cache presence is XML <v> presence, not type-resolution success.
+        assert!(rows[0].cells[0].formula.as_ref().unwrap().cached);
+        assert_eq!(
+            rows[0].cells[0]
+                .formula
+                .as_ref()
+                .map(|f| f.expression.as_str()),
+            Some("LEN(A2)")
+        );
+    }
+
+    #[test]
+    fn captures_empty_f_element_as_empty_expression() {
+        let xml = r#"<worksheet><sheetData><row r="1">
+<c r="A1"><f/></c>
+<c r="B1"><f></f></c>
+</row></sheetData></worksheet>"#;
+        let (rows, warnings) = parse_formula_rows(xml);
+
+        assert!(warnings.is_empty());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].cells.len(), 2);
+
+        // <f/> is an empty stored expression, not a missing one.
+        assert!(rows[0].cells[0].has_formula);
+        assert_eq!(
+            rows[0].cells[0]
+                .formula
+                .as_ref()
+                .map(|f| f.expression.as_str()),
+            Some("")
+        );
+        assert!(!rows[0].cells[0].formula.as_ref().unwrap().cached);
+
+        // <f></f> behaves identically.
+        assert!(rows[0].cells[1].has_formula);
+        assert_eq!(
+            rows[0].cells[1]
+                .formula
+                .as_ref()
+                .map(|f| f.expression.as_str()),
+            Some("")
+        );
+    }
+
+    #[test]
+    fn leaves_non_formula_cells_untouched() {
+        let xml = r#"<worksheet><sheetData><row r="1">
+<c r="A1"><v>7</v></c>
+<c r="B1" t="e"><v>#N/A</v></c>
+<c r="C1" t="s"><v>0</v></c>
+</row></sheetData></worksheet>"#;
+        let mut shared_strings = SharedStringStore::from_values(vec!["alpha".to_owned()]);
+        let mut sink = CollectRows::default();
+        parse_sheet_rows(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            &raw_context(&XlsxStyles::default()),
+            &mut sink,
+        )
+        .unwrap();
+
+        assert_eq!(sink.rows.len(), 1);
+        let cells = &sink.rows[0].cells;
+        assert_eq!(cells.len(), 3);
+        for cell in cells {
+            assert!(!cell.has_formula);
+            assert!(cell.formula.is_none());
+        }
+        assert_eq!(cells[0].value.csv_value(), "7");
+        assert_eq!(
+            cells[1].value,
+            XlsxCellValue::Error {
+                raw: "#N/A".to_owned(),
+            }
+        );
+        assert_eq!(
+            cells[2].value,
+            XlsxCellValue::String {
+                raw: "0".to_owned(),
+                value: "alpha".to_owned(),
             }
         );
     }
