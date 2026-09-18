@@ -103,27 +103,56 @@ pub(crate) fn extract_slides<R: Read + Seek>(
     let slide_references = parse_slide_references(&presentation_xml, &presentation_path)?;
 
     let presentation_rels_path = rels_path_for(&presentation_path);
-    let presentation_rels_xml = package.read_to_string(&presentation_rels_path)?;
-    let presentation_rels =
-        parse_relationship_map(&presentation_rels_xml, &presentation_rels_path)?;
+    let presentation_rels = match package.read_to_string(&presentation_rels_path) {
+        Ok(xml) => parse_relationship_map(&xml, &presentation_rels_path)?,
+        Err(OxdocError::MissingPart(_)) => std::collections::HashMap::new(),
+        Err(err) => return Err(err),
+    };
 
     let mut records = Vec::new();
     let mut warnings = slide_references.warnings;
 
     for slide_reference in slide_references.value {
-        let relationship = presentation_rels
-            .get(&slide_reference.relation_id)
-            .ok_or_else(|| OxdocError::MissingPart(slide_reference.relation_id.clone()))?;
+        let Some(relationship) = presentation_rels.get(&slide_reference.relation_id) else {
+            warnings.push(OutputWarning::new(
+                presentation_path.as_str(),
+                format!(
+                    "skipped PPTX slide {}: unknown relationship id",
+                    slide_reference.relation_id
+                ),
+            ));
+            continue;
+        };
         let slide_path = resolve_relationship_target(
             parent_dir(&presentation_path),
             relationship,
             &presentation_rels_path,
         )?;
 
-        let slide = read_text_part(package, &slide_path)?;
+        let slide = match read_text_part(package, &slide_path) {
+            Ok(slide) => slide,
+            Err(OxdocError::MissingPart(_)) => {
+                warnings.push(OutputWarning::new(
+                    slide_path.as_str(),
+                    format!("skipped related PPTX slide part {slide_path}: missing part"),
+                ));
+                continue;
+            }
+            Err(err) => return Err(err),
+        };
         warnings = merge_warnings(warnings, slide.warnings);
 
-        let notes = read_notes_text_for_slides(package, &slide_path)?;
+        let notes = match read_notes_text_for_slides(package, &slide_path) {
+            Ok(notes) => notes,
+            Err(OxdocError::MissingPart(notes_path)) => {
+                warnings.push(OutputWarning::new(
+                    notes_path.as_str(),
+                    format!("skipped related PPTX notes part {notes_path}: missing part"),
+                ));
+                Extraction::new(None)
+            }
+            Err(err) => return Err(err),
+        };
         warnings = merge_warnings(warnings, notes.warnings);
 
         records.push(crate::models::PptxSlideText {
