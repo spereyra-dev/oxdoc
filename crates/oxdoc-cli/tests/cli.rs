@@ -2011,6 +2011,7 @@ fn fixture_provenance_notes_are_present() {
         "docx-python-docx-basic.md",
         "xlsx-basic.md",
         "xlsx-app-metadata.md",
+        "xlsx-formulas.md",
         "xlsx-openpyxl-basic.md",
         "pptx-basic.md",
         "pptx-text.md",

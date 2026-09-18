@@ -1616,6 +1616,147 @@ fn visits_typed_xlsx_rows_through_path_api() {
 }
 
 #[test]
+fn xlsx_formulas_corpus_loads_and_carries_the_documented_cells() {
+    let file = fixtures::build_package("xlsx/formulas", "formula-provenance.xlsx");
+    let mut rows = Vec::new();
+
+    let extraction = oxdoc_core::visit_xlsx_rows(
+        &file,
+        XlsxSheetOptions {
+            sheet_name: Some("Data"),
+            ..XlsxSheetOptions::default()
+        },
+        XlsxValueMode::Formatted,
+        |row| {
+            rows.push(row.clone());
+            Ok(XlsxRowControl::Continue)
+        },
+    )
+    .unwrap();
+
+    assert!(extraction.warnings.is_empty());
+    assert_eq!(rows.len(), 2);
+
+    // Row 1: shared-string header controls, no formulas.
+    assert_eq!(rows[0].row_index, 0);
+    let headers = &rows[0].cells;
+    assert_eq!(
+        headers
+            .iter()
+            .map(|cell| cell.column_index)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+    assert_eq!(
+        headers[0].value,
+        XlsxCellValue::String {
+            raw: "0".to_owned(),
+            value: "alpha".to_owned(),
+        }
+    );
+    assert_eq!(
+        headers[1].value,
+        XlsxCellValue::String {
+            raw: "1".to_owned(),
+            value: "text".to_owned(),
+        }
+    );
+    assert_eq!(
+        headers[2].value,
+        XlsxCellValue::String {
+            raw: "0".to_owned(),
+            value: "alpha".to_owned(),
+        }
+    );
+    for cell in headers {
+        assert!(
+            !cell.has_formula,
+            "header cell {} must stay a formula-free control",
+            cell.column_index
+        );
+    }
+
+    // Row 2: the formula case matrix, asserted at today's v1 baseline.
+    assert_eq!(rows[1].row_index, 1);
+    assert_eq!(
+        rows[1]
+            .cells
+            .iter()
+            .map(|cell| cell.column_index)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9]
+    );
+    let cells = &rows[1].cells;
+
+    // B2: cached numeric formula.
+    assert!(cells[0].has_formula);
+    assert!(matches!(
+        &cells[0].value,
+        XlsxCellValue::Number { raw, .. } if raw == "2"
+    ));
+
+    // C2: uncached formula stays blank.
+    assert!(cells[1].has_formula);
+    assert_eq!(cells[1].value, XlsxCellValue::Blank);
+
+    // D2: empty-but-cached value stays blank.
+    assert!(cells[2].has_formula);
+    assert_eq!(cells[2].value, XlsxCellValue::Blank);
+
+    // E2: error formula keeps the cached error string.
+    assert!(cells[3].has_formula);
+    assert_eq!(
+        cells[3].value,
+        XlsxCellValue::Error {
+            raw: "#DIV/0!".to_owned(),
+        }
+    );
+
+    // F2: string-result formula with entity-decoded cached value.
+    assert!(cells[4].has_formula);
+    assert_eq!(
+        cells[4].value,
+        XlsxCellValue::String {
+            raw: "alpha & beta".to_owned(),
+            value: "alpha & beta".to_owned(),
+        }
+    );
+
+    // G2: shared-string formula cell resolves its index.
+    assert!(cells[5].has_formula);
+    assert_eq!(
+        cells[5].value,
+        XlsxCellValue::String {
+            raw: "0".to_owned(),
+            value: "alpha".to_owned(),
+        }
+    );
+
+    // H2: CDATA formula text with a numeric cached value.
+    assert!(cells[6].has_formula);
+    assert!(matches!(
+        &cells[6].value,
+        XlsxCellValue::Number { raw, .. } if raw == "1"
+    ));
+
+    // I2: numeric character references in the formula text.
+    assert!(cells[7].has_formula);
+    assert!(matches!(
+        &cells[7].value,
+        XlsxCellValue::Number { raw, .. } if raw == "5"
+    ));
+
+    // J2: error cell without a formula element is the non-formula control.
+    assert!(!cells[8].has_formula);
+    assert_eq!(
+        cells[8].value,
+        XlsxCellValue::Error {
+            raw: "#N/A".to_owned(),
+        }
+    );
+}
+
+#[test]
 fn visits_typed_xlsx_rows_from_reader_and_stops_early() {
     let file = fixtures::build_package("xlsx/basic", "fixture.xlsx");
     let reader = File::open(file).unwrap();
@@ -2850,6 +2991,7 @@ fn fixture_provenance_notes_are_present() {
         "xlsx-app-metadata.md",
         "xlsx-openpyxl-basic.md",
         "xlsx-formatted-locale.md",
+        "xlsx-formulas.md",
         "pptx-basic.md",
         "pptx-text.md",
         "pptx-python-pptx-basic.md",
@@ -2864,7 +3006,7 @@ fn fixture_provenance_notes_are_present() {
         assert!(note.contains("Purpose:"));
     }
 
-    for provenance in ["xlsx-basic.md", "xlsx-app-metadata.md"] {
+    for provenance in ["xlsx-basic.md", "xlsx-app-metadata.md", "xlsx-formulas.md"] {
         let note = fixtures::read_provenance(provenance);
         assert!(note.contains("no `.xlsx` binary is checked in"));
     }
