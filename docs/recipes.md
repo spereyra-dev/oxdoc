@@ -234,3 +234,154 @@ never recalculated or rewritten) and `formula_cached`. Errors surface as
 
 **See also:** [`python-integration.md`](python-integration.md),
 [`json-output.md`](json-output.md).
+
+## Recipe D - Backend ingestion
+
+Accept untrusted uploads in a serverless or multi-tenant backend with hard
+per-request memory limits and machine-readable failures.
+
+**Command:** a single limited request. All four limits are global options with
+the defaults shown; set `--max-input-size` to the request-body limit and the
+package and part limits to one invocation's memory budget:
+
+```bash
+oxdoc extract text upload.docx --format json > record.json 2> warnings.jsonl \
+  --max-input-size 67108864 \
+  --max-package-uncompressed-size 268435456 \
+  --max-part-size 67108864 \
+  --max-compression-ratio 200 \
+  --warnings json
+```
+
+**Command:** stdin intake with a 10 MiB body cap:
+
+```bash
+cat request-body | oxdoc extract text - --format json --max-input-size 10485760
+```
+
+**Command:** batch triage of an intake directory, plus a support bundle for
+bug reports (`diagnostics` accepts no document path and reads no document
+content):
+
+```bash
+oxdoc audit intake/*.docx --format jsonl > audit.jsonl
+oxdoc diagnostics --format json
+```
+
+Example output — one machine-readable JSON warning record on stderr with
+`--warnings json`, transcribed from [`cli.md`](cli.md):
+
+```json
+{"category":"parser","code":"W001","path":"word/document.xml","message":"stopped after malformed XML: ..."}
+```
+
+Example output — one failed-file record from a JSONL audit batch, shape
+consistent with
+[`schemas/v1/oxdoc-audit-jsonl.schema.json`](schemas/v1/oxdoc-audit-jsonl.schema.json);
+failed files carry `document_type: "unknown"`:
+
+```jsonl
+{"schema_version":1,"file":"intake/broken.docx","document_type":"unknown","error":{"code":"E002","message":"not a readable ZIP/OOXML package"}}
+```
+
+Limit failures are typed hard failures: the CLI prints
+`error[<code>]: <message>` to stderr and exits `1`. The limit codes are `E014`
+(input-package size), `E011` (combined uncompressed package size), and the
+existing `E005` (oversized part) and `E006` (suspicious ZIP entry) classes;
+the full stable list `E001`–`E010` lives in
+[`errors-and-warnings.md`](errors-and-warnings.md).
+
+**Constraints:** stdin is deliberately buffered only up to
+`--max-input-size`, because ZIP central-directory access requires a seekable
+source; the CLI never creates temporary files or spills stdin to a temporary
+directory (large XLSX workbooks keep their existing bounded library-internal
+shared-string spill). Warnings go to stderr with `--warnings json` and never
+contaminate the JSON/JSONL stdout stream. The defaults (64 MiB input / 256 MiB
+uncompressed / 64 MiB part / ratio 200) are secure and preserve
+ordinary-document compatibility. `oxdoc` never renders, paginates, or
+produces PDFs.
+
+**See also:** [`cli.md`](cli.md), [`json-output.md`](json-output.md),
+[`security.md`](security.md), [`performance.md`](performance.md),
+[`errors-and-warnings.md`](errors-and-warnings.md).
+
+## Recipe E - Audit workflow
+
+Triage a batch of untrusted documents with `oxdoc audit`, escalating
+high-severity signals and routing failed files by stable error code.
+
+**Command:** single-file JSON for one document, JSONL for a batch (JSONL
+continues after per-file failures and exits `0`), and text for a quick human
+read when `jq` is not available:
+
+```bash
+oxdoc audit report.docx --format json > audit.json
+oxdoc audit intake/*.docx --format jsonl > audit.jsonl
+oxdoc audit report.docx --format text
+```
+
+**Command:** triage step 1 — escalate high-severity signals from the
+single-file audit JSON:
+
+```bash
+jq -r '.signals[] | select(.severity == "high") | [.kind, .path] | @tsv' audit.json
+```
+
+**Command:** triage step 2 — route failed files in the batch by their stable
+`error.code` values (error records carry `document_type: "unknown"`):
+
+```bash
+jq -r 'select(.error) | [.file, .error.code] | @tsv' audit.jsonl
+```
+
+Example output — one audit JSON record, transcribed from the JSON Shape in
+[`audit.md`](audit.md):
+
+```json
+{
+  "oxdoc_version": "1.2.0",
+  "file": "workbook.xlsx",
+  "document_type": "xlsx",
+  "metadata": {
+    "file": "workbook.xlsx",
+    "application": "Excel",
+    "has_macros": false
+  },
+  "signals": [
+    {
+      "kind": "hidden_sheet",
+      "severity": "warning",
+      "path": "xl/workbook.xml",
+      "message": "worksheet 'Model Inputs' is hidden"
+    }
+  ]
+}
+```
+
+**Constraints:** audit output is factual signals only — no risk scoring, no
+rendering, and no mutation of input files; severity buckets are `info`,
+`warning`, and `high`. In JSONL records `audit` and `error` are mutually
+exclusive (schema-enforced via `oneOf` in
+[`schemas/v1/oxdoc-audit-jsonl.schema.json`](schemas/v1/oxdoc-audit-jsonl.schema.json));
+failed files carry `document_type: "unknown"` and error codes are stable
+(`E001`–`E010` classes, per [`errors-and-warnings.md`](errors-and-warnings.md)).
+`oxdoc` never renders, paginates, or produces PDFs.
+
+**See also:** [`audit.md`](audit.md),
+[`errors-and-warnings.md`](errors-and-warnings.md),
+[`json-output.md`](json-output.md),
+[`schemas/v1/oxdoc-audit-jsonl.schema.json`](schemas/v1/oxdoc-audit-jsonl.schema.json).
+
+## Reference pages
+
+- [`cli.md`](cli.md) — flag authority for every command and global option.
+- [`json-output.md`](json-output.md) — JSON/JSONL field contracts and schemas.
+- [`audit.md`](audit.md) — audit signal kinds, severities, and shapes.
+- [`errors-and-warnings.md`](errors-and-warnings.md) — stable `E001`–`E010`
+  error classes and warning categories/codes.
+- [`github-action.md`](github-action.md) — the setup action and its examples.
+- [`python-integration.md`](python-integration.md) — the Python wrapper and
+  install paths.
+- Schema mirrors used by these recipes:
+  [`schemas/v1/oxdoc-audit.schema.json`](schemas/v1/oxdoc-audit.schema.json),
+  [`schemas/v1/oxdoc-audit-jsonl.schema.json`](schemas/v1/oxdoc-audit-jsonl.schema.json).
