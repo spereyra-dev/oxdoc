@@ -14,6 +14,7 @@
   - [JSON Output](json-output.md)
   - [Library API](library-api.md)
   - [Python Integration](python-integration.md)
+  - [Integration Recipes](recipes.md)
   - [Compatibility Playground](compatibility-playground.md)
 
 - **Design**
