@@ -53,6 +53,7 @@ Key documentation pages:
 - [CLI Reference](docs/cli.md)
 - [Library API](docs/library-api.md)
 - [Python Integration](docs/python-integration.md)
+- [Integration Recipes](docs/recipes.md)
 - [Architecture](docs/architecture.md)
 - [OOXML Model](docs/ooxml-model.md)
 - [Errors and Warnings](docs/errors-and-warnings.md)
