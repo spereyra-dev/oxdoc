@@ -2,6 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/spereyra-dev/oxdoc?display_name=tag)](https://github.com/spereyra-dev/oxdoc/releases/latest)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-2ea44f)](https://spereyra-dev.github.io/oxdoc/)
+[![crates.io](https://img.shields.io/crates/v/oxdoc-cli)](https://crates.io/crates/oxdoc-cli)
 [![CI](https://img.shields.io/github/actions/workflow/status/spereyra-dev/oxdoc/ci.yml?branch=main&label=CI)](https://github.com/spereyra-dev/oxdoc/actions/workflows/ci.yml)
 
 Fast OOXML extraction without rendering.
@@ -353,7 +354,7 @@ The command-line application. It owns:
 
 ### `oxdoc-tabular`
 
-The experimental, unpublished Arrow and Parquet adapter. It owns reusable
+The experimental Arrow and Parquet adapter. It owns reusable
 XLSX schema inference, explicit-schema conversion, and deterministic two-pass
 inferred conversion while keeping columnar dependencies out of `oxdoc-core`.
 

@@ -64,7 +64,7 @@ Status: in progress.
 - Publish static Linux builds for `x86_64-unknown-linux-musl`. Implemented through the GitHub Release workflow.
 - Add signed checksums to GitHub Releases.
 - Publish `oxdoc-core`, `oxdoc-tabular`, and `oxdoc-cli` to crates.io in
-  dependency order for the next release.
+  dependency order. Implemented in the 2.0.0 crates.io release.
 
 ## Non-Goals
 
