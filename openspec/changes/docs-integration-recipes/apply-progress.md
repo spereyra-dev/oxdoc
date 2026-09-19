@@ -105,8 +105,9 @@ stays under 400.
 ### Workload / PR boundary
 
 Slice 1 = PR 1 on the `stacked-to-main` chain (`auto-chain` per session
-preflight). Commit: conventional `docs(recipes): ...` single work unit. No PR
-created, no push (parent instruction).
+preflight). Commit `aa9ed60` (`docs(recipes): ...`) is the single work unit,
+containing exactly `docs/recipes.md`, `docs/_sidebar.md`, `README.md`, and the
+six change-artifact files; no push, no PR (parent instruction).
 
 ### Structured status consumed
 
