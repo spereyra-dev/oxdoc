@@ -73,22 +73,29 @@ From the clean merged checkout, in dependency order:
 
 ```bash
 cargo package -p oxdoc-core                    # full verify
-cargo package -p oxdoc-tabular --no-verify     # resolution caveat, below
-cargo package -p oxdoc-cli --no-verify
-cargo package -p oxdoc-core --list && cargo package -p oxdoc-tabular --list \
-  && cargo package -p oxdoc-cli --list         # inspect: no tests, fixtures,
+cargo package -p oxdoc-core --list             # inspect: no tests, fixtures,
                                                # or workspace-only files
 cargo publish -p oxdoc-core --dry-run          # full verification
 ```
 
 ### Resolution caveat and retry policy
 
-`oxdoc-tabular` and `oxdoc-cli` cannot fully verify before their upstream crate
-exists on the registry: during publish resolution, the registry requirement is
-not satisfied by the path dependency. Pre-publish validation for those two
-crates is therefore `cargo package … --no-verify` plus the `--list` file-list
-inspection, and the full `cargo publish --dry-run` for each MUST be repeated
-immediately after its upstream publishes.
+`oxdoc-tabular` and `oxdoc-cli` cannot be packaged or dry-run before their
+upstream crate exists on the registry. Packaging for upload replaces the
+intra-workspace path dependency with its registry requirement, so resolution
+fails with `failed to select a version for the requirement oxdoc-core =
+"^2.0.0"` (observed even with `--no-verify` and `--offline`; only the `--list`
+file-list inspection, which skips the upload-resolution step, works
+pre-publish).
+
+Pre-publish validation for those two crates is therefore:
+
+- the `cargo package -p <crate> --list` file-list inspection (works without
+  registry resolution), and
+- the **deferred full validation** immediately after the upstream publish:
+  re-run `cargo package -p oxdoc-tabular --no-verify` (and `--list`), then the
+  full `cargo publish --dry-run` for each crate immediately after its upstream
+  is live.
 
 After a publish, the sparse index may lag: if a dry-run fails with a resolution
 error for a version that was just published, **wait and re-run — never skip a

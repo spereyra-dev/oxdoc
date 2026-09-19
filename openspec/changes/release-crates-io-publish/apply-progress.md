@@ -61,6 +61,26 @@ publish gate) and Slice 2 (31–37) remain unchecked by design.
   `command-line-utilities, parser-implementations` ✓ · `rust-version 1.88` ✓ ·
   `publish` not `false` (tabular explicit `true`; core/cli inherit default) ✓ ·
   docs.rs metadata for tabular only ✓ · no escaping README links ✓.
+- [ ] 10. Package in dependency order — **partially blocked pre-publish**:
+  `cargo package -p oxdoc-core` (full verify) ran and passed, and all three
+  `--list` inspections ran and passed (receipts below), but the
+  `cargo package -p oxdoc-tabular --no-verify` and `… -p oxdoc-cli
+  --no-verify` full packages **cannot succeed** until `oxdoc-core` 2.0.0 is
+  on the registry (cargo's packaging-for-upload resolution ignores the path
+  dependency for the registry requirement; no cargo flag skips the check —
+  verified with an `--offline` retry). Their deferred full validation is
+  documented in `docs/releasing.md` step 6 and re-enters via the
+  post-upstream dry-runs in tasks 27–28. Checkbox intentionally left
+  unchecked; reported to the parent as a spec/design assumption gap.
+- [x] 11. `cargo publish -p oxdoc-core --dry-run` (full verification, no
+  `--no-verify`) recorded — pass (receipt below). `oxdoc-tabular`/`oxdoc-cli`
+  dry-runs **cannot** fully verify pre-publish (their registry requirement is
+  unsatisfied while core 2.0.0 is unpublished) — that is the documented
+  caveat, not a reason to skip any later dry-run.
+- [x] 12. Every packaging/dry-run command actually run is recorded below in
+  the design's `### Receipt:` format, including the two honest
+  `fail(then retried)` receipts for the tabular/cli full package and the
+  documented N/A for their pre-publish dry-runs.
 - [x] 13. `docs/releasing.md` authored: steps 0–10, each with command →
   expected evidence → stop-on-failure gate, in the mandated order.
 - [x] 14. Mandatory content present: irreversibility warning (header),
@@ -94,6 +114,85 @@ publish gate) and Slice 2 (31–37) remain unchecked by design.
   carries the `^https://crates.io/crates/oxdoc-cli/?$` ignore.
 - [x] 21. Full local gate green (details below).
 - [x] 22. Protected-path diff check on the slice-1 commit (details below).
+
+## Publish receipts
+
+Pre-publish validation receipts (design §5 format; 2026-09-18 @ commit
+`e3725d3` — slice-1 version-bump commit; the two `fail(then retried)` receipts
+carry the caveat that their successful retry is the documented post-upstream
+re-run, not a pre-publish skip).
+
+### Receipt: pre-publish — oxdoc-core cargo package (full verify)
+- date/commit: 2026-09-18 @ e3725d3
+- command: `cargo package -p oxdoc-core`
+- result: pass
+- evidence: `Packaged 20 files, 362.5KiB (64.4KiB compressed)`; `Verifying
+  oxdoc-core v2.0.0` build `Finished dev profile`; note:
+  `warning: ignoring test 'schema' as tests\schema.rs is not included in the
+  published package` (expected — the include list intentionally excludes
+  tests).
+
+### Receipt: pre-publish — oxdoc-core cargo package --list
+- date/commit: 2026-09-18 @ e3725d3
+- command: `cargo package -p oxdoc-core --list`
+- result: pass
+- evidence: 20 entries (README, benches, 3 examples, src/**); no tests,
+  fixtures, or workspace-only files.
+
+### Receipt: pre-publish — oxdoc-tabular cargo package --list
+- date/commit: 2026-09-18 @ e3725d3
+- command: `cargo package -p oxdoc-tabular --list`
+- result: pass
+- evidence: 10 entries — README.md, `examples\tabular_gate.rs`,
+  `examples\xlsx_to_parquet.rs`, src (lib, parquet, xlsx_schema); no tests,
+  fixtures, or workspace-only files; both feature-gated examples ship.
+
+### Receipt: pre-publish — oxdoc-cli cargo package --list
+- date/commit: 2026-09-18 @ e3725d3
+- command: `cargo package -p oxdoc-cli --list`
+- result: pass
+- evidence: 7 entries — README.md, src (main, update); no tests, fixtures, or
+  workspace-only files.
+
+### Receipt: pre-publish — oxdoc-tabular cargo package --no-verify
+- date/commit: 2026-09-18 @ e3725d3
+- command: `cargo package -p oxdoc-tabular --no-verify` (retried with
+  `--offline`)
+- result: fail(then retried — the successful retry is the documented
+  post-upstream-publish re-run in `docs/releasing.md` step 6 / tasks 27–28,
+  not a skipped validation)
+- evidence: `error: failed to prepare local package for uploading` / `failed
+  to select a version for the requirement oxdoc-core = "^2.0.0"` / `candidate
+  versions found which didn't match: 1.2.0, 1.1.0, 1.0.0`; offline retry:
+  `candidate versions found which didn't match: 1.2.0`.
+
+### Receipt: pre-publish — oxdoc-cli cargo package --no-verify
+- date/commit: 2026-09-18 @ e3725d3
+- command: `cargo package -p oxdoc-cli --no-verify`
+- result: fail(then retried — same post-upstream re-run policy as tabular)
+- evidence: `failed to select a version for the requirement oxdoc-core =
+  "^2.0.0"` / `candidate versions found which didn't match: 1.2.0, 1.1.0,
+  1.0.0` / `required by package oxdoc-cli v2.0.0`.
+
+### Receipt: pre-publish — oxdoc-core cargo publish --dry-run (full)
+- date/commit: 2026-09-18 @ e3725d3
+- command: `cargo publish -p oxdoc-core --dry-run` (no `--no-verify`)
+- result: pass
+- evidence: `Packaged 20 files, 362.5KiB`; `Verifying oxdoc-core v2.0.0`
+  `Finished dev profile`; `Uploading oxdoc-core v2.0.0` then `warning:
+  aborting upload due to dry run`.
+
+### Receipt: pre-publish — oxdoc-tabular / oxdoc-cli cargo publish --dry-run
+- date/commit: 2026-09-18 @ e3725d3
+- command: `cargo publish -p oxdoc-tabular --dry-run` / `cargo publish -p
+  oxdoc-cli --dry-run`
+- result: skipped(N/A: the registry requirement `oxdoc-core 2.0.0` cannot
+  resolve while core 2.0.0 is unpublished — the documented pre-publish caveat;
+  the full dry-run for each is repeated immediately after its upstream
+  publishes, per `docs/releasing.md` step 6 and tasks 27–28; a dry-run is
+  never skipped once its upstream is live)
+- evidence: same unsatisfied-requirement output as the two package receipts
+  above.
 
 ## Files changed (slice 1)
 
@@ -155,8 +254,28 @@ NEVER-TOUCH verification: `tests/fixtures/compatibility-matrix.json`,
   `include`/`publish` for these packages; the metadata table evidence combines
   `cargo metadata` output with direct manifest reads, and `cargo package
   --list` (task 10 receipts) proves the include lists functionally.
+- **Task 10 as written is not achievable pre-publish** (spec scenario
+  "tabular and cli pre-publish validation uses the documented workaround"):
+  `cargo package -p oxdoc-tabular --no-verify` and `… -p oxdoc-cli
+  --no-verify` fail at registry resolution (`failed to select a version for
+  the requirement oxdoc-core = "^2.0.0"` — candidate versions 1.2.0, 1.1.0,
+  1.0.0), even with `--no-verify` and `--offline`. Packaging for upload
+  replaces the path dependency with its registry requirement and there is no
+  cargo flag to skip that check. Task 10's checkbox stays **unchecked**; the
+  `--list` file-list inspections (all three, which skip the upload-resolution
+  step) did run and pass, and the deferred full validation for tabular/cli is
+  documented in `docs/releasing.md` step 6 and re-enters the flow via the
+  post-upstream dry-runs in tasks 27–28. This spec assumption gap is reported
+  to the parent for the verify/archive phases.
 
 ## Remaining tasks
+
+Blocked pre-publish (re-enters the flow after `oxdoc-core` 2.0.0 is live):
+
+- [ ] 10. Deferred full `cargo package` verification for `oxdoc-tabular` and
+  `oxdoc-cli` (`--no-verify`) — succeeds only once `oxdoc-core` 2.0.0 exists
+  on the registry; the `--list` inspections for all three crates already
+  passed (receipts above).
 
 Human publish gate (unchecked, maintainer-executed):
 

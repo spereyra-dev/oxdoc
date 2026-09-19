@@ -146,12 +146,12 @@ Notes:
   Inspect each list: no tests, fixtures, or workspace-only files; tabular must include its
   README and both `examples/**` files (`xlsx_to_parquet.rs`, `tabular_gate.rs`).
   Spec: scenario "tabular and cli pre-publish validation uses the documented workaround".
-- [ ] 11. `cargo publish -p oxdoc-core --dry-run` (full verification, no `--no-verify`) and
+- [x] 11. `cargo publish -p oxdoc-core --dry-run` (full verification, no `--no-verify`) and
   record it. `oxdoc-tabular`/`oxdoc-cli` dry-runs **cannot** fully verify pre-publish (their
   registry requirement is unsatisfied while core 2.0.0 is unpublished) — that is the documented
   caveat, not a reason to skip any later dry-run.
   Spec: scenario "core packages and dry-runs fully before anything publishes".
-- [ ] 12. Record every packaging/dry-run receipt in
+- [x] 12. Record every packaging/dry-run receipt in
   `openspec/changes/release-crates-io-publish/apply-progress.md` under a "Publish receipts"
   section, using the design's `### Receipt: <step-id> — <crate> <command-kind>` format
   (`date/commit`, `command`, `result: pass | fail(then retried) | skipped(N/A: <reason>)`,
@@ -224,7 +224,7 @@ Notes:
   with **no coverage delta**, `scripts-test`, `docs-check`, `docs-links` with the crates.io
   ignore still present, `docs-schemas-check`, `docs-playground-check`).
   Spec: "No behavior or CI change" → scenario "local gates stay green after the bump".
-- [ ] 22. Protected-path diff check on the slice-1 commit:
+- [x] 22. Protected-path diff check on the slice-1 commit:
   `git diff --name-only main...HEAD` must contain nothing under `crates/*/src/**`, `schemas/**`,
   `docs/schemas/**`, `python/**`, `.github/workflows/**`, `action.yml`, `install.sh`;
   `git diff --exit-code main...HEAD -- python/pyproject.toml` must be clean; no
