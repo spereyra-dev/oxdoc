@@ -9,20 +9,36 @@ checked.
 | Channel | User link | Install or use |
 | --- | --- | --- |
 | GitHub Releases | [Latest release](https://github.com/spereyra-dev/oxdoc/releases/latest) | `curl -fsSL https://raw.githubusercontent.com/spereyra-dev/oxdoc/main/install.sh \| sh` on macOS/Linux, or download an archive for any supported platform. |
-| crates.io CLI | [`oxdoc-cli`](https://crates.io/crates/oxdoc-cli) | `cargo install oxdoc-cli` |
 | Documentation | [GitHub Pages](https://spereyra-dev.github.io/oxdoc/) | Browse the guides and reference. |
 | Continuous integration | [CI workflow](https://github.com/spereyra-dev/oxdoc/actions/workflows/ci.yml) | Review the checks run for `main` and pull requests. |
 
-The README links to these channels with badges. The release and crates.io
-badges report their upstream versions; the documentation badge identifies the
-published documentation site; and the CI badge reports the `main` workflow
-state. Do not treat badges as support, security, download-count, or performance
-claims.
+The README links to these channels with badges. The release badge reports its
+upstream version; the documentation badge identifies the published
+documentation site; and the CI badge reports the `main` workflow state. Do not
+treat badges as support, security, download-count, or performance claims.
 
 ## Channels Not Yet Published
 
 Do not add PyPI or Homebrew badges or installation commands until their public
 pages resolve and a real user can install from them.
+
+### crates.io
+
+The `oxdoc-core`, `oxdoc-tabular`, and `oxdoc-cli` crates are not published
+yet; `cargo install oxdoc-cli` has no crates.io source until then. The README
+carries no crates.io badge for this reason, and the badge returns when the
+release is live. Before adding the badge or `cargo install oxdoc-cli`
+instructions (the 2.0.0 release, gated by
+[Releasing](releasing.md)):
+
+1. Land the approved version-bump commit (2.0.0 / 0.2.0 / 2.0.0) and pass the
+   approved-version and metadata gates.
+2. Run the ordered packaging and dry-run validations from [Releasing](releasing.md).
+3. Publish in dependency order (`oxdoc-core`, then `oxdoc-tabular`, then
+   `oxdoc-cli`) after the maintainer authorization, with a registry check
+   after each crate.
+4. Record the receipts, confirm `cargo search oxdoc-cli --limit 1` reports
+   2.0.0, then add the badge linked to the crate page.
 
 ### PyPI
 

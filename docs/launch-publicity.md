@@ -37,16 +37,21 @@ cargo install oxdoc-cli
 
 ### Crates.io
 
-Publish in this order:
+The crates.io release (2.0.0) publishes all three crates in dependency order,
+following [Releasing](releasing.md) for the gated checklist:
 
 ```bash
 cargo publish -p oxdoc-core --dry-run
-cargo publish -p oxdoc-cli --dry-run
 cargo publish -p oxdoc-core
+cargo publish -p oxdoc-tabular --dry-run   # after oxdoc-core 2.0.0 is live
+cargo publish -p oxdoc-tabular
+cargo publish -p oxdoc-cli --dry-run       # after oxdoc-tabular 0.2.0 is live
 cargo publish -p oxdoc-cli
 ```
 
-If `oxdoc-cli` dry-run cannot resolve `oxdoc-core`, publish `oxdoc-core` first, then rerun the `oxdoc-cli` dry-run before publishing the CLI crate.
+`oxdoc-tabular` 0.2.0 ships alongside the CLI: it depends on typed XLSX APIs
+in `oxdoc-core` 2.0.0 and must publish between core and cli. The approved
+versions are `oxdoc-core` 2.0.0, `oxdoc-tabular` 0.2.0, and `oxdoc-cli` 2.0.0.
 
 Crate summary:
 
@@ -145,7 +150,8 @@ Docs: https://spereyra-dev.github.io/oxdoc/
 
 - Pin the `v1.0.0` GitHub Release.
 - Add repository topics: `rust`, `cli`, `docx`, `xlsx`, `pptx`, `ooxml`, `office`, `csv`, `metadata`.
-- Publish `oxdoc-core` and `oxdoc-cli` to crates.io.
+- Publish `oxdoc-core`, `oxdoc-tabular`, and `oxdoc-cli` to crates.io in
+  dependency order (see [Releasing](releasing.md)).
 - Publish or update the Homebrew tap.
 - Post the short social copy.
 - Post the Show HN / Reddit copy.

@@ -12,7 +12,7 @@ only for conversion:
 
 ```toml
 [dependencies]
-oxdoc-tabular = { version = "0.1.0", features = ["parquet"] }
+oxdoc-tabular = { version = "0.2.0", features = ["parquet"] }
 ```
 
 ## Inferred conversion policy
@@ -54,5 +54,5 @@ successful close. Conversion reports are serializable, while `Error::code()`
 provides stable machine-readable categories.
 
 See
-[`docs/spikes/xlsx-arrow-parquet.md`](../../docs/spikes/xlsx-arrow-parquet.md)
+[`docs/spikes/xlsx-arrow-parquet.md`](https://github.com/spereyra-dev/oxdoc/blob/main/docs/spikes/xlsx-arrow-parquet.md)
 for architecture, measurements, and completed production gates.

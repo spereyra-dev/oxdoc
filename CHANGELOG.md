@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on human-readable release notes.
 
-## Unreleased
+## 2.0.0 - 2026-09-18
+
+Released as `oxdoc-core` 2.0.0, `oxdoc-tabular` 0.2.0, and `oxdoc-cli` 2.0.0.
 
 ### Added
 
