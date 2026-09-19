@@ -140,7 +140,7 @@ Notes:
 
 ### C. Packaging validation receipts, pre-publish (spec req 3; design §5)
 
-- [ ] 10. Package in dependency order: `cargo package -p oxdoc-core` (full verify) ·
+- [x] 10. Package in dependency order: `cargo package -p oxdoc-core` (full verify) ·
   `cargo package -p oxdoc-tabular --no-verify` · `cargo package -p oxdoc-cli --no-verify` ·
   `cargo package -p oxdoc-core --list` && `… -p oxdoc-tabular --list` && `… -p oxdoc-cli --list`.
   Inspect each list: no tests, fixtures, or workspace-only files; tabular must include its
@@ -234,57 +234,67 @@ Notes:
 
 ## Human publish gate (maintainer-executed; not automatable)
 
-- [ ] 23. HUMAN GATE — maintainer publishes the release PR review, merges Slice 1 to `main`,
+- [x] 23. HUMAN GATE — maintainer publishes the release PR review, merges Slice 1 to `main`,
   and authorizes the registry operation. Slice 2 must not start before this.
   Spec: scenario "no publish happens without the human gate".
-- [ ] 24. HUMAN GATE — re-confirm the triple out loud against the merged commit
+  (Executed 2026-09-18: PR #241 reviewed and merged to `main` at `79bef11`; maintainer
+  authorized the local publish session. Recorded in apply-progress.md "Publish receipts".)
+- [x] 24. HUMAN GATE — re-confirm the triple out loud against the merged commit
   (2.0.0 / 0.2.0 / 2.0.0 via `cargo pkgid` × 3 and `grep -n '^## 2.0.0' CHANGELOG.md`), confirm
   a clean tree (`git status --porcelain` empty), and confirm all pre-publish dry-runs passed.
-- [ ] 25. Tag on the merged release commit and push: `git tag -a v2.0.0 -m "oxdoc 2.0.0"` then
+  (Re-confirmed in slice 2 on the merged commit `79bef11`: pkgid × 3 = 2.0.0 / 0.2.0 / 2.0.0,
+  CHANGELOG line 7 `## 2.0.0 - 2026-09-18`; core dry-run pass recorded in slice 1;
+  tabular/cli dry-runs were registry-gated pre-publish and re-ran successfully post-upstream.)
+- [x] 25. Tag on the merged release commit and push: `git tag -a v2.0.0 -m "oxdoc 2.0.0"` then
   `git push origin v2.0.0` (triggers `release.yml`; the GitHub Release may complete before
   crates.io resolves — expected, documented).
-- [ ] 26. Publish `oxdoc-core`: `cargo publish -p oxdoc-core`, then verify with
+  (Verified: `git ls-remote --tags origin v2.0.0` → `79bef11…` on the merged release commit.)
+- [x] 26. Publish `oxdoc-core`: `cargo publish -p oxdoc-core`, then verify with
   `cargo search oxdoc-core --limit 1` → 2.0.0. Record the receipt.
-- [ ] 27. Publish `oxdoc-tabular`: re-run `cargo publish -p oxdoc-tabular --dry-run` now that
+- [x] 27. Publish `oxdoc-tabular`: re-run `cargo publish -p oxdoc-tabular --dry-run` now that
   core 2.0.0 resolves (on index lag: wait and re-run — never skip), then
   `cargo publish -p oxdoc-tabular`, then verify `cargo search oxdoc-tabular --limit 1` → 0.2.0.
   Record the receipt, including any `fail(then retried)` output.
-- [ ] 28. Publish `oxdoc-cli`: `cargo publish -p oxdoc-cli --dry-run` then
+- [x] 28. Publish `oxdoc-cli`: `cargo publish -p oxdoc-cli --dry-run` then
   `cargo publish -p oxdoc-cli`, then verify `cargo search oxdoc-cli --limit 1` → 2.0.0. Record
   the receipt. **Stop between crates** — publish strictly core → tabular → cli.
   Spec: scenario "publish order and verification receipts".
-- [ ] 29. End-to-end receipt: `CARGO_TARGET_DIR=$(mktemp -d) cargo install oxdoc-cli --version 2.0.0`
+- [x] 29. End-to-end receipt: `CARGO_TARGET_DIR=$(mktemp -d) cargo install oxdoc-cli --version 2.0.0`
   succeeds from the registry. Record it.
-- [ ] 30. Record all publish receipts (tasks 26–29) in the "Publish receipts" section of
+  (Re-executed in slice 2 for a first-hand receipt: `Installed package \`oxdoc-cli v2.0.0\``
+  in a clean target dir — see apply-progress.md.)
+- [x] 30. Record all publish receipts (tasks 26–29) in the "Publish receipts" section of
   `openspec/changes/release-crates-io-publish/apply-progress.md` using the `### Receipt:` format.
   Failure handling: never re-publish the same version; resume from the failed crate; fix forward
   with a patch; `cargo yank --version <v> -p <crate>` as last resort.
 
 ## Slice 2 — post-publish flip + receipts (separate PR to `main`, after the publish)
 
-- [ ] 31. Precondition check: the three publish receipts (tasks 26–28) exist and each registry
+- [x] 31. Precondition check: the three publish receipts (tasks 26–28) exist and each registry
   check shows 2.0.0 / 0.2.0 / 2.0.0, plus the clean-target install receipt (task 29). If a receipt
   is missing, stop — do not flip docs to claim a channel that is not verified published.
-- [ ] 32. `docs/discoverability.md` — return crates.io CLI to **Published Channels** with the
+  (Verified independently: crates.io API `max_version` 2.0.0 / 0.2.0 / 2.0.0, `cargo search`
+  hits, badge HTTP 200, first-hand clean-target install.)
+- [x] 32. `docs/discoverability.md` — return crates.io CLI to **Published Channels** with the
   published versions (2.0.0 / 0.2.0 / 2.0.0) and the `cargo install oxdoc-cli` command, restore
   the badge sentence, and drop the "Publishing with 2.0.0" entry from **Channels Not Yet Published**.
   Spec: "Documentation truthfulness" → scenario "post-publish flip restores the badge and removes
   the ignore".
-- [ ] 33. `README.md` — restore the crates.io badge line (line 5, same line as before, verified
+- [x] 33. `README.md` — restore the crates.io badge line (line 5, same line as before, verified
   with an HTTP 200 against `https://crates.io/crates/oxdoc-cli`) and drop "unpublished" from the
   `oxdoc-tabular` description (~line 356). No other README edits, no new badges.
-- [ ] 34. `docs/roadmap.md` and `ROADMAP.md` — flip the Phase 5 bullet to implemented using the
+- [x] 34. `docs/roadmap.md` and `ROADMAP.md` — flip the Phase 5 bullet to implemented using the
   same wording in both files (reference: `ROADMAP.md` lines ~61–62: "Publish `oxdoc-core`,
   `oxdoc-tabular`, and `oxdoc-cli` to crates.io in dependency order").
-- [ ] 35. `.markdown-link-check.json` — remove the `^https://crates.io/crates/oxdoc-cli/?$`
+- [x] 35. `.markdown-link-check.json` — remove the `^https://crates.io/crates/oxdoc-cli/?$`
   ignore **only** now that the crate page exists (HTTP 200 confirmed in task 33); `make docs-links`
   must stay green with the ignore removed. If the page does not resolve, leave the ignore in place
   and report the blocker.
   Spec: scenario "the ignore removal is gated on the live page".
-- [ ] 36. Verify `docs/installation.md` needs no edit (its crates.io sentence is now true) and
+- [x] 36. Verify `docs/installation.md` needs no edit (its crates.io sentence is now true) and
   run the docs gates: `make docs-links`, `make docs-check`, `docs-schemas-check`,
   `docs-playground-check`.
-- [ ] 37. Record the slice-2 receipts, including the badge HTTP verification and the
+- [x] 37. Record the slice-2 receipts, including the badge HTTP verification and the
   `docs-links` run with the ignore removed, in the "Publish receipts" section of
   `openspec/changes/release-crates-io-publish/apply-progress.md`; confirm the `v2.0.0` tag exists
   on the merged release commit and that the release workflow produced its GitHub Release/artifacts

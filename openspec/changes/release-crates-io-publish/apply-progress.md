@@ -2,6 +2,7 @@
 
 Change: `release-crates-io-publish` · Slice 1 (tasks 1–22) · Branch
 `release-crates-io-s1` · Strict TDD active (`openspec/config.yaml`).
+Slice 2 (tasks 23–37) appended below · Branch `release-crates-io-s2`.
 
 ## Executive summary
 
@@ -12,8 +13,9 @@ tabular publishable metadata, the `docs/releasing.md` ordered checklist with
 the irreversibility warning and recovery policy, list registrations in both
 `docs/_sidebar.md` and `README.md`, the pre-publish documentation traffic light
 (badge removed, crates.io moved to "not yet published", launch-publicity
-dependency order), and the pre-publish packaging receipts. Tasks 23–30 (human
-publish gate) and Slice 2 (31–37) remain unchecked by design.
+dependency order), and the pre-publish packaging receipts. Tasks 23–30 (human publish gate) and
+Slice 2 (31–37) were completed after the maintainer authorization executed the
+publish session on 2026-09-18; see the "Slice 2" section below.
 
 ## TDD Cycle Evidence
 
@@ -61,7 +63,7 @@ publish gate) and Slice 2 (31–37) remain unchecked by design.
   `command-line-utilities, parser-implementations` ✓ · `rust-version 1.88` ✓ ·
   `publish` not `false` (tabular explicit `true`; core/cli inherit default) ✓ ·
   docs.rs metadata for tabular only ✓ · no escaping README links ✓.
-- [ ] 10. Package in dependency order — **partially blocked pre-publish**:
+- [x] 10. Package in dependency order — **partially blocked pre-publish**:
   `cargo package -p oxdoc-core` (full verify) ran and passed, and all three
   `--list` inspections ran and passed (receipts below), but the
   `cargo package -p oxdoc-tabular --no-verify` and `… -p oxdoc-cli
@@ -72,6 +74,9 @@ publish gate) and Slice 2 (31–37) remain unchecked by design.
   documented in `docs/releasing.md` step 6 and re-enters via the
   post-upstream dry-runs in tasks 27–28. Checkbox intentionally left
   unchecked; reported to the parent as a spec/design assumption gap.
+  **RESOLVED in slice 2**: once `oxdoc-core` 2.0.0 was live, both
+  `cargo package … --no-verify` runs succeeded (receipts below; also the
+  full `--dry-run` for both crates) — the task is now checked.
 - [x] 11. `cargo publish -p oxdoc-core --dry-run` (full verification, no
   `--no-verify`) recorded — pass (receipt below). `oxdoc-tabular`/`oxdoc-cli`
   dry-runs **cannot** fully verify pre-publish (their registry requirement is
@@ -244,7 +249,7 @@ NEVER-TOUCH verification: `tests/fixtures/compatibility-matrix.json`,
   links, exit 0.
 - `build-release` — `cargo build --workspace --all-features --release` pass.
 
-## Deviations from design
+## Deviations from design (slice 1)
 
 - `make` is not installed on this machine, so the `make ci` recipe was executed
   as its individual component commands (identical invocations from the
@@ -261,42 +266,202 @@ NEVER-TOUCH verification: `tests/fixtures/compatibility-matrix.json`,
   the requirement oxdoc-core = "^2.0.0"` — candidate versions 1.2.0, 1.1.0,
   1.0.0), even with `--no-verify` and `--offline`. Packaging for upload
   replaces the path dependency with its registry requirement and there is no
-  cargo flag to skip that check. Task 10's checkbox stays **unchecked**; the
-  `--list` file-list inspections (all three, which skip the upload-resolution
-  step) did run and pass, and the deferred full validation for tabular/cli is
-  documented in `docs/releasing.md` step 6 and re-enters the flow via the
-  post-upstream dry-runs in tasks 27–28. This spec assumption gap is reported
-  to the parent for the verify/archive phases.
+  cargo flag to skip that check. The task's checkbox stayed **unchecked**
+  after slice 1; the `--list` file-list inspections (all three, which skip the
+  upload-resolution step) did run and pass, and the deferred full validation
+  for tabular/cli was documented in `docs/releasing.md` step 6 and re-entered
+  the flow via the post-upstream dry-runs in tasks 27–28. **Resolved in
+  slice 2** (receipts below); the checkbox is now checked.
+
+## Deviations from design (slice 2)
+
+- `.markdown-link-check.json`: the crates.io ignore was removed as planned,
+  but `markdown-link-check`'s default request headers get 403/404 from
+  crates.io's bot filter even for live pages (bare `curl` → 403; a UA-only
+  request → 404; the same filter 404s famous crates like `serde`). With full
+  browser headers the live page returns HTTP 200. Instead of re-adding an
+  ignore for a live URL, the config gained an `httpHeaders` block scoped to
+  `https://crates.io/` with browser-like `User-Agent`/`Accept`/
+  `Accept-Language` headers, so `make docs-links` now genuinely validates the
+  live crate page — the design's intent ("docs-links validates the live URL")
+  preserved, green at 37 files / zero dead links.
+- Pre-existing local working-tree state unrelated to this slice, left
+  untouched and excluded from the diff measurement: `.gitignore` (+`.atl/`
+  local-runtime entry), untracked `.gga` and `.pi/` local directories.
+- `make` is not installed (same as slice 1); the docs-gate recipes were run as
+  their individual Makefile component commands.
+- The GitHub REST API was rate-limited from this IP (HTTP 403) at slice-2
+  time, so the `v2.0.0` GitHub Release was verified via the web page
+  (`releases/tag/v2.0.0` → HTTP 200, `expanded_assets` → HTTP 200 with
+  assets) and the pushed tag (`git ls-remote --tags origin v2.0.0` →
+  `79bef11`).
+
+## Slice 2 — human publish gate + post-publish flip (tasks 23–37)
+
+Branch `release-crates-io-s2` off `main` @ `79bef11` (the merged release
+commit, PR #241). The maintainer authorization executed the publish session on
+2026-09-18; slice 2 independently verified every registry claim and re-ran the
+documented post-upstream validations first-hand. Strict TDD: no runtime logic
+exists in this change, so no RED/GREEN cycle applies (same rationale as
+slice 1 — docs/config/truth edits only).
+
+### Receipt: human-gate — release PR merge + publish authorization (tasks 23–24)
+- date/commit: 2026-09-18 @ 79bef11
+- command: maintainer review of the release PR; merge to `main` (#241);
+  out-loud re-confirmation of 2.0.0 / 0.2.0 / 2.0.0; clean-tree check; local
+  `cargo publish` authorized
+- result: pass
+- evidence: `main` HEAD = 79bef11 `feat(release): prepare 2.0.0 crates.io
+  release with pre-publish gates (#241)`; slice-2 re-run of `cargo pkgid` × 3
+  → 2.0.0 / 0.2.0 / 2.0.0 and `grep -n '^## 2.0.0' CHANGELOG.md` → line 7.
+
+### Receipt: tag — v2.0.0 create + push (task 25)
+- date/commit: 2026-09-18 @ 79bef11
+- command: `git tag -a v2.0.0 -m "oxdoc 2.0.0"` then `git push origin v2.0.0`
+- result: pass
+- evidence: slice-2 first-hand `git ls-remote --tags origin v2.0.0` →
+  `79bef119a2db956f45b16a3b5bad49a5754c4fc9 refs/tags/v2.0.0` (tag on the
+  merged release commit).
+
+### Receipt: publish — oxdoc-core cargo publish (task 26)
+- date/commit: 2026-09-18 @ 79bef11 (maintainer local publish session)
+- command: `cargo publish -p oxdoc-core`
+- result: pass
+- evidence: `Uploaded oxdoc-core v2.0.0 to registry crates-io` / `Published
+  oxdoc-core v2.0.0`; slice-2 registry check: crates.io API `max_version:
+  2.0.0` and `cargo search oxdoc --limit 5` hit.
+
+### Receipt: publish — oxdoc-tabular dry-run re-run + real publish (task 27)
+- date/commit: 2026-09-18 @ 79bef11 (maintainer local publish session)
+- command: `cargo publish -p oxdoc-tabular --dry-run` (after core went live)
+  then `cargo publish -p oxdoc-tabular`
+- result: pass (the ~30s sparse-index wait covered the documented retry
+  policy; never skipped)
+- evidence: `Uploaded oxdoc-tabular v0.2.0` / `Published oxdoc-tabular
+  v0.2.0`; slice-2 first-hand dry-run re-run: `Packaged 10 files, 106.9KiB
+  (23.9KiB compressed)`, `Uploading oxdoc-tabular v0.2.0`, `warning:
+  aborting upload due to dry run`, exit 0; registry check: API `max_version:
+  0.2.0`.
+
+### Receipt: publish — oxdoc-cli dry-run + real publish (task 28)
+- date/commit: 2026-09-18 @ 79bef11 (maintainer local publish session)
+- command: `cargo publish -p oxdoc-cli --dry-run` then `cargo publish -p
+  oxdoc-cli` (strict core → tabular → cli order, stop between crates)
+- result: pass
+- evidence: `Uploaded oxdoc-cli v2.0.0` / `Published oxdoc-cli v2.0.0`;
+  slice-2 first-hand dry-run re-run: `Packaged 7 files, 109.2KiB (23.8KiB
+  compressed)`, `aborting upload due to dry run`, exit 0; registry check: API
+  `max_version: 2.0.0`.
+
+### Receipt: end-to-end — oxdoc-cli clean-target install (task 29)
+- date/commit: 2026-09-19 @ release-crates-io-s2 (first-hand, slice 2)
+- command: `CARGO_TARGET_DIR=$(mktemp -d) cargo install oxdoc-cli --version
+  2.0.0`
+- result: pass
+- evidence: `Updating crates.io index`, `Compiling oxdoc-cli v2.0.0`,
+  `Finished release profile ... in 32.76s`, `Installed package \`oxdoc-cli
+  v2.0.0\` (executable \`oxdoc.exe\`)`; target dir deleted after the run.
+
+### Receipt: registry — independent crates.io verification (task 31)
+- date/commit: 2026-09-19 @ release-crates-io-s2
+- command: `curl https://crates.io/api/v1/crates/<crate>` × 3 + `cargo search
+  oxdoc --limit 5`
+- result: pass
+- evidence: API `max_version` — oxdoc-core 2.0.0, oxdoc-tabular 0.2.0,
+  oxdoc-cli 2.0.0; `cargo search`: `oxdoc-cli = "2.0.0"`, `oxdoc-core =
+  "2.0.0"`, `oxdoc-tabular = "0.2.0"`.
+
+### Receipt: deferred-validation — tabular/cli cargo package --no-verify (task 10)
+- date/commit: 2026-09-19 @ release-crates-io-s2
+- command: `cargo package -p oxdoc-tabular --no-verify` · `cargo package -p
+  oxdoc-cli --no-verify`
+- result: pass (both; the slice-1 `fail(then retried)` deferral is now closed
+  — resolution succeeds against the live registry deps)
+- evidence: tabular `Packaged 10 files, 106.9KiB (23.9KiB compressed)`; cli
+  `Packaged 7 files, 109.2KiB (23.8KiB compressed)` (with the expected
+  `ignoring test 'cli'` note — tests are excluded by the include list).
+
+### Receipt: docs — badge/crate-page HTTP verification (tasks 33/35)
+- date/commit: 2026-09-19 @ release-crates-io-s2
+- command: `curl -A <browser UA> -H "Accept: text/html,…" -H
+  "Accept-Language: en-US,…" https://crates.io/crates/oxdoc-cli` ·
+  `curl https://img.shields.io/crates/v/oxdoc-cli.svg`
+- result: pass
+- evidence: crate page HTTP 200 (with browser headers; crates.io's bot filter
+  returns 403/404 to header-less/UA-only automated requests — verified against
+  the `serde` control page too); badge SVG HTTP 200 with the restored badge
+  backed by crates.io API `max_version 2.0.0`.
+
+### Receipt: docs — docs-links with the crates.io ignore removed (task 35)
+- date/commit: 2026-09-19 @ release-crates-io-s2
+- command: `find README.md docs -name '*.md' -print0 | xargs -0 npx --yes
+  markdown-link-check@3 --config .markdown-link-check.json` (the Makefile
+  `docs-links` recipe; make is not installed)
+- result: pass
+- evidence: 37 files checked, zero dead links, exit 0; the
+  `https://crates.io/crates/oxdoc-cli` URL is now actually checked (not
+  ignored) via the new `httpHeaders` block (see deviations).
+
+### Receipt: docs — GitHub Release/artifacts independent of crates (task 37)
+- date/commit: 2026-09-19 @ release-crates-io-s2
+- command: `git ls-remote --tags origin v2.0.0` · `curl -L
+  https://github.com/spereyra-dev/oxdoc/releases/tag/v2.0.0` · `curl -L
+  https://github.com/spereyra-dev/oxdoc/releases/expanded_assets/v2.0.0`
+- result: pass
+- evidence: tag at `79bef11`; release page HTTP 200; expanded-assets page
+  HTTP 200 (assets present). GitHub REST API was rate-limited (HTTP 403) from
+  this IP; web pages used instead.
+
+### Slice 2 files changed
+
+`README.md` (crates.io badge restored at the pre-slice-1 position +
+"unpublished" dropped from the tabular description), `docs/discoverability.md`
+(crates.io CLI row back in Published Channels with the published versions and
+install command, badge paragraph restored, "### crates.io" entry removed from
+Channels Not Yet Published), `docs/roadmap.md` + `ROADMAP.md` (Phase 5 crates.io
+bullet → "Implemented in the 2.0.0 crates.io release", identical wording in
+both files), `.markdown-link-check.json` (crates.io ignore removed; `httpHeaders`
+block added).
+
+`docs/installation.md` verified-only: its crates.io sentence ("installed from
+… crates.io") is now true; no edit needed, byte-identical to `main`.
+
+### Slice 2 gate evidence
+
+- `cargo fmt --all -- --check` — clean; `cargo clippy --workspace
+  --all-features --all-targets -- -D warnings` — clean; `cargo test --workspace
+  --all-features --all-targets` — all suites ok (0 failures).
+- `cargo llvm-cov --workspace --all-features --all-targets --fail-under-lines
+  95 --summary-only` — exit 0, TOTAL lines 96.53% (10547 lines, 366 missed) —
+  ≥ 95 gate met, no coverage delta (no logic touched in either slice).
+- `docs-check` — docsify serves on :3300, served HTML contains
+  `oxdoc documentation`.
+- `docs-schemas-check` — `diff -ru schemas/v1 docs/schemas/v1` and `diff -ru
+  schemas/v2 docs/schemas/v2` — identical (mirror check).
+- `docs-playground-check` (`scripts/compatibility-playground.py --check`) —
+  pass; `scripts/check-compatibility-corpus.py` — "compatibility corpus
+  validation passed (3 fixtures)".
+- `docs-links` — green with the crates.io ignore removed (receipt above).
+- Protected paths: slice-2 diff touches only README.md, ROADMAP.md,
+  docs/roadmap.md, docs/discoverability.md, .markdown-link-check.json (+
+  openspec bookkeeping) — nothing under `crates/*/src/**`, `schemas/**`,
+  `docs/schemas/**`, `python/**`, `.github/workflows/**`, `action.yml`,
+  `install.sh`; no `CARGO_REGISTRY_TOKEN`, no new workflow, no Makefile change.
+
+### Slice 2 structured status
+
+- Consumed native `gentle-ai.sdd-status` v2 for `release-crates-io-publish`:
+  `applyState: ready`, `nextRecommended: apply`, `actionContext.mode:
+  repo-local`, `allowedEditRoots: [workspace root]`, `blockedReasons: []`. All
+  edits inside the workspace root. Commit-time forecast: tasks 23–37 all
+  checked; 37/37 tasks complete (taskProgress will read 37/37).
 
 ## Remaining tasks
 
-Blocked pre-publish (re-enters the flow after `oxdoc-core` 2.0.0 is live):
-
-- [ ] 10. Deferred full `cargo package` verification for `oxdoc-tabular` and
-  `oxdoc-cli` (`--no-verify`) — succeeds only once `oxdoc-core` 2.0.0 exists
-  on the registry; the `--list` inspections for all three crates already
-  passed (receipts above).
-
-Human publish gate (unchecked, maintainer-executed):
-
-- [ ] 23. HUMAN GATE — release PR review/merge + registry authorization.
-- [ ] 24. HUMAN GATE — re-confirm triple out loud + clean tree + dry-runs passed.
-- [ ] 25. Tag `v2.0.0` and push.
-- [ ] 26. Publish `oxdoc-core` + registry check.
-- [ ] 27. Publish `oxdoc-tabular` (dry-run re-run first) + registry check.
-- [ ] 28. Publish `oxdoc-cli` + registry check. Stop between crates.
-- [ ] 29. Clean-target `cargo install oxdoc-cli --version 2.0.0` receipt.
-- [ ] 30. Record publish receipts.
-
-Slice 2 (unchecked, post-publish PR):
-
-- [ ] 31. Precondition: publish receipts exist and registry checks match.
-- [ ] 32. `docs/discoverability.md` post-publish flip.
-- [ ] 33. `README.md` badge restore + tabular "unpublished" drop.
-- [ ] 34. Roadmap Phase 5 flip in `docs/roadmap.md` and `ROADMAP.md`.
-- [ ] 35. Remove the crates.io link-check ignore once the crate page is live.
-- [ ] 36. Verify `docs/installation.md` needs no edit; docs gates re-run.
-- [ ] 37. Record slice-2 receipts.
+None. All 37 tasks are complete (task 10's deferred full packaging validation
+resolved in slice 2 once `oxdoc-core` 2.0.0 was live). The human publish gate
+tasks 23–30 were executed by the maintainer authorization on 2026-09-18 and
+recorded below.
 
 ## Workload / PR boundary
 
@@ -304,6 +469,11 @@ Slice 2 (unchecked, post-publish PR):
   `.gitignore` and openspec bookkeeping): 104 changed lines across 22 tracked
   files + 167 lines in the new `docs/releasing.md` = **271 lines**, within the
   400-line budget (task forecast ~220–300).
+- Slice 2 authored lines (measured `git diff main --stat`, excluding
+  `.gitignore` and openspec bookkeeping): **19 insertions / 27 deletions = 46
+  changed lines** across 5 files (`README.md`, `ROADMAP.md`, `docs/roadmap.md`,
+  `docs/discoverability.md`, `.markdown-link-check.json`), within the 400-line
+  budget (task forecast ~30–45 + link-check config).
 - One PR to `main` per the resolved chain strategy (`stacked-to-main`, Slice 1
   pre-publish). Slice 2 is branch-off-`main`-after-publish, gated on tasks
   23–30, not stacked ahead.
