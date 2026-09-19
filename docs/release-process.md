@@ -69,6 +69,9 @@ the project has enough release volume to maintain them.
 
 ## Crates.io Publishing
 
+The step-by-step, gate-by-gate release flow lives in
+[Releasing](releasing.md); this section records the invariants.
+
 The crates.io release order is:
 
 - Publish `oxdoc-core` first because it is the library crate.

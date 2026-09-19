@@ -7,7 +7,7 @@ Its optional `parquet` feature adds bounded Arrow batches and Parquet output
 without adding Arrow or Parquet to `oxdoc-core` or the default CLI graph:
 
 ```toml
-oxdoc-tabular = { version = "0.1.0", features = ["parquet"] }
+oxdoc-tabular = { version = "0.2.0", features = ["parquet"] }
 ```
 
 Explicit conversion schemas are strict and report row/column context on type

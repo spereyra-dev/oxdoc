@@ -339,7 +339,7 @@ Example output — one audit JSON record, transcribed from the JSON Shape in
 
 ```json
 {
-  "oxdoc_version": "1.2.0",
+  "oxdoc_version": "2.0.0",
   "file": "workbook.xlsx",
   "document_type": "xlsx",
   "metadata": {

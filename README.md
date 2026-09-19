@@ -2,7 +2,6 @@
 
 [![Release](https://img.shields.io/github/v/release/spereyra-dev/oxdoc?display_name=tag)](https://github.com/spereyra-dev/oxdoc/releases/latest)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-2ea44f)](https://spereyra-dev.github.io/oxdoc/)
-[![crates.io](https://img.shields.io/crates/v/oxdoc-cli)](https://crates.io/crates/oxdoc-cli)
 [![CI](https://img.shields.io/github/actions/workflow/status/spereyra-dev/oxdoc/ci.yml?branch=main&label=CI)](https://github.com/spereyra-dev/oxdoc/actions/workflows/ci.yml)
 
 Fast OOXML extraction without rendering.
@@ -13,7 +12,7 @@ Fast OOXML extraction without rendering.
 
 ## Status
 
-`oxdoc` has a stable 1.x CLI and Rust API contract for:
+`oxdoc` has a stable 2.x CLI and Rust API contract for:
 
 - DOCX text extraction from the supported document parts.
 - DOCX logical text semantics for paragraph breaks, table cell and row separation, tabs, line breaks, and deleted revision text handling.
@@ -50,6 +49,7 @@ Key documentation pages:
 - [Getting Started](docs/getting-started.md)
 - [Installation](docs/installation.md)
 - [GitHub Action](docs/github-action.md)
+- [Releasing](docs/releasing.md)
 - [CLI Reference](docs/cli.md)
 - [Library API](docs/library-api.md)
 - [Python Integration](docs/python-integration.md)

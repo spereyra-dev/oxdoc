@@ -90,7 +90,8 @@ npx docsify-cli@4 serve docs --port 3000
 - Warnings remain recoverable where possible.
 - Public API changes are documented.
 - CLI changes update [CLI Reference](cli.md).
-- Release/distribution changes update [Release Process](release-process.md).
+- Release/distribution changes update [Release Process](release-process.md) and
+  [Releasing](releasing.md).
 - Large files and private documents are not committed.
 - Fixture changes include provenance and redistribution notes.
 - Application-generated compatibility fixtures update
