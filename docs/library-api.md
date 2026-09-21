@@ -396,6 +396,7 @@ pub struct XlsxCsvOptions<'a> {
     pub delimiter: u8,
     pub bom: bool,
     pub line_terminator: CsvLineTerminator,
+    pub quote_mode: CsvQuoteMode,
 }
 ```
 
@@ -416,6 +417,15 @@ pub enum CsvLineTerminator {
 }
 ```
 
+`quote_mode` selects the CSV quoting strategy. `CsvQuoteMode::Minimal` is the default and quotes a field only when it contains the delimiter, quotes, or line breaks; `CsvQuoteMode::All` quotes every field, including empty ones (`""`), matching common QUOTE_ALL semantics for strict ingestion pipelines.
+
+```rust
+pub enum CsvQuoteMode {
+    Minimal,
+    All,
+}
+```
+
 Defaults:
 
 ```rust
@@ -426,6 +436,7 @@ XlsxCsvOptions {
     delimiter: b',',
     bom: false,
     line_terminator: CsvLineTerminator::Lf,
+    quote_mode: CsvQuoteMode::Minimal,
 }
 ```
 

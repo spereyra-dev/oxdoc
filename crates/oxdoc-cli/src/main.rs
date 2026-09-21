@@ -8,9 +8,10 @@ use std::sync::OnceLock;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use oxdoc_core::vfs::OoxmlLimits;
 use oxdoc_core::{
-    AuditSignal, CsvLineTerminator, DocumentAudit, DocumentInfo, DocumentType, DocxRevisionMode,
-    DocxTables, DocxTextOptions, OutputWarning, OxdocError, StructuredText, XlsxCell,
-    XlsxCellValue, XlsxCsvOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions, XlsxValueMode,
+    AuditSignal, CsvLineTerminator, CsvQuoteMode, DocumentAudit, DocumentInfo, DocumentType,
+    DocxRevisionMode, DocxTables, DocxTextOptions, OutputWarning, OxdocError, StructuredText,
+    XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions,
+    XlsxValueMode,
 };
 use oxdoc_tabular::xlsx_schema;
 
@@ -189,6 +190,13 @@ enum ExtractCommand {
         crlf: bool,
         #[arg(long, value_enum, default_value_t = CliXlsxValueMode::Raw)]
         value_mode: CliXlsxValueMode,
+        #[arg(
+            long,
+            value_enum,
+            default_value_t = CliCsvQuoteMode::Minimal,
+            help = "CSV quoting: minimal (default) or all fields"
+        )]
+        quote_mode: CliCsvQuoteMode,
         #[arg(long, short)]
         output: Option<PathBuf>,
         #[arg(long, conflicts_with = "output", requires = "all_sheets")]
@@ -331,6 +339,21 @@ impl From<CliXlsxValueMode> for XlsxValueMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum CliCsvQuoteMode {
+    Minimal,
+    All,
+}
+
+impl From<CliCsvQuoteMode> for CsvQuoteMode {
+    fn from(value: CliCsvQuoteMode) -> Self {
+        match value {
+            CliCsvQuoteMode::Minimal => CsvQuoteMode::Minimal,
+            CliCsvQuoteMode::All => CsvQuoteMode::All,
+        }
+    }
+}
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -383,6 +406,7 @@ fn run() -> Result<(), CliError> {
                 bom,
                 crlf,
                 value_mode,
+                quote_mode,
                 output,
                 output_dir,
             } => {
@@ -399,6 +423,7 @@ fn run() -> Result<(), CliError> {
                         bom,
                         crlf,
                         value_mode: value_mode.into(),
+                        quote_mode: quote_mode.into(),
                         output: output.as_deref(),
                         output_dir: output_dir.as_deref(),
                     },
@@ -882,6 +907,7 @@ struct CsvCommandOptions<'a> {
     bom: bool,
     crlf: bool,
     value_mode: XlsxValueMode,
+    quote_mode: CsvQuoteMode,
     output: Option<&'a Path>,
     output_dir: Option<&'a Path>,
 }
@@ -916,6 +942,7 @@ fn extract_csv_command(
             } else {
                 CsvLineTerminator::Lf
             },
+            quote_mode: options.quote_mode,
         };
         return export_all_sheets(
             options.files.first().expect("required by clap"),
@@ -938,6 +965,7 @@ fn extract_csv_command(
         } else {
             CsvLineTerminator::Lf
         },
+        quote_mode: options.quote_mode,
     };
     let mut writer = output_writer(options.output)?;
     let mut processed = 0usize;

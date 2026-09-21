@@ -22,6 +22,14 @@ The format is based on human-readable release notes.
   consumers; only the row terminator changes, never content inside quoted
   fields. The Python wrapper's `extract_csv(crlf=True)` passes the flag
   through.
+- Quote mode for XLSX CSV output: `oxdoc extract csv --quote-mode all`
+  (including `--all-sheets` per-sheet exports) quotes every CSV field,
+  including empty ones (`""`), matching common QUOTE_ALL semantics for strict
+  ingestion pipelines, and the new `XlsxCsvOptions::quote_mode` field
+  (`CsvQuoteMode::Minimal` by default, `CsvQuoteMode::All` for QUOTE_ALL) and
+  re-exported `CsvQuoteMode` enum expose the same option to library consumers.
+  The default `minimal` quoting is unchanged, and the Python wrapper's
+  `extract_csv(quote_mode=...)` always passes the flag through.
 
 ## 2.0.0 - 2026-09-18
 

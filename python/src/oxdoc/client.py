@@ -11,6 +11,7 @@ from typing import Any, Iterable, Literal, Sequence
 PathLike = str | Path
 TextFormat = Literal["json", "structured-json"]
 ValueMode = Literal["raw", "formatted"]
+CsvQuoteMode = Literal["minimal", "all"]
 
 
 class OxdocError(Exception):
@@ -97,6 +98,7 @@ class Oxdoc:
         delimiter: str = ",",
         bom: bool = False,
         crlf: bool = False,
+        quote_mode: CsvQuoteMode = "minimal",
         value_mode: ValueMode = "raw",
     ) -> OxdocResult:
         """Extract one XLSX sheet as CSV text.
@@ -107,9 +109,25 @@ class Oxdoc:
 
         When ``crlf`` is true, CSV rows end with CRLF (``\\r\\n``) instead of
         LF for Excel-classic compatibility.
+
+        ``quote_mode`` selects the CSV quoting strategy: ``minimal`` (the
+        default) quotes only fields containing the delimiter, quotes, or line
+        breaks, while ``all`` quotes every field, including empty ones
+        (``""``), matching QUOTE_ALL semantics for strict ingestion
+        pipelines.
         """
 
-        args = ["extract", "csv", str(path), "--delimiter", delimiter, "--value-mode", value_mode]
+        args = [
+            "extract",
+            "csv",
+            str(path),
+            "--delimiter",
+            delimiter,
+            "--quote-mode",
+            quote_mode,
+            "--value-mode",
+            value_mode,
+        ]
         if sheet is not None:
             args.extend(["--sheet", sheet])
         if sheet_index is not None:

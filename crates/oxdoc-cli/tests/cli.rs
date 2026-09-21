@@ -610,6 +610,56 @@ fn ends_csv_stdout_rows_with_lf_by_default() {
 }
 
 #[test]
+fn quotes_all_csv_fields_when_requested() {
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Sales Q1",
+        "--delimiter",
+        ";",
+        "--quote-mode",
+        "all",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        stdout(&output).trim_end(),
+        "\"id\";\"Cliente A\";\"monto\"\n\"1\";\"\";\"5000\""
+    );
+}
+
+#[test]
+fn keeps_csv_fields_minimally_quoted_by_default() {
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Sales Q1",
+        "--delimiter",
+        ";",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        stdout(&output).trim_end(),
+        fixtures::read_snapshot("cli_extract_csv.txt").trim_end()
+    );
+    assert!(
+        !stdout(&output).contains('"'),
+        "default output must not quote any field"
+    );
+}
+
+#[test]
 fn exports_all_sheets_csv_files_with_utf8_bom_prefix_when_requested() {
     let workbook = create_ooxml(
         "all-sheets-bom.xlsx",

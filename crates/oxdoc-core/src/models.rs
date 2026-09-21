@@ -532,6 +532,18 @@ pub enum CsvLineTerminator {
     Crlf,
 }
 
+/// Quoting strategy for XLSX CSV output.
+///
+/// `Minimal` is the default and quotes a field only when it contains the
+/// delimiter, quotes, or line breaks. `All` quotes every field, including
+/// empty ones (`""`), matching common QUOTE_ALL semantics for strict
+/// ingestion pipelines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CsvQuoteMode {
+    Minimal,
+    All,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct XlsxCsvOptions<'a> {
     pub sheet_name: Option<&'a str>,
@@ -542,6 +554,8 @@ pub struct XlsxCsvOptions<'a> {
     pub bom: bool,
     /// Row terminator between CSV rows (`Lf` by default, `Crlf` for Excel-classic output).
     pub line_terminator: CsvLineTerminator,
+    /// CSV field quoting strategy (`Minimal` by default, `All` for QUOTE_ALL-style output).
+    pub quote_mode: CsvQuoteMode,
 }
 
 impl Default for XlsxCsvOptions<'_> {
@@ -553,6 +567,7 @@ impl Default for XlsxCsvOptions<'_> {
             delimiter: b',',
             bom: false,
             line_terminator: CsvLineTerminator::Lf,
+            quote_mode: CsvQuoteMode::Minimal,
         }
     }
 }
@@ -622,8 +637,8 @@ impl AuditSignal {
 #[cfg(test)]
 mod tests {
     use super::{
-        CsvLineTerminator, Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCell,
-        XlsxCellValue, XlsxCsvOptions, XlsxFormula, XlsxReadOptions, XlsxSheetOptions,
+        CsvLineTerminator, CsvQuoteMode, Extraction, OutputWarning, WarningCategory, WarningCode,
+        XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxFormula, XlsxReadOptions, XlsxSheetOptions,
     };
 
     #[test]
@@ -685,6 +700,7 @@ mod tests {
         assert!(!options.include_hidden);
         assert_eq!(options.delimiter, b',');
         assert_eq!(options.line_terminator, CsvLineTerminator::Lf);
+        assert_eq!(options.quote_mode, CsvQuoteMode::Minimal);
     }
 
     #[test]
