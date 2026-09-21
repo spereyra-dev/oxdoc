@@ -27,7 +27,7 @@ Status: in progress.
 
 ## Phase 1: 1.0 Hardening
 
-- Improve DOCX extraction beyond the main document body. Headers, footers, footnotes, endnotes, comments, hyperlink visible text, and deterministic related-part ordering are implemented; section-aware ordering remains future work.
+- Improve DOCX extraction beyond the main document body. Headers, footers, footnotes, endnotes, comments, hyperlink visible text, deterministic related-part ordering, and section-aware related-part ordering are implemented. `w:titlePg` and `evenAndOddHeaders` remain documented sub-limits.
 - Improve XLSX CSV extraction for sparse dimensions, date/number formatting, and larger workbooks. Visible sheet selection by name or 1-based index, booleans, errors, cached formula values, and bounded shared-string storage are implemented in the current path.
 - Harden PPTX text extraction beyond the current slide text box and speaker notes path.
 - Expand metadata coverage across DOCX, XLSX, and PPTX.
