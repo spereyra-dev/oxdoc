@@ -2138,6 +2138,13 @@ fn print_info(info: &DocumentInfo) {
     print_optional("modified_at", info.modified_at.as_deref());
     print_optional("application", info.application.as_deref());
     print_optional("company", info.company.as_deref());
+    print_optional("title", info.title.as_deref());
+    print_optional("subject", info.subject.as_deref());
+    print_optional("description", info.description.as_deref());
+    print_optional("keywords", info.keywords.as_deref());
+    print_optional("category", info.category.as_deref());
+    print_optional("content_status", info.content_status.as_deref());
+    print_optional("last_printed", info.last_printed.as_deref());
     println!("has_macros: {}", info.has_macros);
     print_optional_u64("word_count", info.word_count);
     print_optional_u64("page_count", info.page_count);

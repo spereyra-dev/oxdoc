@@ -69,6 +69,13 @@ struct CoreProps {
     created_at: Option<String>,
     modified_at: Option<String>,
     revision: Option<String>,
+    title: Option<String>,
+    subject: Option<String>,
+    description: Option<String>,
+    keywords: Option<String>,
+    category: Option<String>,
+    content_status: Option<String>,
+    last_printed: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -133,7 +140,18 @@ fn parse_core<R: BufRead>(source: R, path: &str) -> Result<Extraction<CoreProps>
                 let local = element.name().as_ref().to_owned();
                 if matches!(
                     crate::parsers::local_name(&local),
-                    "creator" | "lastModifiedBy" | "created" | "modified" | "revision"
+                    "creator"
+                        | "lastModifiedBy"
+                        | "created"
+                        | "modified"
+                        | "revision"
+                        | "title"
+                        | "subject"
+                        | "description"
+                        | "keywords"
+                        | "category"
+                        | "contentStatus"
+                        | "lastPrinted"
                 ) {
                     current_field = Some(local);
                 }
@@ -336,6 +354,13 @@ fn apply_core(info: &mut DocumentInfo, props: CoreProps) {
     info.created_at = props.created_at;
     info.modified_at = props.modified_at;
     info.revision = props.revision;
+    info.title = props.title;
+    info.subject = props.subject;
+    info.description = props.description;
+    info.keywords = props.keywords;
+    info.category = props.category;
+    info.content_status = props.content_status;
+    info.last_printed = props.last_printed;
 }
 
 fn assign_core_value(props: &mut CoreProps, field: &str, value: &str) {
@@ -347,6 +372,13 @@ fn assign_core_value(props: &mut CoreProps, field: &str, value: &str) {
         "created" => append_option(&mut props.created_at, value),
         "modified" => append_option(&mut props.modified_at, value),
         "revision" => append_option(&mut props.revision, value),
+        "title" => append_option(&mut props.title, value),
+        "subject" => append_option(&mut props.subject, value),
+        "description" => append_option(&mut props.description, value),
+        "keywords" => append_option(&mut props.keywords, value),
+        "category" => append_option(&mut props.category, value),
+        "contentStatus" => append_option(&mut props.content_status, value),
+        "lastPrinted" => append_option(&mut props.last_printed, value),
         _ => {}
     }
 }
@@ -423,6 +455,57 @@ mod tests {
         assert_eq!(props.last_modified_by.as_deref(), Some("Linus"));
         assert_eq!(props.created_at.as_deref(), Some("2024-03-12T10:00:00Z"));
         assert_eq!(props.revision.as_deref(), Some("7"));
+        assert_eq!(props.title.as_deref(), None);
+        assert_eq!(props.subject.as_deref(), None);
+        assert_eq!(props.description.as_deref(), None);
+        assert_eq!(props.keywords.as_deref(), None);
+        assert_eq!(props.category.as_deref(), None);
+        assert_eq!(props.content_status.as_deref(), None);
+        assert_eq!(props.last_printed.as_deref(), None);
+    }
+
+    #[test]
+    fn parses_extended_core_properties() {
+        let xml = r#"
+            <cp:coreProperties xmlns:cp="cp" xmlns:dc="dc">
+              <dc:title>Quarterly Report</dc:title>
+              <dc:subject>Financials</dc:subject>
+              <dc:description>Numbers &amp; charts</dc:description>
+              <cp:keywords>finance; report; q1</cp:keywords>
+              <cp:category>Reports</cp:category>
+              <cp:contentStatus>Final</cp:contentStatus>
+              <cp:lastPrinted>2024-03-14T09:30:00Z</cp:lastPrinted>
+            </cp:coreProperties>
+        "#;
+
+        let props = parse_core(Cursor::new(xml.as_bytes()), "docProps/core.xml")
+            .unwrap()
+            .value;
+
+        assert_eq!(props.title.as_deref(), Some("Quarterly Report"));
+        assert_eq!(props.subject.as_deref(), Some("Financials"));
+        assert_eq!(props.description.as_deref(), Some("Numbers & charts"));
+        assert_eq!(props.keywords.as_deref(), Some("finance; report; q1"));
+        assert_eq!(props.category.as_deref(), Some("Reports"));
+        assert_eq!(props.content_status.as_deref(), Some("Final"));
+        assert_eq!(props.last_printed.as_deref(), Some("2024-03-14T09:30:00Z"));
+    }
+
+    #[test]
+    fn parses_extended_core_properties_cdata() {
+        let xml = r#"
+            <cp:coreProperties xmlns:cp="cp" xmlns:dc="dc">
+              <dc:title><![CDATA[Report < Q1]]></dc:title>
+              <cp:keywords><![CDATA[a < b]]></cp:keywords>
+            </cp:coreProperties>
+        "#;
+
+        let props = parse_core(Cursor::new(xml.as_bytes()), "docProps/core.xml")
+            .unwrap()
+            .value;
+
+        assert_eq!(props.title.as_deref(), Some("Report < Q1"));
+        assert_eq!(props.keywords.as_deref(), Some("a < b"));
     }
 
     #[test]

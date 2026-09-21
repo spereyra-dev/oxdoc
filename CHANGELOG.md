@@ -8,6 +8,13 @@ The format is based on human-readable release notes.
 
 ### Added
 
+- Extended core metadata: `oxdoc info` (JSON and text) now exposes seven
+  `docProps/core.xml` fields that were previously read but skipped —
+  `title` (`dc:title`), `subject` (`dc:subject`), `description`
+  (`dc:description`), `keywords` (`cp:keywords`), `category` (`cp:category`),
+  `content_status` (`cp:contentStatus`), and `last_printed` (`cp:lastPrinted`).
+  All are optional strings in `DocumentInfo`, omitted from JSON serialization
+  when absent, and the text output only adds lines for present fields.
 - Optional UTF-8 BOM for XLSX CSV output: `oxdoc extract csv --bom` (including
   `--all-sheets` per-sheet exports) prefixes the CSV bytes with `EF BB BF` for
   Excel-on-Windows compatibility, `XlsxCsvOptions::bom` exposes the same option

@@ -25,6 +25,13 @@ oxdoc info report.docx --format json
 | `modified_at` | string | `dcterms:modified` | Modification timestamp as stored in OOXML. |
 | `application` | string | `Application` | Producing application. |
 | `company` | string | `Company` | Company metadata. |
+| `title` | string | `dc:title` | Document title. |
+| `subject` | string | `dc:subject` | Document subject. |
+| `description` | string | `dc:description` | Document description. |
+| `keywords` | string | `cp:keywords` | Keywords string as stored in OOXML. |
+| `category` | string | `cp:category` | Document category. |
+| `content_status` | string | `cp:contentStatus` | Content status. |
+| `last_printed` | string | `cp:lastPrinted` | Last printed timestamp as stored in OOXML. |
 | `custom_properties` | object | `docProps/custom.xml` | Custom document properties as string values. |
 | `has_macros` | boolean | package parts, `[Content_Types].xml` | Whether VBA macro content is present or declared. |
 | `word_count` | number | `Words` | Word count when provided. |

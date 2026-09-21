@@ -190,6 +190,18 @@ class OxdocPythonWrapperTests(unittest.TestCase):
             ],
         )
 
+    def test_read_info_parses_json_and_passes_new_metadata_keys_through(self) -> None:
+        binary = fake_oxdoc(
+            """
+            print('{"file":"demo.docx","author":"Ada","title":"Quarterly Report"}')
+            """
+        )
+
+        result = Oxdoc(binary).read_info("demo.docx")
+
+        self.assertEqual(result.value["title"], "Quarterly Report")
+        self.assertEqual(result.value["author"], "Ada")
+
     def test_process_errors_expose_status_and_stderr(self) -> None:
         binary = fake_oxdoc(
             """
