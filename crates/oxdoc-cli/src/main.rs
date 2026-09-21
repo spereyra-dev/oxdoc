@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{self, Cursor, Read, Write};
 use std::num::NonZeroUsize;
@@ -922,37 +923,6 @@ fn extract_csv_command(
         ));
     }
 
-    if options.all_sheets {
-        if options.files.len() > 1 {
-            return Err(CliError::InvalidArgument(
-                "--all-sheets supports a single input file".to_owned(),
-            ));
-        }
-        let output_dir = options.output_dir.ok_or_else(|| {
-            CliError::InvalidArgument("--all-sheets requires --output-dir".to_owned())
-        })?;
-        let base_csv_options = XlsxCsvOptions {
-            sheet_name: options.sheet_name,
-            sheet_index: options.sheet_index,
-            include_hidden: options.include_hidden,
-            delimiter: options.delimiter,
-            bom: options.bom,
-            line_terminator: if options.crlf {
-                CsvLineTerminator::Crlf
-            } else {
-                CsvLineTerminator::Lf
-            },
-            quote_mode: options.quote_mode,
-        };
-        return export_all_sheets(
-            options.files.first().expect("required by clap"),
-            output_dir,
-            base_csv_options,
-            options.value_mode,
-            warning_format,
-        );
-    }
-
     let multiple = options.files.len() > 1;
     let base_csv_options = XlsxCsvOptions {
         sheet_name: options.sheet_name,
@@ -967,6 +937,29 @@ fn extract_csv_command(
         },
         quote_mode: options.quote_mode,
     };
+
+    if options.all_sheets {
+        let output_dir = options.output_dir.ok_or_else(|| {
+            CliError::InvalidArgument("--all-sheets requires --output-dir".to_owned())
+        })?;
+        if options.files.len() == 1 {
+            return export_all_sheets(
+                options.files.first().expect("required by clap"),
+                output_dir,
+                base_csv_options,
+                options.value_mode,
+                warning_format,
+            );
+        }
+        return export_all_sheets_multi(
+            options.files,
+            output_dir,
+            base_csv_options,
+            options.value_mode,
+            warning_format,
+        );
+    }
+
     let mut writer = output_writer(options.output)?;
     let mut processed = 0usize;
 
@@ -1095,6 +1088,84 @@ fn export_all_sheets(
     let sheets = list_xlsx_sheets(file, base_csv_options.include_hidden)?;
     emit_warnings(&sheets.warnings, warning_format);
 
+    let failures = write_all_sheets_export(
+        file,
+        sheets.value,
+        output_dir,
+        base_csv_options,
+        value_mode,
+        warning_format,
+    )?;
+
+    if failures > 0 {
+        return Err(CliError::InvalidArgument(format!(
+            "{failures} sheet export(s) failed; see manifest.json"
+        )));
+    }
+
+    Ok(())
+}
+
+fn export_all_sheets_multi(
+    files: &[PathBuf],
+    output_dir: &Path,
+    base_csv_options: XlsxCsvOptions<'_>,
+    value_mode: XlsxValueMode,
+    warning_format: WarningFormat,
+) -> Result<(), CliError> {
+    fs::create_dir_all(output_dir)?;
+    let mut taken_dirs = HashSet::new();
+    let mut processed = 0usize;
+    let mut sheet_failures = 0usize;
+
+    for file in files {
+        let sheets = match list_xlsx_sheets(file, base_csv_options.include_hidden) {
+            Ok(sheets) => sheets,
+            Err(err) => {
+                emit_skipped_input_warning(file, &err, warning_format);
+                continue;
+            }
+        };
+        emit_warnings(&sheets.warnings, warning_format);
+        processed += 1;
+
+        let dir_name = unique_workbook_dir_name(&display_file_name(file), &mut taken_dirs);
+        let failures = write_all_sheets_export(
+            file,
+            sheets.value,
+            &output_dir.join(dir_name),
+            base_csv_options,
+            value_mode,
+            warning_format,
+        )?;
+        sheet_failures += failures;
+    }
+
+    if processed == 0 {
+        return Err(CliError::InvalidArgument(
+            "no input files were processed successfully".to_owned(),
+        ));
+    }
+
+    if sheet_failures > 0 {
+        return Err(CliError::InvalidArgument(format!(
+            "{sheet_failures} sheet export(s) failed; see manifest.json"
+        )));
+    }
+
+    Ok(())
+}
+
+fn write_all_sheets_export(
+    file: &Path,
+    sheets: Vec<oxdoc_core::XlsxSheet>,
+    output_dir: &Path,
+    base_csv_options: XlsxCsvOptions<'_>,
+    value_mode: XlsxValueMode,
+    warning_format: WarningFormat,
+) -> Result<usize, CliError> {
+    fs::create_dir_all(output_dir)?;
+
     let mut manifest = AllSheetsManifest {
         oxdoc_version: env!("CARGO_PKG_VERSION"),
         file: display_file_name(file),
@@ -1102,7 +1173,7 @@ fn export_all_sheets(
     };
     let mut failures = 0usize;
 
-    for sheet in sheets.value {
+    for sheet in sheets {
         let csv_file_name = csv_file_name_for_sheet(sheet.index, &sheet.name);
         let csv_path = output_dir.join(&csv_file_name);
         let mut csv_file = File::create(&csv_path)?;
@@ -1155,13 +1226,7 @@ fn export_all_sheets(
     serde_json::to_writer_pretty(&mut manifest_file, &manifest)?;
     writeln!(manifest_file)?;
 
-    if failures > 0 {
-        return Err(CliError::InvalidArgument(format!(
-            "{failures} sheet export(s) failed; see manifest.json"
-        )));
-    }
-
-    Ok(())
+    Ok(failures)
 }
 
 fn extract_text(
@@ -1973,6 +2038,27 @@ fn csv_file_name_for_sheet(index: usize, name: &str) -> String {
     format!("{index:03}-{}.csv", sanitize_sheet_file_stem(name))
 }
 
+/// Deterministic per-workbook directory name for multi-file `--all-sheets`
+/// exports: the sanitized workbook file stem, disambiguated with `-2`, `-3`, ...
+/// in input order when two workbooks sanitize to the same stem.
+fn unique_workbook_dir_name(file_name: &str, taken_dirs: &mut HashSet<String>) -> String {
+    let base = sanitize_sheet_file_stem(
+        Path::new(file_name)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_default(),
+    );
+    let mut dir_name = base.clone();
+    let mut suffix = 1usize;
+    while !taken_dirs.insert(dir_name.clone()) {
+        suffix += 1;
+        dir_name = format!("{base}-{suffix}");
+    }
+    dir_name
+}
+
+/// Shared character policy for filesystem-safe file stems, used both for sheet
+/// file names and for per-workbook export directory names.
 fn sanitize_sheet_file_stem(name: &str) -> String {
     let mut stem = String::new();
     let mut last_was_dash = false;
@@ -2104,7 +2190,34 @@ fn print_optional_u64(label: &str, value: Option<u64>) {
 mod tests {
     use std::error::Error;
 
-    use super::{CliError, csv_file_name_for_sheet, parse_delimiter};
+    use std::collections::HashSet;
+
+    use super::{CliError, csv_file_name_for_sheet, parse_delimiter, unique_workbook_dir_name};
+
+    #[test]
+    fn workbook_dir_names_are_sanitized_and_disambiguated() {
+        let mut taken_dirs = HashSet::new();
+        assert_eq!(
+            unique_workbook_dir_name("Report Q1.xlsx", &mut taken_dirs),
+            "report-q1"
+        );
+        assert_eq!(
+            unique_workbook_dir_name("Report Q1.xlsx", &mut taken_dirs),
+            "report-q1-2"
+        );
+        assert_eq!(
+            unique_workbook_dir_name("report-q1.xlsx", &mut taken_dirs),
+            "report-q1-3"
+        );
+        assert_eq!(
+            unique_workbook_dir_name("Ops/Q1 \u{1F680}.xlsx", &mut taken_dirs),
+            "q1"
+        );
+        assert_eq!(
+            unique_workbook_dir_name("///.xlsx", &mut taken_dirs),
+            "xlsx"
+        );
+    }
 
     #[test]
     fn cli_errors_expose_stable_codes_and_sources() {

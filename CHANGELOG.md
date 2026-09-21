@@ -30,6 +30,14 @@ The format is based on human-readable release notes.
   re-exported `CsvQuoteMode` enum expose the same option to library consumers.
   The default `minimal` quoting is unchanged, and the Python wrapper's
   `extract_csv(quote_mode=...)` always passes the flag through.
+- Multi-workbook `--all-sheets` export: `oxdoc extract csv` now accepts several
+  input workbooks with `--all-sheets --output-dir`, writing one subdirectory per
+  workbook (named after its sanitized file stem, disambiguated with `-2`,
+  `-3`, ... in input order on stem collisions) that contains that workbook's CSV
+  files and its own schema v1 `manifest.json`. A workbook that fails to open is
+  reported as a skipped-input warning and processing continues; the command
+  fails only when no workbook was processed successfully. The single-workbook
+  layout is unchanged, and `--list-sheets` keeps its single-file restriction.
 
 ## 2.0.0 - 2026-09-18
 

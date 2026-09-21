@@ -326,7 +326,7 @@ Options:
 | `--sheet <NAME>` | first visible workbook sheet | Workbook sheet name to extract. Hidden and very hidden sheets require `--include-hidden`. Mutually exclusive with `--sheet-index` and `--list-sheets`. |
 | `--sheet-index <INDEX>` | first visible workbook sheet | 1-based visible sheet index, or 1-based full workbook index with `--include-hidden`. Mutually exclusive with `--sheet` and `--list-sheets`. |
 | `--list-sheets` | false | Print sheet names with 1-based indices and exit. Hidden and very hidden sheets require `--include-hidden`. |
-| `--all-sheets` | false | Export every visible sheet from a single workbook to separate CSV files, or every workbook sheet with `--include-hidden`. Requires `--output-dir`. Mutually exclusive with `--sheet`, `--sheet-index`, `--list-sheets`, and `--output`. |
+| `--all-sheets` | false | Export every visible sheet from each input workbook to separate CSV files, or every workbook sheet with `--include-hidden`. Requires `--output-dir`. Mutually exclusive with `--sheet`, `--sheet-index`, `--list-sheets`, and `--output`. |
 | `--include-hidden` | false | Include hidden and very hidden workbook sheets in listing or extraction. |
 | `--delimiter <CHAR>` | `,` | Single-byte CSV delimiter. |
 | `--bom` | false | Prefix CSV output with a UTF-8 byte order mark. |
@@ -334,7 +334,7 @@ Options:
 | `--quote-mode <MODE>` | `minimal` | CSV quoting: `minimal` quotes only fields containing the delimiter, quotes, or line breaks; `all` quotes every field, including empty ones. |
 | `--value-mode <MODE>` | `raw` | Emit worksheet XML values with `raw`, or deterministic formatted values with `formatted` for supported XLSX number formats. |
 | `--output <PATH>`, `-o <PATH>` | stdout | Write CSV or sheet list output to a file. |
-| `--output-dir <PATH>` | none | Directory for `--all-sheets` CSV files and `manifest.json`. |
+| `--output-dir <PATH>` | none | Directory for `--all-sheets` CSV files and per-workbook `manifest.json` files. |
 
 Example:
 
@@ -364,6 +364,12 @@ All visible sheets example:
 
 ```bash
 oxdoc extract csv data.xlsx --all-sheets --output-dir exported-sheets
+```
+
+Multi-workbook all-sheets example (one subdirectory per workbook under `--output-dir`):
+
+```bash
+oxdoc extract csv q1.xlsx q2.xlsx q3.xlsx --all-sheets --output-dir quarters
 ```
 
 Formatted value example:
@@ -405,7 +411,7 @@ Notes:
 - With `--quote-mode all`, every CSV field is quoted (`"..."`), including empty fields (`""`) such as sparse-column padding, matching common QUOTE_ALL semantics for strict ingestion pipelines. The default `minimal` quoting is unchanged.
 - Hidden and very hidden sheets are skipped by default. `--include-hidden` is required to list or extract them.
 - With `--include-hidden`, sheet indices count all workbook sheets and `--list-sheets` prints visibility as `visible`, `hidden`, or `veryHidden`.
-- `--all-sheets` skips hidden and very hidden sheets unless `--include-hidden` is present. It writes a `manifest.json` file next to the CSV files.
+- `--all-sheets` skips hidden and very hidden sheets unless `--include-hidden` is present. With a single input workbook, the CSV files and `manifest.json` are written directly into `--output-dir`. With several input workbooks, each workbook gets its own subdirectory under `--output-dir`, named after its sanitized file stem; colliding stems are disambiguated deterministically with `-2`, `-3`, ... in input order. Each subdirectory holds that workbook's CSV files and `manifest.json`, keeping the schema v1 manifest structure. `--list-sheets` still supports a single input file only.
 - Duplicate sheet names in the selected visibility scope are rejected; use `--sheet-index` to disambiguate malformed workbooks.
 
 ## XLSX Value Modes

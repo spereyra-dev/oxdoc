@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -2322,10 +2322,167 @@ fn all_sheets_manifest_records_sheet_warnings() {
 }
 
 #[test]
-fn rejects_all_sheets_with_multiple_input_files() {
-    let first = fixtures::build_package("xlsx/basic", "first.xlsx");
-    let second = fixtures::build_package("xlsx/basic", "second.xlsx");
-    let output_dir = unique_path("all-sheets-multiple-out");
+fn exports_all_sheets_from_multiple_workbooks_into_subdirectories() {
+    let first = workbook_named(
+        unique_path("multi-alpha").as_path(),
+        "alpha.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rIdWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Sales Q1" sheetId="1" r:id="rId1"/><sheet name="Ops Q1" sheetId="2" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/sheet2.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>sales</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet2.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>ops</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let second = workbook_named(
+        unique_path("multi-beta").as_path(),
+        "beta.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rIdWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>data</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let output_dir = unique_path("all-sheets-multi-out");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        first.to_str().unwrap(),
+        second.to_str().unwrap(),
+        "--all-sheets",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).is_empty());
+
+    assert_eq!(
+        fs::read_to_string(output_dir.join("alpha/001-sales-q1.csv")).unwrap(),
+        "sales\n"
+    );
+    assert_eq!(
+        fs::read_to_string(output_dir.join("alpha/002-ops-q1.csv")).unwrap(),
+        "ops\n"
+    );
+    assert_eq!(
+        fs::read_to_string(output_dir.join("beta/001-data.csv")).unwrap(),
+        "data\n"
+    );
+    assert!(!output_dir.join("manifest.json").exists());
+
+    let alpha_manifest: Value =
+        serde_json::from_str(&fs::read_to_string(output_dir.join("alpha/manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(alpha_manifest["file"], "alpha.xlsx");
+    assert_eq!(alpha_manifest["sheets"].as_array().unwrap().len(), 2);
+    assert_eq!(alpha_manifest["sheets"][0]["csv_path"], "001-sales-q1.csv");
+
+    let beta_manifest: Value =
+        serde_json::from_str(&fs::read_to_string(output_dir.join("beta/manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(beta_manifest["file"], "beta.xlsx");
+    assert_eq!(beta_manifest["sheets"].as_array().unwrap().len(), 1);
+    assert_eq!(beta_manifest["sheets"][0]["csv_path"], "001-data.csv");
+}
+
+#[test]
+fn disambiguates_all_sheets_output_dirs_when_workbook_stems_collide() {
+    let first = fixtures::build_package("xlsx/basic", "same-name.xlsx");
+    let second = fixtures::build_package("xlsx/basic", "same-name.xlsx");
+    let output_dir = unique_path("all-sheets-collide-out");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        first.to_str().unwrap(),
+        second.to_str().unwrap(),
+        "--all-sheets",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+
+    for dir_name in ["same-name", "same-name-2"] {
+        let manifest: Value = serde_json::from_str(
+            &fs::read_to_string(output_dir.join(dir_name).join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["file"], "same-name.xlsx");
+        assert_eq!(
+            fs::read_to_string(output_dir.join(dir_name).join("001-sales-q1.csv")).unwrap(),
+            fixtures::read_snapshot("xlsx_basic_csv.txt")
+        );
+    }
+}
+
+#[test]
+fn all_sheets_batch_skips_unreadable_workbook_and_exports_the_rest() {
+    let bad_dir = unique_path("batch-bad");
+    fs::create_dir_all(&bad_dir).unwrap();
+    let bad = bad_dir.join("bad.xlsx");
+    fs::write(&bad, b"not a zip archive").unwrap();
+    let good = fixtures::build_package("xlsx/basic", "good.xlsx");
+    let output_dir = unique_path("all-sheets-batch-out");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        bad.to_str().unwrap(),
+        good.to_str().unwrap(),
+        "--all-sheets",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).contains("bad.xlsx"));
+    assert!(stderr(&output).contains("skipped after error["));
+    assert!(!output_dir.join("bad").exists());
+    assert!(output_dir.join("good/manifest.json").is_file());
+}
+
+#[test]
+fn all_sheets_batch_fails_when_no_workbook_is_processed() {
+    let bad_dir = unique_path("batch-all-bad");
+    fs::create_dir_all(&bad_dir).unwrap();
+    let first = bad_dir.join("first-bad.xlsx");
+    let second = bad_dir.join("second-bad.xlsx");
+    fs::write(&first, b"not a zip archive").unwrap();
+    fs::write(&second, b"not a zip archive").unwrap();
+    let output_dir = unique_path("all-sheets-all-bad-out");
 
     let output = oxdoc([
         "extract",
@@ -2338,7 +2495,60 @@ fn rejects_all_sheets_with_multiple_input_files() {
     ]);
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr(&output).contains("--all-sheets supports a single input file"));
+    assert!(stderr(&output).contains("no input files were processed successfully"));
+}
+
+#[test]
+fn single_workbook_all_sheets_keeps_flat_output_layout() {
+    let workbook = create_ooxml(
+        "all-sheets-single.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rIdWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Sales Q1" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>sales</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let output_dir = unique_path("all-sheets-single-out");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        workbook.to_str().unwrap(),
+        "--all-sheets",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert_eq!(
+        fs::read_to_string(output_dir.join("001-sales-q1.csv")).unwrap(),
+        "sales\n"
+    );
+    assert!(output_dir.join("manifest.json").is_file());
+    let entries: Vec<std::fs::DirEntry> = fs::read_dir(&output_dir)
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert!(
+        entries
+            .iter()
+            .all(|entry| entry.file_type().unwrap().is_file()),
+        "single-workbook export must not create subdirectories: {entries:?}"
+    );
 }
 
 #[test]
@@ -2770,6 +2980,14 @@ fn assert_json_signal(output: &Value, kind: &str, severity: &str, message_contai
         }),
         "missing JSON signal kind={kind} severity={severity} containing {message_contains:?}: {signals:#?}"
     );
+}
+
+fn workbook_named(dir: &Path, name: &str, entries: &[(&str, &str)]) -> PathBuf {
+    fs::create_dir_all(dir).unwrap();
+    let built = create_ooxml(name, entries);
+    let target = dir.join(name);
+    fs::copy(&built, &target).unwrap();
+    target
 }
 
 fn create_ooxml(name: &str, entries: &[(&str, &str)]) -> PathBuf {
