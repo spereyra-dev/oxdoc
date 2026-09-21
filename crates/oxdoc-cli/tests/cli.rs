@@ -1777,6 +1777,91 @@ fn prints_info_as_json_and_text() {
 }
 
 #[test]
+fn prints_extended_core_metadata_fields_in_text_output() {
+    let docx = create_ooxml(
+        "extended-core-metadata.docx",
+        &[(
+            "docProps/core.xml",
+            r#"
+                <cp:coreProperties xmlns:cp="cp" xmlns:dc="dc">
+                  <dc:creator>Ada</dc:creator>
+                  <dc:title>Quarterly Report</dc:title>
+                  <dc:subject>Financials</dc:subject>
+                  <dc:description>Numbers &amp; charts</dc:description>
+                  <cp:keywords>finance; report; q1</cp:keywords>
+                  <cp:category>Reports</cp:category>
+                  <cp:contentStatus>Final</cp:contentStatus>
+                  <cp:lastPrinted>2024-03-14T09:30:00Z</cp:lastPrinted>
+                </cp:coreProperties>
+            "#,
+        )],
+    );
+
+    let output = oxdoc(["info", docx.to_str().unwrap(), "--format", "text"]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let binding = stdout(&output);
+    let printed = binding.trim_end();
+    assert!(
+        printed.ends_with(concat!(
+            "author: Ada\n",
+            "title: Quarterly Report\n",
+            "subject: Financials\n",
+            "description: Numbers & charts\n",
+            "keywords: finance; report; q1\n",
+            "category: Reports\n",
+            "content_status: Final\n",
+            "last_printed: 2024-03-14T09:30:00Z\n",
+            "has_macros: false",
+        )),
+        "{printed}"
+    );
+    let file_line = printed.lines().next().unwrap();
+    assert!(file_line.starts_with("file: "));
+    assert!(file_line.ends_with("extended-core-metadata.docx"));
+}
+
+#[test]
+fn omits_extended_core_metadata_lines_when_fields_are_absent() {
+    let docx = create_ooxml(
+        "minimal-core-metadata.docx",
+        &[(
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="cp" xmlns:dc="dc"><dc:creator>Ada</dc:creator></cp:coreProperties>"#,
+        )],
+    );
+
+    let output = oxdoc(["info", docx.to_str().unwrap(), "--format", "text"]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    let binding = stdout(&output);
+    let printed = binding.trim_end();
+    assert!(
+        printed.ends_with(concat!("author: Ada\n", "has_macros: false")),
+        "{printed}"
+    );
+    let file_line = printed.lines().next().unwrap();
+    assert!(file_line.starts_with("file: "));
+    assert!(file_line.ends_with("minimal-core-metadata.docx"));
+    for field in [
+        "title:",
+        "subject:",
+        "description:",
+        "keywords:",
+        "category:",
+        "content_status:",
+        "last_printed:",
+    ] {
+        assert!(
+            !stdout(&output).contains(field),
+            "{field} must not appear when absent"
+        );
+    }
+}
+
+#[test]
 fn prints_audit_as_json_and_text() {
     let workbook = create_ooxml(
         "audit.xlsm",

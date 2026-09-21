@@ -2737,6 +2737,91 @@ fn reads_metadata_through_public_api() {
 }
 
 #[test]
+fn reads_extended_core_metadata_across_docx_and_xlsx_packages() {
+    let core_xml = r#"
+        <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <dc:creator>Ada</dc:creator>
+          <dc:title>Quarterly Report</dc:title>
+          <dc:subject>Financials</dc:subject>
+          <dc:description>Numbers &amp; charts</dc:description>
+          <cp:keywords>finance; report; q1</cp:keywords>
+          <cp:category>Reports</cp:category>
+          <cp:contentStatus>Final</cp:contentStatus>
+          <cp:lastPrinted>2024-03-14T09:30:00Z</cp:lastPrinted>
+        </cp:coreProperties>
+    "#;
+    let docx = create_ooxml(
+        "extended-core-metadata.docx",
+        &[("docProps/core.xml", core_xml)],
+    );
+    let xlsx = create_ooxml(
+        "extended-core-metadata.xlsx",
+        &[("docProps/core.xml", core_xml)],
+    );
+
+    for file in [&docx, &xlsx] {
+        let extraction = oxdoc_core::read_info(file).unwrap();
+
+        assert_eq!(extraction.value.author.as_deref(), Some("Ada"));
+        assert_eq!(extraction.value.title.as_deref(), Some("Quarterly Report"));
+        assert_eq!(extraction.value.subject.as_deref(), Some("Financials"));
+        assert_eq!(
+            extraction.value.description.as_deref(),
+            Some("Numbers & charts")
+        );
+        assert_eq!(
+            extraction.value.keywords.as_deref(),
+            Some("finance; report; q1")
+        );
+        assert_eq!(extraction.value.category.as_deref(), Some("Reports"));
+        assert_eq!(extraction.value.content_status.as_deref(), Some("Final"));
+        assert_eq!(
+            extraction.value.last_printed.as_deref(),
+            Some("2024-03-14T09:30:00Z")
+        );
+        assert!(extraction.warnings.is_empty());
+    }
+}
+
+#[test]
+fn omits_absent_extended_core_metadata_from_serialization() {
+    let file = create_ooxml(
+        "minimal-core-metadata.docx",
+        &[(
+            "docProps/core.xml",
+            r#"
+                <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">
+                  <dc:creator>Ada</dc:creator>
+                </cp:coreProperties>
+            "#,
+        )],
+    );
+
+    let extraction = oxdoc_core::read_info(&file).unwrap();
+
+    assert_eq!(extraction.value.title, None);
+    assert_eq!(extraction.value.subject, None);
+    assert_eq!(extraction.value.description, None);
+    assert_eq!(extraction.value.keywords, None);
+    assert_eq!(extraction.value.category, None);
+    assert_eq!(extraction.value.content_status, None);
+    assert_eq!(extraction.value.last_printed, None);
+    let json = serde_json::to_value(&extraction.value).unwrap();
+    for field in [
+        "title",
+        "subject",
+        "description",
+        "keywords",
+        "category",
+        "content_status",
+        "last_printed",
+    ] {
+        assert!(json.get(field).is_none(), "{field} must be omitted");
+    }
+    assert!(extraction.warnings.is_empty());
+}
+
+#[test]
 fn reads_metadata_from_read_seek_reader() {
     let file = fixtures::build_package("pptx/basic", "fixture.pptx");
     let bytes = fs::read(file).unwrap();

@@ -588,6 +588,20 @@ pub struct DocumentInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub company: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keywords: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_printed: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_properties: Option<BTreeMap<String, String>>,
     pub has_macros: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
