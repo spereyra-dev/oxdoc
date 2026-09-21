@@ -527,6 +527,8 @@ pub struct XlsxCsvOptions<'a> {
     pub sheet_index: Option<usize>,
     pub include_hidden: bool,
     pub delimiter: u8,
+    /// Prefix the CSV output with a UTF-8 byte order mark (Excel on Windows).
+    pub bom: bool,
 }
 
 impl Default for XlsxCsvOptions<'_> {
@@ -536,6 +538,7 @@ impl Default for XlsxCsvOptions<'_> {
             sheet_index: None,
             include_hidden: false,
             delimiter: b',',
+            bom: false,
         }
     }
 }

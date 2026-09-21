@@ -526,6 +526,106 @@ fn extracts_csv_to_stdout() {
 }
 
 #[test]
+fn prefixes_csv_stdout_with_utf8_bom_when_requested() {
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Sales Q1",
+        "--delimiter",
+        ";",
+        "--bom",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert!(output.stdout.starts_with(&[0xEF, 0xBB, 0xBF]));
+    assert_eq!(
+        String::from_utf8(output.stdout[3..].to_vec())
+            .unwrap()
+            .trim_end(),
+        fixtures::read_snapshot("cli_extract_csv.txt").trim_end()
+    );
+}
+
+#[test]
+fn does_not_prefix_csv_stdout_with_utf8_bom_by_default() {
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Sales Q1",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert!(!output.stdout.starts_with(&[0xEF, 0xBB, 0xBF]));
+}
+
+#[test]
+fn exports_all_sheets_csv_files_with_utf8_bom_prefix_when_requested() {
+    let workbook = create_ooxml(
+        "all-sheets-bom.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Sales Q1" sheetId="1" r:id="rId1"/><sheet name="Ops Q1" sheetId="2" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/sheet2.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>sales</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet2.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>ops</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let output_dir = unique_path("all-sheets-bom-out");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        workbook.to_str().unwrap(),
+        "--all-sheets",
+        "--bom",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+
+    let bom = [0xEF, 0xBB, 0xBF];
+    for file_name in ["001-sales-q1.csv", "002-ops-q1.csv"] {
+        let bytes = fs::read(output_dir.join(file_name)).unwrap();
+        assert!(
+            bytes.starts_with(&bom),
+            "{file_name} must start with a UTF-8 BOM"
+        );
+    }
+
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(output_dir.join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest["sheets"].as_array().unwrap().len(), 2);
+}
+
+#[test]
 fn extracts_csv_with_formatted_xlsx_values() {
     let xlsx = create_ooxml(
         "formatted-values.xlsx",

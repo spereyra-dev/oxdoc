@@ -133,9 +133,7 @@ fn main() -> oxdoc_core::Result<()> {
         "data.xlsx",
         XlsxCsvOptions {
             sheet_name: Some("Ventas Q1"),
-            sheet_index: None,
-            include_hidden: false,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut output,
     )?;
@@ -396,6 +394,7 @@ pub struct XlsxCsvOptions<'a> {
     pub sheet_index: Option<usize>,
     pub include_hidden: bool,
     pub delimiter: u8,
+    pub bom: bool,
 }
 ```
 
@@ -405,6 +404,8 @@ Hidden and very hidden sheets are skipped unless `include_hidden` is `true`. Whe
 
 `extract_xlsx_csv` uses raw worksheet XML values. Use `extract_xlsx_csv_with_value_mode` or `extract_xlsx_csv_from_reader_with_value_mode` with `XlsxValueMode::Formatted` to apply supported workbook number formats for dates, times, percentages, currency, and decimals with locale-independent output.
 
+When `bom` is `true`, CSV output starts with a UTF-8 byte order mark (`EF BB BF`) so Excel on Windows detects UTF-8. The default is `false`, which matches standard UTF-8 CSV output.
+
 Defaults:
 
 ```rust
@@ -413,6 +414,7 @@ XlsxCsvOptions {
     sheet_index: None,
     include_hidden: false,
     delimiter: b',',
+    bom: false,
 }
 ```
 

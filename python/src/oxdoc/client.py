@@ -95,9 +95,15 @@ class Oxdoc:
         sheet_index: int | None = None,
         include_hidden: bool = False,
         delimiter: str = ",",
+        bom: bool = False,
         value_mode: ValueMode = "raw",
     ) -> OxdocResult:
-        """Extract one XLSX sheet as CSV text."""
+        """Extract one XLSX sheet as CSV text.
+
+        When ``bom`` is true, the CSV output is prefixed with a UTF-8 byte
+        order mark (Excel on Windows compatibility); the BOM is not included
+        in the returned text.
+        """
 
         args = ["extract", "csv", str(path), "--delimiter", delimiter, "--value-mode", value_mode]
         if sheet is not None:
@@ -106,8 +112,12 @@ class Oxdoc:
             args.extend(["--sheet-index", str(sheet_index)])
         if include_hidden:
             args.append("--include-hidden")
+        if bom:
+            args.append("--bom")
 
         stdout, stderr, _ = self._run(args)
+        if bom and stdout.startswith("\ufeff"):
+            stdout = stdout[1:]
         return OxdocResult(stdout, warning_lines(stderr))
 
     def extract_rows(

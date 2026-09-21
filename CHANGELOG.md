@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on human-readable release notes.
 
+## Unreleased
+
+### Added
+
+- Optional UTF-8 BOM for XLSX CSV output: `oxdoc extract csv --bom` (including
+  `--all-sheets` per-sheet exports) prefixes the CSV bytes with `EF BB BF` for
+  Excel-on-Windows compatibility, `XlsxCsvOptions::bom` exposes the same option
+  to library consumers (BOM bytes are written before any sheet rows), and the
+  Python wrapper's `extract_csv(bom=True)` passes the flag through and strips
+  the BOM from the returned text.
+
 ## 2.0.0 - 2026-09-18
 
 Released as `oxdoc-core` 2.0.0, `oxdoc-tabular` 0.2.0, and `oxdoc-cli` 2.0.0.

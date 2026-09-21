@@ -310,7 +310,7 @@ stderr according to the global `--warnings` setting.
 ## Extract XLSX CSV
 
 ```bash
-oxdoc extract csv <FILES>... [--sheet <NAME>|--sheet-index <INDEX>|--list-sheets|--all-sheets --output-dir <DIR>] [--include-hidden] [--delimiter <CHAR>] [--value-mode <MODE>] [-o <PATH>]
+oxdoc extract csv <FILES>... [--sheet <NAME>|--sheet-index <INDEX>|--list-sheets|--all-sheets --output-dir <DIR>] [--include-hidden] [--delimiter <CHAR>] [--bom] [--value-mode <MODE>] [-o <PATH>]
 ```
 
 Arguments:
@@ -329,6 +329,7 @@ Options:
 | `--all-sheets` | false | Export every visible sheet from a single workbook to separate CSV files, or every workbook sheet with `--include-hidden`. Requires `--output-dir`. Mutually exclusive with `--sheet`, `--sheet-index`, `--list-sheets`, and `--output`. |
 | `--include-hidden` | false | Include hidden and very hidden workbook sheets in listing or extraction. |
 | `--delimiter <CHAR>` | `,` | Single-byte CSV delimiter. |
+| `--bom` | false | Prefix CSV output with a UTF-8 byte order mark. |
 | `--value-mode <MODE>` | `raw` | Emit worksheet XML values with `raw`, or deterministic formatted values with `formatted` for supported XLSX number formats. |
 | `--output <PATH>`, `-o <PATH>` | stdout | Write CSV or sheet list output to a file. |
 | `--output-dir <PATH>` | none | Directory for `--all-sheets` CSV files and `manifest.json`. |
@@ -397,6 +398,7 @@ Notes:
 - Shared strings, inline strings, booleans, error cells, and cached formula values are supported.
 - CSV fields are quoted when they contain the delimiter, quotes, or line breaks.
 - The delimiter must be a single-byte character.
+- With `--bom`, CSV output starts with a UTF-8 byte order mark so Excel on Windows detects UTF-8. `--list-sheets` output is never BOM-prefixed.
 - Hidden and very hidden sheets are skipped by default. `--include-hidden` is required to list or extract them.
 - With `--include-hidden`, sheet indices count all workbook sheets and `--list-sheets` prints visibility as `visible`, `hidden`, or `veryHidden`.
 - `--all-sheets` skips hidden and very hidden sheets unless `--include-hidden` is present. It writes a `manifest.json` file next to the CSV files.

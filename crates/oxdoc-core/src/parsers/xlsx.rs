@@ -375,6 +375,9 @@ fn write_csv_with_shared_string_memory_limit<R: Read + Seek, W: Write>(
     shared_string_memory_limit: usize,
     writer: &mut W,
 ) -> Result<Extraction<()>> {
+    if options.bom {
+        writer.write_all(&[0xEF, 0xBB, 0xBF])?;
+    }
     let workbook_path = crate::parsers::find_office_document_path(package, "xl/workbook.xml")?;
     let workbook_xml = package.read_to_string(&workbook_path)?;
     let workbook = parse_workbook_sheets(&workbook_xml, &workbook_path)?;
@@ -1395,8 +1398,8 @@ mod tests {
 
     use crate::OxdocError;
     use crate::models::{
-        OutputWarning, XlsxCellValue, XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions,
-        XlsxSheetVisibility, XlsxValueMode,
+        OutputWarning, XlsxCellValue, XlsxCsvOptions, XlsxReadOptions, XlsxRow, XlsxRowControl,
+        XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
     };
     use crate::parsers::xlsx_shared_strings::{SharedStringLookup, SharedStringStore};
     use crate::vfs::{OoxmlLimits, OoxmlPackage};
@@ -1409,7 +1412,7 @@ mod tests {
         SheetRowSink, XlsxStyles, classify_number_format, format_cell_value, format_number,
         parse_cell_column, parse_sheet_rows, parse_sheet_rows_with_shared_formula_limit,
         parse_styles, parse_workbook_date_system, parse_workbook_sheets, select_sheet,
-        visit_rows_with_read_options, write_sheet_csv,
+        visit_rows_with_read_options, write_csv, write_sheet_csv,
     };
 
     #[derive(Default)]
@@ -2343,6 +2346,61 @@ mod tests {
             String::from_utf8(output).unwrap(),
             "gamma,\"beta, needs quotes\",alpha\n"
         );
+    }
+
+    fn csv_package() -> OoxmlPackage<Cursor<Vec<u8>>> {
+        OoxmlPackage::new(xlsx_package(&[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>"#,
+            ),
+            ("xl/sharedStrings.xml", r#"<sst><si><t>id</t></si></sst>"#),
+        ]))
+        .unwrap()
+    }
+
+    #[test]
+    fn writes_csv_bom_when_requested() {
+        let mut package = csv_package();
+        let mut output = Vec::new();
+        let options = XlsxCsvOptions {
+            bom: true,
+            ..XlsxCsvOptions::default()
+        };
+
+        write_csv(&mut package, options, XlsxValueMode::Raw, &mut output).unwrap();
+
+        assert!(output.starts_with(&[0xEF, 0xBB, 0xBF]));
+        assert_eq!(&output[3..], b"id\n");
+    }
+
+    #[test]
+    fn writes_csv_without_bom_by_default() {
+        let mut package = csv_package();
+        let mut output = Vec::new();
+
+        write_csv(
+            &mut package,
+            XlsxCsvOptions::default(),
+            XlsxValueMode::Raw,
+            &mut output,
+        )
+        .unwrap();
+
+        assert!(!output.starts_with(&[0xEF, 0xBB, 0xBF]));
+        assert_eq!(String::from_utf8(output).unwrap(), "id\n");
     }
 
     #[test]
