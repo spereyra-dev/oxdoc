@@ -569,6 +569,47 @@ fn does_not_prefix_csv_stdout_with_utf8_bom_by_default() {
 }
 
 #[test]
+fn ends_csv_stdout_rows_with_crlf_when_requested() {
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Sales Q1",
+        "--crlf",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert!(
+        output.stdout.windows(2).any(|window| window == b"\r\n"),
+        "--crlf output must contain CRLF row terminators"
+    );
+}
+
+#[test]
+fn ends_csv_stdout_rows_with_lf_by_default() {
+    let xlsx = fixtures::build_package("xlsx/basic", "fixture.xlsx");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        xlsx.to_str().unwrap(),
+        "--sheet",
+        "Sales Q1",
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+    assert!(
+        !output.stdout.windows(2).any(|window| window == b"\r\n"),
+        "default output must not contain CRLF row terminators"
+    );
+}
+
+#[test]
 fn exports_all_sheets_csv_files_with_utf8_bom_prefix_when_requested() {
     let workbook = create_ooxml(
         "all-sheets-bom.xlsx",
@@ -623,6 +664,57 @@ fn exports_all_sheets_csv_files_with_utf8_bom_prefix_when_requested() {
         serde_json::from_str(&fs::read_to_string(output_dir.join("manifest.json")).unwrap())
             .unwrap();
     assert_eq!(manifest["sheets"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn exports_all_sheets_csv_files_with_crlf_terminators_when_requested() {
+    let workbook = create_ooxml(
+        "all-sheets-crlf.xlsx",
+        &[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Sales Q1" sheetId="1" r:id="rId1"/><sheet name="Ops Q1" sheetId="2" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="worksheet" Target="worksheets/sheet2.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>sales</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet2.xml",
+                r#"<worksheet><sheetData><row><c r="A1"><v>ops</v></c></row></sheetData></worksheet>"#,
+            ),
+        ],
+    );
+    let output_dir = unique_path("all-sheets-crlf-out");
+
+    let output = oxdoc([
+        "extract",
+        "csv",
+        workbook.to_str().unwrap(),
+        "--all-sheets",
+        "--crlf",
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+
+    assert!(output.status.success());
+    assert!(stderr(&output).is_empty());
+
+    for file_name in ["001-sales-q1.csv", "002-ops-q1.csv"] {
+        let bytes = fs::read(output_dir.join(file_name)).unwrap();
+        assert!(
+            bytes.windows(2).any(|window| window == b"\r\n"),
+            "{file_name} must use CRLF row terminators"
+        );
+    }
 }
 
 #[test]

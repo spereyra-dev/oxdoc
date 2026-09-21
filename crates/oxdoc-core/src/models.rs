@@ -521,6 +521,17 @@ impl<T> Extraction<T> {
     }
 }
 
+/// Row terminator for XLSX CSV output.
+///
+/// `Lf` is the default and emits `\n` between rows. `Crlf` emits `\r\n`
+/// between rows (Excel-classic compatibility). This only affects the row
+/// terminator: content inside quoted fields is never rewritten.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CsvLineTerminator {
+    Lf,
+    Crlf,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct XlsxCsvOptions<'a> {
     pub sheet_name: Option<&'a str>,
@@ -529,6 +540,8 @@ pub struct XlsxCsvOptions<'a> {
     pub delimiter: u8,
     /// Prefix the CSV output with a UTF-8 byte order mark (Excel on Windows).
     pub bom: bool,
+    /// Row terminator between CSV rows (`Lf` by default, `Crlf` for Excel-classic output).
+    pub line_terminator: CsvLineTerminator,
 }
 
 impl Default for XlsxCsvOptions<'_> {
@@ -539,6 +552,7 @@ impl Default for XlsxCsvOptions<'_> {
             include_hidden: false,
             delimiter: b',',
             bom: false,
+            line_terminator: CsvLineTerminator::Lf,
         }
     }
 }
@@ -608,8 +622,8 @@ impl AuditSignal {
 #[cfg(test)]
 mod tests {
     use super::{
-        Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCell, XlsxCellValue,
-        XlsxCsvOptions, XlsxFormula, XlsxReadOptions, XlsxSheetOptions,
+        CsvLineTerminator, Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCell,
+        XlsxCellValue, XlsxCsvOptions, XlsxFormula, XlsxReadOptions, XlsxSheetOptions,
     };
 
     #[test]
@@ -670,6 +684,7 @@ mod tests {
         assert_eq!(options.sheet_index, None);
         assert!(!options.include_hidden);
         assert_eq!(options.delimiter, b',');
+        assert_eq!(options.line_terminator, CsvLineTerminator::Lf);
     }
 
     #[test]

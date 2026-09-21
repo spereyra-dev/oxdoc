@@ -14,6 +14,14 @@ The format is based on human-readable release notes.
   to library consumers (BOM bytes are written before any sheet rows), and the
   Python wrapper's `extract_csv(bom=True)` passes the flag through and strips
   the BOM from the returned text.
+- CRLF line terminator for XLSX CSV output: `oxdoc extract csv --crlf`
+  (including `--all-sheets` per-sheet exports) ends CSV rows with `\r\n`
+  instead of `\n` for Excel-classic compatibility, and the new
+  `XlsxCsvOptions::line_terminator` field (`CsvLineTerminator::Lf` by default,
+  `CsvLineTerminator::Crlf` for CRLF) exposes the same option to library
+  consumers; only the row terminator changes, never content inside quoted
+  fields. The Python wrapper's `extract_csv(crlf=True)` passes the flag
+  through.
 
 ## 2.0.0 - 2026-09-18
 

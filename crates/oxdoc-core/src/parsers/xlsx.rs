@@ -5,9 +5,9 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::models::{
-    Extraction, OutputWarning, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxFormula,
-    XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility,
-    XlsxValueMode,
+    CsvLineTerminator, Extraction, OutputWarning, XlsxCell, XlsxCellValue, XlsxCsvOptions,
+    XlsxFormula, XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheet, XlsxSheetOptions,
+    XlsxSheetVisibility, XlsxValueMode,
 };
 use crate::parsers::xlsx_shared_strings::{
     DEFAULT_SHARED_STRING_MEMORY_LIMIT, SharedStringLookup, SharedStringStore,
@@ -181,11 +181,12 @@ trait SheetRowSink {
 struct CsvRowSink<'a, W> {
     writer: &'a mut W,
     delimiter: u8,
+    line_terminator: CsvLineTerminator,
 }
 
 impl<W: Write> SheetRowSink for CsvRowSink<'_, W> {
     fn emit(&mut self, row: &XlsxRow) -> Result<XlsxRowControl> {
-        write_csv_row(self.writer, row, self.delimiter)?;
+        write_csv_row(self.writer, row, self.delimiter, self.line_terminator)?;
         Ok(XlsxRowControl::Continue)
     }
 }
@@ -431,6 +432,7 @@ fn write_csv_with_shared_string_memory_limit<R: Read + Seek, W: Write>(
             &sheet_path,
             &mut shared_strings.value,
             options.delimiter,
+            options.line_terminator,
             &format_context,
             writer,
         )
@@ -691,10 +693,15 @@ fn write_sheet_csv<R: BufRead, W: Write>(
     path: &str,
     shared_strings: &mut impl SharedStringLookup,
     delimiter: u8,
+    line_terminator: CsvLineTerminator,
     format_context: &SheetFormatContext<'_>,
     writer: &mut W,
 ) -> Result<Extraction<()>> {
-    let mut sink = CsvRowSink { writer, delimiter };
+    let mut sink = CsvRowSink {
+        writer,
+        delimiter,
+        line_terminator,
+    };
     parse_sheet_rows(source, path, shared_strings, format_context, &mut sink)
 }
 
@@ -909,6 +916,7 @@ pub fn fuzz_parse_sheet(xml: &[u8]) -> Result<()> {
     let mut sink = CsvRowSink {
         writer: &mut output,
         delimiter: b',',
+        line_terminator: CsvLineTerminator::Lf,
     };
     let mut shared_strings = SharedStringStore::empty();
     let styles = XlsxStyles::default();
@@ -1350,7 +1358,12 @@ fn parse_cell_column(cell_ref: &str) -> Option<usize> {
     saw_letter.then_some(column.saturating_sub(1))
 }
 
-fn write_csv_row<W: Write>(writer: &mut W, row: &XlsxRow, delimiter: u8) -> Result<()> {
+fn write_csv_row<W: Write>(
+    writer: &mut W,
+    row: &XlsxRow,
+    delimiter: u8,
+    line_terminator: CsvLineTerminator,
+) -> Result<()> {
     let mut next_column = 0;
     for cell in &row.cells {
         while next_column < cell.column_index {
@@ -1365,7 +1378,10 @@ fn write_csv_row<W: Write>(writer: &mut W, row: &XlsxRow, delimiter: u8) -> Resu
         write_csv_field(writer, cell.value.csv_value(), delimiter)?;
         next_column = cell.column_index.saturating_add(1);
     }
-    writer.write_all(b"\n")?;
+    match line_terminator {
+        CsvLineTerminator::Lf => writer.write_all(b"\n")?,
+        CsvLineTerminator::Crlf => writer.write_all(b"\r\n")?,
+    }
     Ok(())
 }
 
@@ -1398,8 +1414,8 @@ mod tests {
 
     use crate::OxdocError;
     use crate::models::{
-        OutputWarning, XlsxCellValue, XlsxCsvOptions, XlsxReadOptions, XlsxRow, XlsxRowControl,
-        XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
+        CsvLineTerminator, OutputWarning, XlsxCellValue, XlsxCsvOptions, XlsxReadOptions, XlsxRow,
+        XlsxRowControl, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
     };
     use crate::parsers::xlsx_shared_strings::{SharedStringLookup, SharedStringStore};
     use crate::vfs::{OoxmlLimits, OoxmlPackage};
@@ -1535,6 +1551,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            CsvLineTerminator::Lf,
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -1563,6 +1580,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            CsvLineTerminator::Lf,
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -1598,6 +1616,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            CsvLineTerminator::Lf,
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -2337,6 +2356,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            CsvLineTerminator::Lf,
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -2404,6 +2424,38 @@ mod tests {
     }
 
     #[test]
+    fn writes_csv_rows_with_crlf_when_requested() {
+        let mut package = csv_package();
+        let mut output = Vec::new();
+        let options = XlsxCsvOptions {
+            line_terminator: CsvLineTerminator::Crlf,
+            ..XlsxCsvOptions::default()
+        };
+
+        write_csv(&mut package, options, XlsxValueMode::Raw, &mut output).unwrap();
+
+        assert_eq!(String::from_utf8(output).unwrap(), "id\r\n");
+    }
+
+    #[test]
+    fn writes_csv_rows_with_lf_by_default() {
+        let mut package = csv_package();
+        let mut output = Vec::new();
+
+        write_csv(
+            &mut package,
+            XlsxCsvOptions::default(),
+            XlsxValueMode::Raw,
+            &mut output,
+        )
+        .unwrap();
+
+        let csv = String::from_utf8(output).unwrap();
+        assert_eq!(csv, "id\n");
+        assert!(!csv.contains("\r\n"));
+    }
+
+    #[test]
     fn formats_xlsx_values_when_requested() {
         let styles_xml = r#"
             <styleSheet>
@@ -2444,6 +2496,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            CsvLineTerminator::Lf,
             &formatted_context(&styles),
             &mut output,
         )
@@ -2475,6 +2528,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            CsvLineTerminator::Lf,
             &raw_context(&styles),
             &mut output,
         )
@@ -2868,6 +2922,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut empty_shared_strings,
             b',',
+            CsvLineTerminator::Lf,
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -2906,6 +2961,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            CsvLineTerminator::Lf,
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -2936,6 +2992,7 @@ mod tests {
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
             b',',
+            CsvLineTerminator::Lf,
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )

@@ -8,9 +8,9 @@ use std::sync::OnceLock;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use oxdoc_core::vfs::OoxmlLimits;
 use oxdoc_core::{
-    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, DocxRevisionMode, DocxTables,
-    DocxTextOptions, OutputWarning, OxdocError, StructuredText, XlsxCell, XlsxCellValue,
-    XlsxCsvOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions, XlsxValueMode,
+    AuditSignal, CsvLineTerminator, DocumentAudit, DocumentInfo, DocumentType, DocxRevisionMode,
+    DocxTables, DocxTextOptions, OutputWarning, OxdocError, StructuredText, XlsxCell,
+    XlsxCellValue, XlsxCsvOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions, XlsxValueMode,
 };
 use oxdoc_tabular::xlsx_schema;
 
@@ -185,6 +185,8 @@ enum ExtractCommand {
         delimiter: String,
         #[arg(long, help = "Prefix CSV output with a UTF-8 byte order mark")]
         bom: bool,
+        #[arg(long, help = "End CSV rows with CRLF instead of LF")]
+        crlf: bool,
         #[arg(long, value_enum, default_value_t = CliXlsxValueMode::Raw)]
         value_mode: CliXlsxValueMode,
         #[arg(long, short)]
@@ -379,6 +381,7 @@ fn run() -> Result<(), CliError> {
                 include_hidden,
                 delimiter,
                 bom,
+                crlf,
                 value_mode,
                 output,
                 output_dir,
@@ -394,6 +397,7 @@ fn run() -> Result<(), CliError> {
                         include_hidden,
                         delimiter,
                         bom,
+                        crlf,
                         value_mode: value_mode.into(),
                         output: output.as_deref(),
                         output_dir: output_dir.as_deref(),
@@ -876,6 +880,7 @@ struct CsvCommandOptions<'a> {
     include_hidden: bool,
     delimiter: u8,
     bom: bool,
+    crlf: bool,
     value_mode: XlsxValueMode,
     output: Option<&'a Path>,
     output_dir: Option<&'a Path>,
@@ -900,18 +905,40 @@ fn extract_csv_command(
         let output_dir = options.output_dir.ok_or_else(|| {
             CliError::InvalidArgument("--all-sheets requires --output-dir".to_owned())
         })?;
+        let base_csv_options = XlsxCsvOptions {
+            sheet_name: options.sheet_name,
+            sheet_index: options.sheet_index,
+            include_hidden: options.include_hidden,
+            delimiter: options.delimiter,
+            bom: options.bom,
+            line_terminator: if options.crlf {
+                CsvLineTerminator::Crlf
+            } else {
+                CsvLineTerminator::Lf
+            },
+        };
         return export_all_sheets(
             options.files.first().expect("required by clap"),
             output_dir,
-            options.delimiter,
-            options.bom,
+            base_csv_options,
             options.value_mode,
-            options.include_hidden,
             warning_format,
         );
     }
 
     let multiple = options.files.len() > 1;
+    let base_csv_options = XlsxCsvOptions {
+        sheet_name: options.sheet_name,
+        sheet_index: options.sheet_index,
+        include_hidden: options.include_hidden,
+        delimiter: options.delimiter,
+        bom: options.bom,
+        line_terminator: if options.crlf {
+            CsvLineTerminator::Crlf
+        } else {
+            CsvLineTerminator::Lf
+        },
+    };
     let mut writer = output_writer(options.output)?;
     let mut processed = 0usize;
 
@@ -937,18 +964,7 @@ fn extract_csv_command(
                 Err(err) => Err(err),
             }
         } else {
-            extract_csv(
-                file,
-                XlsxCsvOptions {
-                    sheet_name: options.sheet_name,
-                    sheet_index: options.sheet_index,
-                    include_hidden: options.include_hidden,
-                    delimiter: options.delimiter,
-                    bom: options.bom,
-                },
-                options.value_mode,
-                &mut writer,
-            )
+            extract_csv(file, base_csv_options, options.value_mode, &mut writer)
         };
 
         match result {
@@ -1043,14 +1059,12 @@ fn infer_schema_command(
 fn export_all_sheets(
     file: &Path,
     output_dir: &Path,
-    delimiter: u8,
-    bom: bool,
+    base_csv_options: XlsxCsvOptions<'_>,
     value_mode: XlsxValueMode,
-    include_hidden: bool,
     warning_format: WarningFormat,
 ) -> Result<(), CliError> {
     fs::create_dir_all(output_dir)?;
-    let sheets = list_xlsx_sheets(file, include_hidden)?;
+    let sheets = list_xlsx_sheets(file, base_csv_options.include_hidden)?;
     emit_warnings(&sheets.warnings, warning_format);
 
     let mut manifest = AllSheetsManifest {
@@ -1069,9 +1083,7 @@ fn export_all_sheets(
             XlsxCsvOptions {
                 sheet_name: None,
                 sheet_index: Some(sheet.index),
-                include_hidden,
-                delimiter,
-                bom,
+                ..base_csv_options
             },
             value_mode,
             &mut csv_file,

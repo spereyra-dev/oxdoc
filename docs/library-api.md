@@ -395,6 +395,7 @@ pub struct XlsxCsvOptions<'a> {
     pub include_hidden: bool,
     pub delimiter: u8,
     pub bom: bool,
+    pub line_terminator: CsvLineTerminator,
 }
 ```
 
@@ -406,6 +407,15 @@ Hidden and very hidden sheets are skipped unless `include_hidden` is `true`. Whe
 
 When `bom` is `true`, CSV output starts with a UTF-8 byte order mark (`EF BB BF`) so Excel on Windows detects UTF-8. The default is `false`, which matches standard UTF-8 CSV output.
 
+`line_terminator` selects the row terminator between CSV rows. `CsvLineTerminator::Lf` is the default and emits `\n`; `CsvLineTerminator::Crlf` emits `\r\n` between rows for Excel-classic compatibility. It only affects the row terminator: content inside quoted fields is never rewritten.
+
+```rust
+pub enum CsvLineTerminator {
+    Lf,
+    Crlf,
+}
+```
+
 Defaults:
 
 ```rust
@@ -415,6 +425,7 @@ XlsxCsvOptions {
     include_hidden: false,
     delimiter: b',',
     bom: false,
+    line_terminator: CsvLineTerminator::Lf,
 }
 ```
 

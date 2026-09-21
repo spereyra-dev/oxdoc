@@ -92,6 +92,19 @@ class OxdocPythonWrapperTests(unittest.TestCase):
 
         self.assertIn("--bom", json.loads(result.value)["args"])
 
+    def test_extract_csv_passes_crlf_flag_to_command(self) -> None:
+        binary = fake_oxdoc(
+            """
+            import json
+            import sys
+            print(json.dumps({"args": sys.argv[1:]}))
+            """
+        )
+
+        result = Oxdoc(binary).extract_csv("book.xlsx", crlf=True)
+
+        self.assertIn("--crlf", json.loads(result.value)["args"])
+
     def test_extract_rows_parses_typed_jsonl_and_warnings(self) -> None:
         binary = fake_oxdoc(
             """

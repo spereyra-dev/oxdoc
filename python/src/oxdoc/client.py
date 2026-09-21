@@ -96,6 +96,7 @@ class Oxdoc:
         include_hidden: bool = False,
         delimiter: str = ",",
         bom: bool = False,
+        crlf: bool = False,
         value_mode: ValueMode = "raw",
     ) -> OxdocResult:
         """Extract one XLSX sheet as CSV text.
@@ -103,6 +104,9 @@ class Oxdoc:
         When ``bom`` is true, the CSV output is prefixed with a UTF-8 byte
         order mark (Excel on Windows compatibility); the BOM is not included
         in the returned text.
+
+        When ``crlf`` is true, CSV rows end with CRLF (``\\r\\n``) instead of
+        LF for Excel-classic compatibility.
         """
 
         args = ["extract", "csv", str(path), "--delimiter", delimiter, "--value-mode", value_mode]
@@ -114,6 +118,8 @@ class Oxdoc:
             args.append("--include-hidden")
         if bom:
             args.append("--bom")
+        if crlf:
+            args.append("--crlf")
 
         stdout, stderr, _ = self._run(args)
         if bom and stdout.startswith("\ufeff"):
