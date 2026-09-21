@@ -46,6 +46,16 @@ The format is based on human-readable release notes.
   fails only when no workbook was processed successfully. The single-workbook
   layout is unchanged, and `--list-sheets` keeps its single-file restriction.
 
+### Fixed
+
+- Integer overflow in XLSX `parse_cell_column`: alphabetic cell references
+  with enough letters to overflow `usize` (e.g. a 64-letter `r` attribute)
+  no longer wrap silently in release builds or panic under overflow checks
+  (as found by the scheduled `fuzz xlsx_sheet` run). Overflowing references
+  now return `None` and the cell falls back to positional column placement.
+  A minimized synthetic regression fixture is retained under
+  `fuzz/regressions/xlsx_sheet/`. See issue #248.
+
 ## 2.0.0 - 2026-09-18
 
 Released as `oxdoc-core` 2.0.0, `oxdoc-tabular` 0.2.0, and `oxdoc-cli` 2.0.0.
