@@ -11,6 +11,7 @@ from typing import Any, Iterable, Literal, Sequence
 PathLike = str | Path
 TextFormat = Literal["json", "structured-json"]
 ValueMode = Literal["raw", "formatted"]
+CsvQuoteMode = Literal["minimal", "all"]
 
 
 class OxdocError(Exception):
@@ -95,19 +96,52 @@ class Oxdoc:
         sheet_index: int | None = None,
         include_hidden: bool = False,
         delimiter: str = ",",
+        bom: bool = False,
+        crlf: bool = False,
+        quote_mode: CsvQuoteMode = "minimal",
         value_mode: ValueMode = "raw",
     ) -> OxdocResult:
-        """Extract one XLSX sheet as CSV text."""
+        """Extract one XLSX sheet as CSV text.
 
-        args = ["extract", "csv", str(path), "--delimiter", delimiter, "--value-mode", value_mode]
+        When ``bom`` is true, the CSV output is prefixed with a UTF-8 byte
+        order mark (Excel on Windows compatibility); the BOM is not included
+        in the returned text.
+
+        When ``crlf`` is true, CSV rows end with CRLF (``\\r\\n``) instead of
+        LF for Excel-classic compatibility.
+
+        ``quote_mode`` selects the CSV quoting strategy: ``minimal`` (the
+        default) quotes only fields containing the delimiter, quotes, or line
+        breaks, while ``all`` quotes every field, including empty ones
+        (``""``), matching QUOTE_ALL semantics for strict ingestion
+        pipelines.
+        """
+
+        args = [
+            "extract",
+            "csv",
+            str(path),
+            "--delimiter",
+            delimiter,
+            "--quote-mode",
+            quote_mode,
+            "--value-mode",
+            value_mode,
+        ]
         if sheet is not None:
             args.extend(["--sheet", sheet])
         if sheet_index is not None:
             args.extend(["--sheet-index", str(sheet_index)])
         if include_hidden:
             args.append("--include-hidden")
+        if bom:
+            args.append("--bom")
+        if crlf:
+            args.append("--crlf")
 
         stdout, stderr, _ = self._run(args)
+        if bom and stdout.startswith("\ufeff"):
+            stdout = stdout[1:]
         return OxdocResult(stdout, warning_lines(stderr))
 
     def extract_rows(

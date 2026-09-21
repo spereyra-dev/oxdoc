@@ -19,7 +19,7 @@ This roadmap is intentionally practical: `oxdoc` should become a reliable, fast,
 
 ## Phase 1: 1.0 Hardening
 
-- Improve DOCX extraction beyond the main document body. Headers, footers, footnotes, endnotes, comments, hyperlink visible text, and deterministic related-part ordering are implemented; section-aware ordering remains future work.
+- Improve DOCX extraction beyond the main document body. Headers, footers, footnotes, endnotes, comments, hyperlink visible text, deterministic related-part ordering, and section-aware related-part ordering are implemented. `w:titlePg` and `evenAndOddHeaders` remain documented sub-limits.
 - Improve XLSX CSV extraction for sparse dimensions, date/number formatting, and larger workbooks. Visible sheet selection by name or 1-based index, booleans, errors, cached formula values, and bounded shared-string storage are implemented in the current path.
 - Add PPTX text extraction for slide text boxes and speaker notes.
 - Expand metadata coverage across DOCX, XLSX, and PPTX.
@@ -77,3 +77,5 @@ operation-specific JSONL contracts remain the supported batch boundary.
 - Preserving fonts, margins, colors, layout, or pagination.
 - Implementing the full OOXML specification.
 - Mutating or repairing input documents.
+- Reading legacy binary formats (`.doc`, `.xls`) or the binary XLSB workbook format; oxdoc targets the ZIP-based Office Open XML container only.
+- Extracting PPTX chart or SmartArt diagram data.

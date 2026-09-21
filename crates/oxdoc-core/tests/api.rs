@@ -1405,9 +1405,7 @@ fn extracts_xlsx_csv_through_public_api() {
         &file,
         XlsxCsvOptions {
             sheet_name: Some("Sales Q1"),
-            sheet_index: None,
-            include_hidden: false,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut csv,
     )
@@ -1430,9 +1428,8 @@ fn extracts_xlsx_csv_from_read_seek_reader() {
         reader,
         XlsxCsvOptions {
             sheet_name: Some("Sales Q1"),
-            sheet_index: None,
-            include_hidden: false,
             delimiter: b';',
+            ..XlsxCsvOptions::default()
         },
         &mut csv,
     )
@@ -1454,9 +1451,7 @@ fn extracts_application_generated_xlsx_csv_fixture() {
         &file,
         XlsxCsvOptions {
             sheet_name: Some("Data"),
-            sheet_index: None,
-            include_hidden: false,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut csv,
     )
@@ -2431,9 +2426,8 @@ fn escapes_xlsx_sparse_fields_for_comma_and_semicolon_csv() {
         &file,
         XlsxCsvOptions {
             sheet_name: Some("Escaping"),
-            sheet_index: None,
-            include_hidden: false,
             delimiter: b';',
+            ..XlsxCsvOptions::default()
         },
         &mut semicolon_csv,
     )
@@ -2478,9 +2472,7 @@ fn extracts_xlsx_csv_with_boolean_error_blank_and_empty_row_cells() {
         &file,
         XlsxCsvOptions {
             sheet_name: Some("Mixed"),
-            sheet_index: None,
-            include_hidden: false,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut csv,
     )
@@ -2529,9 +2521,7 @@ fn extracts_xlsx_csv_cell_type_edge_cases_as_stable_snapshot() {
         &file,
         XlsxCsvOptions {
             sheet_name: Some("Types"),
-            sheet_index: None,
-            include_hidden: false,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut csv,
     )
@@ -2569,9 +2559,7 @@ fn reports_missing_requested_xlsx_sheet() {
         &file,
         XlsxCsvOptions {
             sheet_name: Some("Missing"),
-            sheet_index: None,
-            include_hidden: false,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut csv,
     )
@@ -2616,10 +2604,8 @@ fn extracts_xlsx_csv_by_visible_sheet_index() {
     oxdoc_core::extract_xlsx_csv(
         &file,
         XlsxCsvOptions {
-            sheet_name: None,
             sheet_index: Some(2),
-            include_hidden: false,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut csv,
     )
@@ -2664,10 +2650,8 @@ fn extracts_hidden_xlsx_csv_only_when_explicitly_included() {
     oxdoc_core::extract_xlsx_csv(
         &file,
         XlsxCsvOptions {
-            sheet_name: None,
             sheet_index: Some(1),
-            include_hidden: false,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut default_csv,
     )
@@ -2679,9 +2663,8 @@ fn extracts_hidden_xlsx_csv_only_when_explicitly_included() {
         &file,
         XlsxCsvOptions {
             sheet_name: Some("Very Hidden"),
-            sheet_index: None,
             include_hidden: true,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut hidden_csv,
     )
@@ -2716,9 +2699,7 @@ fn reports_invalid_xlsx_sheet_selection_combinations() {
         &file,
         XlsxCsvOptions {
             sheet_name: Some("Dup"),
-            sheet_index: None,
-            include_hidden: false,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut csv,
     )
@@ -2732,8 +2713,7 @@ fn reports_invalid_xlsx_sheet_selection_combinations() {
         XlsxCsvOptions {
             sheet_name: Some("Dup"),
             sheet_index: Some(1),
-            include_hidden: false,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut csv,
     )

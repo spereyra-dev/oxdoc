@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import stat
 import sys
@@ -59,6 +60,65 @@ class OxdocPythonWrapperTests(unittest.TestCase):
 
         self.assertEqual(csv, "a,b\n1,2\n")
         self.assertEqual(sheets[1], {"index": 2, "name": "Hidden", "visibility": "hidden"})
+
+    def test_extract_csv_strips_bom_and_passes_bom_flag(self) -> None:
+        binary = fake_oxdoc(
+            """
+            import sys
+            args = sys.argv[1:]
+            if "--bom" in args:
+                sys.stdout.write("\\ufeff")
+            print("a,b")
+            """
+        )
+        client = Oxdoc(binary)
+
+        with_bom = client.extract_csv("book.xlsx", bom=True).value
+        without_bom = client.extract_csv("book.xlsx").value
+
+        self.assertEqual(with_bom, "a,b\n")
+        self.assertEqual(without_bom, "a,b\n")
+
+    def test_extract_csv_passes_bom_flag_to_command(self) -> None:
+        binary = fake_oxdoc(
+            """
+            import json
+            import sys
+            print(json.dumps({"args": sys.argv[1:]}))
+            """
+        )
+
+        result = Oxdoc(binary).extract_csv("book.xlsx", bom=True)
+
+        self.assertIn("--bom", json.loads(result.value)["args"])
+
+    def test_extract_csv_passes_crlf_flag_to_command(self) -> None:
+        binary = fake_oxdoc(
+            """
+            import json
+            import sys
+            print(json.dumps({"args": sys.argv[1:]}))
+            """
+        )
+
+        result = Oxdoc(binary).extract_csv("book.xlsx", crlf=True)
+
+        self.assertIn("--crlf", json.loads(result.value)["args"])
+
+    def test_extract_csv_passes_quote_mode_to_command(self) -> None:
+        binary = fake_oxdoc(
+            """
+            import json
+            import sys
+            print(json.dumps({"args": sys.argv[1:]}))
+            """
+        )
+
+        result = Oxdoc(binary).extract_csv("book.xlsx", quote_mode="all")
+
+        args = json.loads(result.value)["args"]
+        self.assertIn("--quote-mode", args)
+        self.assertEqual(args[args.index("--quote-mode") + 1], "all")
 
     def test_extract_rows_parses_typed_jsonl_and_warnings(self) -> None:
         binary = fake_oxdoc(

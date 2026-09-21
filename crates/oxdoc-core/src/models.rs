@@ -521,12 +521,41 @@ impl<T> Extraction<T> {
     }
 }
 
+/// Row terminator for XLSX CSV output.
+///
+/// `Lf` is the default and emits `\n` between rows. `Crlf` emits `\r\n`
+/// between rows (Excel-classic compatibility). This only affects the row
+/// terminator: content inside quoted fields is never rewritten.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CsvLineTerminator {
+    Lf,
+    Crlf,
+}
+
+/// Quoting strategy for XLSX CSV output.
+///
+/// `Minimal` is the default and quotes a field only when it contains the
+/// delimiter, quotes, or line breaks. `All` quotes every field, including
+/// empty ones (`""`), matching common QUOTE_ALL semantics for strict
+/// ingestion pipelines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CsvQuoteMode {
+    Minimal,
+    All,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct XlsxCsvOptions<'a> {
     pub sheet_name: Option<&'a str>,
     pub sheet_index: Option<usize>,
     pub include_hidden: bool,
     pub delimiter: u8,
+    /// Prefix the CSV output with a UTF-8 byte order mark (Excel on Windows).
+    pub bom: bool,
+    /// Row terminator between CSV rows (`Lf` by default, `Crlf` for Excel-classic output).
+    pub line_terminator: CsvLineTerminator,
+    /// CSV field quoting strategy (`Minimal` by default, `All` for QUOTE_ALL-style output).
+    pub quote_mode: CsvQuoteMode,
 }
 
 impl Default for XlsxCsvOptions<'_> {
@@ -536,6 +565,9 @@ impl Default for XlsxCsvOptions<'_> {
             sheet_index: None,
             include_hidden: false,
             delimiter: b',',
+            bom: false,
+            line_terminator: CsvLineTerminator::Lf,
+            quote_mode: CsvQuoteMode::Minimal,
         }
     }
 }
@@ -605,8 +637,8 @@ impl AuditSignal {
 #[cfg(test)]
 mod tests {
     use super::{
-        Extraction, OutputWarning, WarningCategory, WarningCode, XlsxCell, XlsxCellValue,
-        XlsxCsvOptions, XlsxFormula, XlsxReadOptions, XlsxSheetOptions,
+        CsvLineTerminator, CsvQuoteMode, Extraction, OutputWarning, WarningCategory, WarningCode,
+        XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxFormula, XlsxReadOptions, XlsxSheetOptions,
     };
 
     #[test]
@@ -667,6 +699,8 @@ mod tests {
         assert_eq!(options.sheet_index, None);
         assert!(!options.include_hidden);
         assert_eq!(options.delimiter, b',');
+        assert_eq!(options.line_terminator, CsvLineTerminator::Lf);
+        assert_eq!(options.quote_mode, CsvQuoteMode::Minimal);
     }
 
     #[test]

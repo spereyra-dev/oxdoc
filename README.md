@@ -383,7 +383,7 @@ inferred conversion while keeping columnar dependencies out of `oxdoc-core`.
 
 ## Known Limitations
 
-- DOCX section-aware ordering and some advanced revision/comment semantics need hardening.
+- Some advanced revision/comment semantics need hardening; `w:titlePg` and `evenAndOddHeaders` section header variants are no-ops.
 - XLSX date and number format interpretation need hardening.
 - PPTX extraction does not render slides, synthesize bullets, or preserve visual layout.
 

@@ -5,9 +5,9 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::models::{
-    Extraction, OutputWarning, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxFormula,
-    XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility,
-    XlsxValueMode,
+    CsvLineTerminator, CsvQuoteMode, Extraction, OutputWarning, XlsxCell, XlsxCellValue,
+    XlsxCsvOptions, XlsxFormula, XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheet,
+    XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
 };
 use crate::parsers::xlsx_shared_strings::{
     DEFAULT_SHARED_STRING_MEMORY_LIMIT, SharedStringLookup, SharedStringStore,
@@ -178,14 +178,23 @@ trait SheetRowSink {
     fn emit(&mut self, row: &XlsxRow) -> Result<XlsxRowControl>;
 }
 
+/// Row-writing style for CSV output: field delimiter, row terminator, and
+/// quoting strategy.
+#[derive(Debug, Clone, Copy)]
+struct CsvRowStyle {
+    delimiter: u8,
+    line_terminator: CsvLineTerminator,
+    quote_mode: CsvQuoteMode,
+}
+
 struct CsvRowSink<'a, W> {
     writer: &'a mut W,
-    delimiter: u8,
+    style: CsvRowStyle,
 }
 
 impl<W: Write> SheetRowSink for CsvRowSink<'_, W> {
     fn emit(&mut self, row: &XlsxRow) -> Result<XlsxRowControl> {
-        write_csv_row(self.writer, row, self.delimiter)?;
+        write_csv_row(self.writer, row, self.style)?;
         Ok(XlsxRowControl::Continue)
     }
 }
@@ -375,6 +384,9 @@ fn write_csv_with_shared_string_memory_limit<R: Read + Seek, W: Write>(
     shared_string_memory_limit: usize,
     writer: &mut W,
 ) -> Result<Extraction<()>> {
+    if options.bom {
+        writer.write_all(&[0xEF, 0xBB, 0xBF])?;
+    }
     let workbook_path = crate::parsers::find_office_document_path(package, "xl/workbook.xml")?;
     let workbook_xml = package.read_to_string(&workbook_path)?;
     let workbook = parse_workbook_sheets(&workbook_xml, &workbook_path)?;
@@ -423,11 +435,16 @@ fn write_csv_with_shared_string_memory_limit<R: Read + Seek, W: Write>(
             date_system,
             styles: &styles.value,
         };
+        let style = CsvRowStyle {
+            delimiter: options.delimiter,
+            line_terminator: options.line_terminator,
+            quote_mode: options.quote_mode,
+        };
         write_sheet_csv(
             reader,
             &sheet_path,
             &mut shared_strings.value,
-            options.delimiter,
+            style,
             &format_context,
             writer,
         )
@@ -687,11 +704,11 @@ fn write_sheet_csv<R: BufRead, W: Write>(
     source: R,
     path: &str,
     shared_strings: &mut impl SharedStringLookup,
-    delimiter: u8,
+    style: CsvRowStyle,
     format_context: &SheetFormatContext<'_>,
     writer: &mut W,
 ) -> Result<Extraction<()>> {
-    let mut sink = CsvRowSink { writer, delimiter };
+    let mut sink = CsvRowSink { writer, style };
     parse_sheet_rows(source, path, shared_strings, format_context, &mut sink)
 }
 
@@ -905,7 +922,11 @@ pub fn fuzz_parse_sheet(xml: &[u8]) -> Result<()> {
     let mut output = Vec::new();
     let mut sink = CsvRowSink {
         writer: &mut output,
-        delimiter: b',',
+        style: CsvRowStyle {
+            delimiter: b',',
+            line_terminator: CsvLineTerminator::Lf,
+            quote_mode: CsvQuoteMode::Minimal,
+        },
     };
     let mut shared_strings = SharedStringStore::empty();
     let styles = XlsxStyles::default();
@@ -1347,30 +1368,45 @@ fn parse_cell_column(cell_ref: &str) -> Option<usize> {
     saw_letter.then_some(column.saturating_sub(1))
 }
 
-fn write_csv_row<W: Write>(writer: &mut W, row: &XlsxRow, delimiter: u8) -> Result<()> {
+fn write_csv_row<W: Write>(writer: &mut W, row: &XlsxRow, style: CsvRowStyle) -> Result<()> {
+    let CsvRowStyle {
+        delimiter,
+        line_terminator,
+        quote_mode,
+    } = style;
     let mut next_column = 0;
     for cell in &row.cells {
         while next_column < cell.column_index {
             if next_column > 0 {
                 writer.write_all(&[delimiter])?;
             }
+            write_csv_field(writer, "", delimiter, quote_mode)?;
             next_column += 1;
         }
         if next_column > 0 {
             writer.write_all(&[delimiter])?;
         }
-        write_csv_field(writer, cell.value.csv_value(), delimiter)?;
+        write_csv_field(writer, cell.value.csv_value(), delimiter, quote_mode)?;
         next_column = cell.column_index.saturating_add(1);
     }
-    writer.write_all(b"\n")?;
+    match line_terminator {
+        CsvLineTerminator::Lf => writer.write_all(b"\n")?,
+        CsvLineTerminator::Crlf => writer.write_all(b"\r\n")?,
+    }
     Ok(())
 }
 
-fn write_csv_field<W: Write>(writer: &mut W, value: &str, delimiter: u8) -> Result<()> {
+fn write_csv_field<W: Write>(
+    writer: &mut W,
+    value: &str,
+    delimiter: u8,
+    quote_mode: CsvQuoteMode,
+) -> Result<()> {
     let delimiter = char::from(delimiter);
-    let needs_quotes = value
-        .chars()
-        .any(|ch| ch == delimiter || ch == '"' || ch == '\n' || ch == '\r');
+    let needs_quotes = quote_mode == CsvQuoteMode::All
+        || value
+            .chars()
+            .any(|ch| ch == delimiter || ch == '"' || ch == '\n' || ch == '\r');
 
     if !needs_quotes {
         writer.write_all(value.as_bytes())?;
@@ -1395,8 +1431,9 @@ mod tests {
 
     use crate::OxdocError;
     use crate::models::{
-        OutputWarning, XlsxCellValue, XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions,
-        XlsxSheetVisibility, XlsxValueMode,
+        CsvLineTerminator, CsvQuoteMode, OutputWarning, XlsxCellValue, XlsxCsvOptions,
+        XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions, XlsxSheetVisibility,
+        XlsxValueMode,
     };
     use crate::parsers::xlsx_shared_strings::{SharedStringLookup, SharedStringStore};
     use crate::vfs::{OoxmlLimits, OoxmlPackage};
@@ -1405,11 +1442,12 @@ mod tests {
     use zip::write::SimpleFileOptions;
 
     use super::{
-        CellFormat, CellState, DEFAULT_SHARED_FORMULA_MEMORY_LIMIT, DateSystem, SheetFormatContext,
-        SheetRowSink, XlsxStyles, classify_number_format, format_cell_value, format_number,
-        parse_cell_column, parse_sheet_rows, parse_sheet_rows_with_shared_formula_limit,
-        parse_styles, parse_workbook_date_system, parse_workbook_sheets, select_sheet,
-        visit_rows_with_read_options, write_sheet_csv,
+        CellFormat, CellState, CsvRowStyle, DEFAULT_SHARED_FORMULA_MEMORY_LIMIT, DateSystem,
+        SheetFormatContext, SheetRowSink, XlsxStyles, classify_number_format, format_cell_value,
+        format_number, parse_cell_column, parse_sheet_rows,
+        parse_sheet_rows_with_shared_formula_limit, parse_styles, parse_workbook_date_system,
+        parse_workbook_sheets, select_sheet, visit_rows_with_read_options, write_csv,
+        write_sheet_csv,
     };
 
     #[derive(Default)]
@@ -1531,7 +1569,84 @@ mod tests {
             Cursor::new(xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
-            b',',
+            CsvRowStyle {
+                delimiter: b',',
+                line_terminator: CsvLineTerminator::Lf,
+                quote_mode: CsvQuoteMode::Minimal,
+            },
+            &raw_context(&XlsxStyles::default()),
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(String::from_utf8(output).unwrap(), "id,,\"10,5\"\n,42\n");
+    }
+
+    #[test]
+    fn quotes_all_fields_including_empty_cells_when_requested() {
+        let xml = r#"
+            <worksheet>
+              <sheetData>
+                <row r="1">
+                  <c r="A1" t="s"><v>0</v></c>
+                  <c r="C1" t="inlineStr"><is><t>10,5</t></is></c>
+                </row>
+                <row r="2">
+                  <c r="B2"><v>42</v></c>
+                </row>
+              </sheetData>
+            </worksheet>
+        "#;
+        let mut shared_strings = SharedStringStore::from_values(vec!["id".to_owned()]);
+        let mut output = Vec::new();
+
+        write_sheet_csv(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            CsvRowStyle {
+                delimiter: b',',
+                line_terminator: CsvLineTerminator::Lf,
+                quote_mode: CsvQuoteMode::All,
+            },
+            &raw_context(&XlsxStyles::default()),
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "\"id\",\"\",\"10,5\"\n\"\",\"42\"\n"
+        );
+    }
+
+    #[test]
+    fn keeps_minimal_csv_quoting_by_default() {
+        let xml = r#"
+            <worksheet>
+              <sheetData>
+                <row r="1">
+                  <c r="A1" t="s"><v>0</v></c>
+                  <c r="C1" t="inlineStr"><is><t>10,5</t></is></c>
+                </row>
+                <row r="2">
+                  <c r="B2"><v>42</v></c>
+                </row>
+              </sheetData>
+            </worksheet>
+        "#;
+        let mut shared_strings = SharedStringStore::from_values(vec!["id".to_owned()]);
+        let mut output = Vec::new();
+
+        write_sheet_csv(
+            Cursor::new(xml.as_bytes()),
+            "xl/worksheets/sheet1.xml",
+            &mut shared_strings,
+            CsvRowStyle {
+                delimiter: b',',
+                line_terminator: CsvLineTerminator::Lf,
+                quote_mode: CsvQuoteMode::Minimal,
+            },
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -1559,7 +1674,11 @@ mod tests {
             Cursor::new(xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
-            b',',
+            CsvRowStyle {
+                delimiter: b',',
+                line_terminator: CsvLineTerminator::Lf,
+                quote_mode: CsvQuoteMode::Minimal,
+            },
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -1594,7 +1713,11 @@ mod tests {
             Cursor::new(xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
-            b',',
+            CsvRowStyle {
+                delimiter: b',',
+                line_terminator: CsvLineTerminator::Lf,
+                quote_mode: CsvQuoteMode::Minimal,
+            },
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -2333,7 +2456,11 @@ mod tests {
             Cursor::new(sheet_xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
-            b',',
+            CsvRowStyle {
+                delimiter: b',',
+                line_terminator: CsvLineTerminator::Lf,
+                quote_mode: CsvQuoteMode::Minimal,
+            },
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -2343,6 +2470,94 @@ mod tests {
             String::from_utf8(output).unwrap(),
             "gamma,\"beta, needs quotes\",alpha\n"
         );
+    }
+
+    fn csv_package() -> OoxmlPackage<Cursor<Vec<u8>>> {
+        OoxmlPackage::new(xlsx_package(&[
+            (
+                "_rels/.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet><sheetData><row><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>"#,
+            ),
+            ("xl/sharedStrings.xml", r#"<sst><si><t>id</t></si></sst>"#),
+        ]))
+        .unwrap()
+    }
+
+    #[test]
+    fn writes_csv_bom_when_requested() {
+        let mut package = csv_package();
+        let mut output = Vec::new();
+        let options = XlsxCsvOptions {
+            bom: true,
+            ..XlsxCsvOptions::default()
+        };
+
+        write_csv(&mut package, options, XlsxValueMode::Raw, &mut output).unwrap();
+
+        assert!(output.starts_with(&[0xEF, 0xBB, 0xBF]));
+        assert_eq!(&output[3..], b"id\n");
+    }
+
+    #[test]
+    fn writes_csv_without_bom_by_default() {
+        let mut package = csv_package();
+        let mut output = Vec::new();
+
+        write_csv(
+            &mut package,
+            XlsxCsvOptions::default(),
+            XlsxValueMode::Raw,
+            &mut output,
+        )
+        .unwrap();
+
+        assert!(!output.starts_with(&[0xEF, 0xBB, 0xBF]));
+        assert_eq!(String::from_utf8(output).unwrap(), "id\n");
+    }
+
+    #[test]
+    fn writes_csv_rows_with_crlf_when_requested() {
+        let mut package = csv_package();
+        let mut output = Vec::new();
+        let options = XlsxCsvOptions {
+            line_terminator: CsvLineTerminator::Crlf,
+            quote_mode: CsvQuoteMode::Minimal,
+            ..XlsxCsvOptions::default()
+        };
+
+        write_csv(&mut package, options, XlsxValueMode::Raw, &mut output).unwrap();
+
+        assert_eq!(String::from_utf8(output).unwrap(), "id\r\n");
+    }
+
+    #[test]
+    fn writes_csv_rows_with_lf_by_default() {
+        let mut package = csv_package();
+        let mut output = Vec::new();
+
+        write_csv(
+            &mut package,
+            XlsxCsvOptions::default(),
+            XlsxValueMode::Raw,
+            &mut output,
+        )
+        .unwrap();
+
+        let csv = String::from_utf8(output).unwrap();
+        assert_eq!(csv, "id\n");
+        assert!(!csv.contains("\r\n"));
     }
 
     #[test]
@@ -2385,7 +2600,11 @@ mod tests {
             Cursor::new(sheet_xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
-            b',',
+            CsvRowStyle {
+                delimiter: b',',
+                line_terminator: CsvLineTerminator::Lf,
+                quote_mode: CsvQuoteMode::Minimal,
+            },
             &formatted_context(&styles),
             &mut output,
         )
@@ -2416,7 +2635,11 @@ mod tests {
             Cursor::new(sheet_xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
-            b',',
+            CsvRowStyle {
+                delimiter: b',',
+                line_terminator: CsvLineTerminator::Lf,
+                quote_mode: CsvQuoteMode::Minimal,
+            },
             &raw_context(&styles),
             &mut output,
         )
@@ -2809,7 +3032,11 @@ mod tests {
             Cursor::new(br#"<worksheet><sheetData><row><c r="A1"><v>1</v></c><"#.as_slice()),
             "xl/worksheets/sheet1.xml",
             &mut empty_shared_strings,
-            b',',
+            CsvRowStyle {
+                delimiter: b',',
+                line_terminator: CsvLineTerminator::Lf,
+                quote_mode: CsvQuoteMode::Minimal,
+            },
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -2847,7 +3074,11 @@ mod tests {
             Cursor::new(xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
-            b',',
+            CsvRowStyle {
+                delimiter: b',',
+                line_terminator: CsvLineTerminator::Lf,
+                quote_mode: CsvQuoteMode::Minimal,
+            },
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )
@@ -2877,7 +3108,11 @@ mod tests {
             Cursor::new(xml.as_bytes()),
             "xl/worksheets/sheet1.xml",
             &mut shared_strings,
-            b',',
+            CsvRowStyle {
+                delimiter: b',',
+                line_terminator: CsvLineTerminator::Lf,
+                quote_mode: CsvQuoteMode::Minimal,
+            },
             &raw_context(&XlsxStyles::default()),
             &mut output,
         )

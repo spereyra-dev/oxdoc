@@ -26,11 +26,11 @@ use std::path::Path;
 
 pub use error::{OxdocError, Result};
 pub use models::{
-    AuditSignal, DocumentAudit, DocumentInfo, DocumentType, DocxRevisionMode, DocxTable,
-    DocxTableBlock, DocxTableCell, DocxTableRow, DocxTables, DocxTextOptions, DocxVerticalMerge,
-    Extraction, OutputWarning, PptxSlideText, StructuredText, TextBlock, XlsxCell, XlsxCellValue,
-    XlsxCsvOptions, XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheet, XlsxSheetOptions,
-    XlsxSheetVisibility, XlsxValueMode,
+    AuditSignal, CsvLineTerminator, CsvQuoteMode, DocumentAudit, DocumentInfo, DocumentType,
+    DocxRevisionMode, DocxTable, DocxTableBlock, DocxTableCell, DocxTableRow, DocxTables,
+    DocxTextOptions, DocxVerticalMerge, Extraction, OutputWarning, PptxSlideText, StructuredText,
+    TextBlock, XlsxCell, XlsxCellValue, XlsxCsvOptions, XlsxReadOptions, XlsxRow, XlsxRowControl,
+    XlsxSheet, XlsxSheetOptions, XlsxSheetVisibility, XlsxValueMode,
 };
 #[doc(hidden)]
 pub use parsers::docx::fuzz_extract_text as fuzz_docx_text;

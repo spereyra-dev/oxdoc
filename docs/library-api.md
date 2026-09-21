@@ -133,9 +133,7 @@ fn main() -> oxdoc_core::Result<()> {
         "data.xlsx",
         XlsxCsvOptions {
             sheet_name: Some("Ventas Q1"),
-            sheet_index: None,
-            include_hidden: false,
-            delimiter: b',',
+            ..XlsxCsvOptions::default()
         },
         &mut output,
     )?;
@@ -396,6 +394,9 @@ pub struct XlsxCsvOptions<'a> {
     pub sheet_index: Option<usize>,
     pub include_hidden: bool,
     pub delimiter: u8,
+    pub bom: bool,
+    pub line_terminator: CsvLineTerminator,
+    pub quote_mode: CsvQuoteMode,
 }
 ```
 
@@ -405,6 +406,26 @@ Hidden and very hidden sheets are skipped unless `include_hidden` is `true`. Whe
 
 `extract_xlsx_csv` uses raw worksheet XML values. Use `extract_xlsx_csv_with_value_mode` or `extract_xlsx_csv_from_reader_with_value_mode` with `XlsxValueMode::Formatted` to apply supported workbook number formats for dates, times, percentages, currency, and decimals with locale-independent output.
 
+When `bom` is `true`, CSV output starts with a UTF-8 byte order mark (`EF BB BF`) so Excel on Windows detects UTF-8. The default is `false`, which matches standard UTF-8 CSV output.
+
+`line_terminator` selects the row terminator between CSV rows. `CsvLineTerminator::Lf` is the default and emits `\n`; `CsvLineTerminator::Crlf` emits `\r\n` between rows for Excel-classic compatibility. It only affects the row terminator: content inside quoted fields is never rewritten.
+
+```rust
+pub enum CsvLineTerminator {
+    Lf,
+    Crlf,
+}
+```
+
+`quote_mode` selects the CSV quoting strategy. `CsvQuoteMode::Minimal` is the default and quotes a field only when it contains the delimiter, quotes, or line breaks; `CsvQuoteMode::All` quotes every field, including empty ones (`""`), matching common QUOTE_ALL semantics for strict ingestion pipelines.
+
+```rust
+pub enum CsvQuoteMode {
+    Minimal,
+    All,
+}
+```
+
 Defaults:
 
 ```rust
@@ -413,6 +434,9 @@ XlsxCsvOptions {
     sheet_index: None,
     include_hidden: false,
     delimiter: b',',
+    bom: false,
+    line_terminator: CsvLineTerminator::Lf,
+    quote_mode: CsvQuoteMode::Minimal,
 }
 ```
 

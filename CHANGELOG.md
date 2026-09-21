@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on human-readable release notes.
 
+## Unreleased
+
+### Added
+
+- Optional UTF-8 BOM for XLSX CSV output: `oxdoc extract csv --bom` (including
+  `--all-sheets` per-sheet exports) prefixes the CSV bytes with `EF BB BF` for
+  Excel-on-Windows compatibility, `XlsxCsvOptions::bom` exposes the same option
+  to library consumers (BOM bytes are written before any sheet rows), and the
+  Python wrapper's `extract_csv(bom=True)` passes the flag through and strips
+  the BOM from the returned text.
+- CRLF line terminator for XLSX CSV output: `oxdoc extract csv --crlf`
+  (including `--all-sheets` per-sheet exports) ends CSV rows with `\r\n`
+  instead of `\n` for Excel-classic compatibility, and the new
+  `XlsxCsvOptions::line_terminator` field (`CsvLineTerminator::Lf` by default,
+  `CsvLineTerminator::Crlf` for CRLF) exposes the same option to library
+  consumers; only the row terminator changes, never content inside quoted
+  fields. The Python wrapper's `extract_csv(crlf=True)` passes the flag
+  through.
+- Quote mode for XLSX CSV output: `oxdoc extract csv --quote-mode all`
+  (including `--all-sheets` per-sheet exports) quotes every CSV field,
+  including empty ones (`""`), matching common QUOTE_ALL semantics for strict
+  ingestion pipelines, and the new `XlsxCsvOptions::quote_mode` field
+  (`CsvQuoteMode::Minimal` by default, `CsvQuoteMode::All` for QUOTE_ALL) and
+  re-exported `CsvQuoteMode` enum expose the same option to library consumers.
+  The default `minimal` quoting is unchanged, and the Python wrapper's
+  `extract_csv(quote_mode=...)` always passes the flag through.
+- Multi-workbook `--all-sheets` export: `oxdoc extract csv` now accepts several
+  input workbooks with `--all-sheets --output-dir`, writing one subdirectory per
+  workbook (named after its sanitized file stem, disambiguated with `-2`,
+  `-3`, ... in input order on stem collisions) that contains that workbook's CSV
+  files and its own schema v1 `manifest.json`. A workbook that fails to open is
+  reported as a skipped-input warning and processing continues; the command
+  fails only when no workbook was processed successfully. The single-workbook
+  layout is unchanged, and `--list-sheets` keeps its single-file restriction.
+
 ## 2.0.0 - 2026-09-18
 
 Released as `oxdoc-core` 2.0.0, `oxdoc-tabular` 0.2.0, and `oxdoc-cli` 2.0.0.
