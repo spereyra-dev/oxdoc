@@ -1354,6 +1354,8 @@ fn civil_from_days(days: i64) -> Option<(i32, u32, u32)> {
 }
 
 fn parse_cell_column(cell_ref: &str) -> Option<usize> {
+    const MAX_EXCEL_COLUMN_INDEX: usize = 16383;
+
     let mut column = 0usize;
     let mut saw_letter = false;
 
@@ -1362,7 +1364,16 @@ fn parse_cell_column(cell_ref: &str) -> Option<usize> {
             break;
         }
         saw_letter = true;
-        column = column * 26 + usize::from(byte.to_ascii_uppercase() - b'A' + 1);
+        column = column
+            .checked_mul(26)?
+            .checked_add(usize::from(byte.to_ascii_uppercase() - b'A' + 1))?;
+    }
+
+    // Excel's real maximum is XFD (column index 16383). References beyond it
+    // are malformed: reject them so missing-cell padding stays bounded
+    // instead of materializing a runaway column index (see issue #248).
+    if column.saturating_sub(1) > MAX_EXCEL_COLUMN_INDEX {
+        return None;
     }
 
     saw_letter.then_some(column.saturating_sub(1))
@@ -1430,6 +1441,7 @@ mod tests {
     use std::io::{Cursor, Write};
 
     use crate::OxdocError;
+    use crate::fuzz_parse_sheet;
     use crate::models::{
         CsvLineTerminator, CsvQuoteMode, OutputWarning, XlsxCellValue, XlsxCsvOptions,
         XlsxReadOptions, XlsxRow, XlsxRowControl, XlsxSheetOptions, XlsxSheetVisibility,
@@ -2857,6 +2869,37 @@ mod tests {
         assert_eq!(parse_cell_column("AA12"), Some(26));
         assert_eq!(parse_cell_column("BC7"), Some(54));
         assert_eq!(parse_cell_column("12"), None);
+    }
+
+    #[test]
+    fn rejects_overflowing_excel_column_references() {
+        // Excel's real maximum is XFD (index 16383). References beyond it are
+        // malformed: they must fall back to positional placement so missing
+        // cell padding stays bounded instead of wrapping, panicking, or
+        // materializing a runaway column index (issue #248).
+        assert_eq!(parse_cell_column("A1"), Some(0));
+        assert_eq!(parse_cell_column("XFD1"), Some(16383));
+        assert_eq!(parse_cell_column("XFE1"), None);
+        assert_eq!(parse_cell_column("AAAAB1"), None);
+        // 14 letters fit usize (~1.8e19) but far exceed the Excel limit.
+        let fourteen_letters = "G".repeat(14);
+        assert_eq!(parse_cell_column(&fourteen_letters), None);
+        let long_ref = "G".repeat(64);
+        assert_eq!(parse_cell_column(&long_ref), None);
+    }
+
+    #[test]
+    fn fuzz_regression_overflowing_cell_reference_does_not_panic() {
+        // Regression for fuzz finding in oxdoc#248: long alphabetic cell
+        // references (both the 53-letter overflow from the CI crash and the
+        // 14-letter in-usize-range runaway index) must fall back to
+        // positional placement and complete bounded extraction.
+        let xml =
+            br#"<worksheet><sheetData><row><c r="GGGGGGGGGGGGGG"/></row></sheetData></worksheet>"#;
+        let result = fuzz_parse_sheet(xml);
+        assert!(result.is_ok());
+        let long = br#"<worksheet><sheetData><row><c r="GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"/></row></sheetData></worksheet>"#;
+        assert!(fuzz_parse_sheet(long).is_ok());
     }
 
     #[test]
